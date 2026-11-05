@@ -1,125 +1,62 @@
-// ES3C28P bring-up: exercises the display, touch, RGB LED and Wi-Fi, and
-// checks that the map's /api/status answers. Placeholder until the real
-// remote UI is written.
+// METARMap Remote: a small version of the map's /remote page on the ES3C28P.
 #include <Arduino.h>
-#include <HTTPClient.h>
 #include <WiFi.h>
 
 #include "board_es3c28p.h"
 #include "display.h"
+#include "log.h"
+#include "lvgl_port.h"
+#include "map_client.h"
+#include "ui.h"
 
 #if __has_include("secrets.h")
 #include "secrets.h"
 #else
-#warning "include/secrets.h missing: copy include/secrets.example.h; Wi-Fi disabled"
+#error "Copy include/secrets.example.h to include/secrets.h and fill it in"
 #endif
+
+volatile bool g_serialBusy = false;
 
 static LGFX lcd;
-static int touchY;  // bottom line, set once the rotation is known
-
-static constexpr int kStatusY = 120;
-
-static void statusLine(int row, uint16_t color, const char* fmt, ...) {
-  char buf[64];
-  va_list args;
-  va_start(args, fmt);
-  vsnprintf(buf, sizeof(buf), fmt, args);
-  va_end(args);
-  int y = kStatusY + row * 20;
-  lcd.fillRect(0, y, lcd.width(), 20, TFT_BLACK);
-  lcd.setTextColor(color, TFT_BLACK);
-  lcd.drawString(buf, 8, y);
-  Serial.println(buf);
-}
-
-static void drawHeader() {
-  lcd.fillScreen(TFT_BLACK);
-  lcd.fillRect(0, 0, lcd.width(), 36, TFT_NAVY);
-  lcd.setFont(&fonts::FreeSansBold9pt7b);
-  lcd.setTextColor(TFT_WHITE, TFT_NAVY);
-  lcd.drawString("METARMap Remote", 8, 9);
-  lcd.setFont(&fonts::Font2);
-
-  // Colour bars: if red/blue are swapped or the colours look inverted,
-  // flip rgb_order / invert in display.h.
-  const uint16_t bars[] = {TFT_RED, TFT_GREEN, TFT_BLUE, TFT_WHITE};
-  int w = lcd.width() / 4;
-  for (int i = 0; i < 4; i++) lcd.fillRect(i * w, 44, w, 16, bars[i]);
-
-  lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  lcd.setCursor(8, 70);
-  lcd.printf("Flash %u MB  PSRAM %u KB", ESP.getFlashChipSize() >> 20,
-             ESP.getPsramSize() >> 10);
-  lcd.setCursor(8, 90);
-  lcd.printf("Heap %u KB free", ESP.getFreeHeap() >> 10);
-}
-
-static void checkWifiAndMap() {
-#ifdef WIFI_SSID
-  statusLine(0, TFT_YELLOW, "Wi-Fi: connecting to %s", WIFI_SSID);
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  uint32_t start = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) delay(250);
-  if (WiFi.status() != WL_CONNECTED) {
-    statusLine(0, TFT_RED, "Wi-Fi: failed (%d)", WiFi.status());
-    if (WiFi.status() == WL_NO_SSID_AVAIL) {
-      // The S3 is 2.4 GHz only; list what it can see to spot a 5 GHz SSID.
-      int n = WiFi.scanNetworks();
-      Serial.printf("%d networks visible:\n", n);
-      for (int i = 0; i < n; i++)
-        Serial.printf("  %-32s ch%-2d %d dBm\n", WiFi.SSID(i).c_str(),
-                      WiFi.channel(i), WiFi.RSSI(i));
-      statusLine(1, TFT_RED, "SSID not seen (2.4 GHz only)");
-    }
-    return;
-  }
-  statusLine(0, TFT_GREEN, "Wi-Fi: %s", WiFi.localIP().toString().c_str());
-
-  HTTPClient http;
-  String url = String("http://") + MAP_HOST + ":" + MAP_PORT + "/api/status";
-  http.setTimeout(5000);
-  http.begin(url);
-  int code = http.GET();
-  if (code == HTTP_CODE_OK) {
-    statusLine(1, TFT_GREEN, "Map: OK (%d bytes)", http.getSize());
-  } else {
-    statusLine(1, TFT_RED, "Map: %s (%d)", MAP_HOST, code);
-  }
-  http.end();
-#else
-  statusLine(0, TFT_DARKGREY, "Wi-Fi: no secrets.h");
-#endif
-}
+static MapClient mapClient;
 
 void setup() {
   Serial.begin(115200);
 
   pinMode(AUDIO_EN, OUTPUT);
   digitalWrite(AUDIO_EN, HIGH);  // keep the amp off
+  neopixelWrite(RGB_LED, 0, 0, 0);
 
   lcd.init();
   lcd.setRotation(3);  // landscape, USB-C on the right
-  touchY = lcd.height() - 24;
   lcd.setBrightness(200);
-  drawHeader();
 
-  neopixelWrite(RGB_LED, 0, 0, 16);
-  checkWifiAndMap();
-  neopixelWrite(RGB_LED, 0, 16, 0);
+  lvgl_port_init(lcd);
+  ui_init(mapClient);
 
-  lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  lcd.drawString("Touch the screen", 8, touchY);
+  WiFi.mode(WIFI_STA);
+  WiFi.setHostname("metarmap-remote");
+  WiFi.setAutoReconnect(true);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  mapClient.begin(MAP_HOST, MAP_PORT);
 }
 
 void loop() {
-  int32_t x, y;
-  if (lcd.getTouch(&x, &y)) {
-    lcd.fillCircle(x, y, 3, TFT_CYAN);
-    lcd.fillRect(0, touchY, lcd.width(), 20, TFT_BLACK);
-    lcd.setTextColor(TFT_CYAN, TFT_BLACK);
-    lcd.setCursor(8, touchY);
-    lcd.printf("Touch %3d, %3d", (int)x, (int)y);
+  lv_timer_handler();
+  ui_tick();
+
+  // Serial console: "S" sends a screenshot (tools/screenshot.py); "1" and
+  // "2" open the Visualizer and Locator tabs.
+  if (Serial.available()) {
+    int c = Serial.read();
+    if (c == 'S') {
+      g_serialBusy = true;
+      lvgl_port_screenshot();
+      g_serialBusy = false;
+    } else if (c == '1' || c == '2') {
+      ui_show_tab(c - '1');
+    }
   }
-  delay(10);
+  delay(5);
 }

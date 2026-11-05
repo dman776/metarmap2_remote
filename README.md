@@ -5,9 +5,10 @@ METARMap2 installation from another device. It connects to the map's built-in
 HTTP API, so the Raspberry Pi can continue to fetch weather data and run the
 LEDs and optional OLED display locally.
 
-> **Project status:** Firmware is set up for the ES3C28P touchscreen (see
-> [Hardware](#hardware)) and can reach a map. The features below describe the
-> intended direction; they are not yet implemented.
+> **Project status:** The firmware runs on the ES3C28P touchscreen (see
+> [Hardware](#hardware)) with the Visualizer and Locator screens of the map's
+> `/remote` page (see [Screens](#screens)). Some features below are still
+> ideas.
 
 ## What it could do
 
@@ -78,8 +79,9 @@ The full pin map is in [include/board_es3c28p.h](include/board_es3c28p.h).
 ## Development
 
 The firmware is a [PlatformIO](https://platformio.org/) project using the
-Arduino framework and [LovyanGFX](https://github.com/lovyan03/LovyanGFX) for
-the display and touch.
+Arduino framework, [LVGL](https://lvgl.io/) 9 for the screens,
+[LovyanGFX](https://github.com/lovyan03/LovyanGFX) for the display and touch,
+and [ArduinoJson](https://arduinojson.org/) for the map's API.
 
 1. Copy `include/secrets.example.h` to `include/secrets.h` (git-ignored) and
    set your Wi-Fi network and the map's host and port.
@@ -96,7 +98,44 @@ the display and touch.
 If an upload can't find the board, hold **BOOT**, tap **RESET**, release
 **BOOT**, and upload again.
 
-The current firmware is a bring-up check: it draws colour bars, reports flash
-and PSRAM, joins Wi-Fi, requests the map's `/api/status`, and plots touches.
-If it can't see the configured network, it lists the networks it can see on
-the serial console.
+### Screens
+
+The remote is a small version of the map's `/remote` page, in its colors:
+
+- **Visualizer**: the active visualizer's name and description with previous
+  and next buttons, a chip for every visualizer, its legend, and the
+  Auto-rotate switch (with a countdown to the next visualizer), the OLED
+  switch (when the OLED is enabled in Config) and LED brightness.
+- **Locator**: a tile for every airport with its flight category; tap one to
+  pulse its LED. The tile flashes when the map pulses it.
+
+The `/remote` page's Map tab is left out: the live map needs a browser.
+
+### How it talks to the map
+
+A background task on the second core polls `/api/live` every 1.5 s and
+`/api/status` every minute, and again whenever the visualizer changes (for its
+description and legend). Controls send the map's GET endpoints
+(`/visualizer/<id>`, `/brightness/<level>`, `/locate/<pixel>`...). As on the
+`/remote` page, a control you touch keeps your value for 3 s while the map
+catches up. Source layout:
+
+| File | What it does |
+|---|---|
+| `src/main.cpp` | Setup, Wi-Fi, the LVGL loop |
+| `src/ui.cpp` | The screens |
+| `src/map_client.cpp` | HTTP polling and commands, on its own task |
+| `src/map_state.h` | The parsed API state |
+| `src/lvgl_port.cpp` | LVGL display flush, touch input, screenshots |
+| `src/display.h` | LovyanGFX panel and touch config |
+| `include/lv_conf.h` | LVGL settings and fonts |
+
+### Screenshots
+
+With the board connected, `tools/screenshot.py` saves the screen as a PNG
+(it needs pyserial):
+
+```sh
+python3 tools/screenshot.py /dev/cu.usbmodem* screen.png      # current tab
+python3 tools/screenshot.py /dev/cu.usbmodem* locator.png 2   # Locator tab
+```
