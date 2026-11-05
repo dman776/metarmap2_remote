@@ -5,6 +5,7 @@
 #include <lvgl.h>
 
 #include <algorithm>
+#include <cctype>
 #include <string>
 
 #include "firmware_version.h"
@@ -607,7 +608,7 @@ void buildLocatorPanel(lv_obj_t* p) {
 lv_obj_t* splash = nullptr;
 bool splashOnDemand = false;  // shown by a long touch, not at startup
 lv_obj_t* remoteScreen = nullptr;
-lv_obj_t *wifiStep, *wifiState, *mapState;
+lv_obj_t *wifiStep, *wifiState, *mapState, *mapVersion;
 uint32_t splashStart = 0;
 uint32_t connectedAt = 0;
 
@@ -649,8 +650,9 @@ void showSplash(lv_obj_t* remote, bool onDemand) {
   label(splash, "MetarMap", &lv_font_montserrat_28, kText);
   label(splash, kRepo, &lv_font_montserrat_12, kMuted);
   std::string version = std::string("Remote ") + FIRMWARE_VERSION;
-  lv_obj_t* ver = label(splash, version.c_str(), &lv_font_montserrat_12, kMuted);
-  lv_obj_set_style_margin_bottom(ver, 10, 0);
+  label(splash, version.c_str(), &lv_font_montserrat_12, kMuted);
+  mapVersion = label(splash, "Map ...", &lv_font_montserrat_12, kMuted);  // once the map answers
+  lv_obj_set_style_margin_bottom(mapVersion, 10, 0);
   wifiState = splashStep(splash, "Connecting to Wi-Fi...", &wifiStep);
   mapState = splashStep(splash, "Connecting to the map...");
 
@@ -673,6 +675,11 @@ void hideSplash() {
 
 void tickSplash() {
   if (!splash) return;
+  if (status.valid && !status.version.empty()) {
+    // metarmap2 gives 26.11.04; it shows its releases as v26.11.04.
+    std::string text = "Map " + std::string(isdigit((unsigned char)status.version[0]) ? "v" : "") + status.version;
+    if (text != lv_label_get_text(mapVersion)) lv_label_set_text(mapVersion, text.c_str());
+  }
   wl_status_t ws = WiFi.status();
   bool wifi = ws == WL_CONNECTED;
   if (wifi) {

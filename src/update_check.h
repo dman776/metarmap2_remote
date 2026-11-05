@@ -27,7 +27,7 @@ constexpr const char* kMainBranch = "main";
 
 struct Release {
   std::string tag;      // v26.11.05, or build-<branch>
-  std::string version;  // what the screens show: the release's title (the build's FIRMWARE_VERSION), else the tag
+  std::string version;  // what the screens show: the tag; for a build, its title (the build's FIRMWARE_VERSION)
   std::string commit;   // the build's commit, for build-<branch> pre-releases ("" for releases)
   bool prerelease = false;
   // The firmware file; empty url when the release has none.
