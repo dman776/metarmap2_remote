@@ -6,6 +6,8 @@
 
 #include "map_client.h"
 
+extern "C" const lv_image_dsc_t logo;  // logo.c, from assets/logo.svg
+
 namespace {
 
 // metarmap2's palette (src/metarmap/web/static/style.css).
@@ -32,7 +34,9 @@ constexpr int kW = 320, kH = 240;
 constexpr int kBarH = 34;
 constexpr int kPad = 6;
 constexpr int kCols = 4;  // Locator tiles per row
-constexpr uint32_t kHoldMs = 3000;  // a touched control keeps its value while the map catches up
+constexpr uint32_t kHoldMs = 3000;
+constexpr uint32_t kSplashMs = 2500;  // the splash screen, before the remote fades in
+constexpr const char* kRepo = "github.com/dman776/metarmap2_remote";  // a touched control keeps its value while the map catches up
 
 MapClient* client = nullptr;
 MapStatus status;
@@ -666,6 +670,27 @@ void buildLocatorPanel(lv_obj_t* p) {
   lv_obj_set_scroll_dir(grid, LV_DIR_VER);
 }
 
+// The logo, the name and the repo, while the remote starts up behind it; then
+// the remote fades in.
+void showSplash(lv_obj_t* remote) {
+  lv_obj_t* splash = lv_obj_create(nullptr);
+  lv_obj_remove_style_all(splash);
+  lv_obj_set_style_bg_color(splash, hex(kBg), 0);
+  lv_obj_set_style_bg_opa(splash, LV_OPA_COVER, 0);
+  lv_obj_set_flex_flow(splash, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(splash, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_row(splash, 6, 0);
+
+  lv_obj_t* img = lv_image_create(splash);
+  lv_image_set_src(img, &logo);
+  lv_obj_set_style_margin_bottom(img, 4, 0);
+  label(splash, "MetarMap", &lv_font_montserrat_28, kText);
+  label(splash, kRepo, &lv_font_montserrat_12, kMuted);
+
+  lv_screen_load(splash);
+  lv_screen_load_anim(remote, LV_SCR_LOAD_ANIM_FADE_IN, 400, kSplashMs, true);  // then deletes the splash
+}
+
 }  // namespace
 
 void ui_init(MapClient& c) {
@@ -686,6 +711,7 @@ void ui_init(MapClient& c) {
   panels[1] = panel(scr);
   buildLocatorPanel(panels[1]);
   showTab(0);
+  showSplash(scr);
 }
 
 void ui_show_tab(int tab) { showTab(tab == 1 ? 1 : 0); }

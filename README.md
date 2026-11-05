@@ -100,6 +100,9 @@ If an upload can't find the board, hold **BOOT**, tap **RESET**, release
 
 ### Screens
 
+At startup a splash screen shows the MetarMap logo, name and this repo for
+2.5 s while the remote connects, then the remote fades in.
+
 The remote is a small version of the map's `/remote` page, in its colors:
 
 - **Visualizer**: a chip for every visualizer, the active one lit (swipe the
@@ -135,6 +138,7 @@ catches up. Source layout:
 | `src/map_state.h` | The parsed API state |
 | `src/lvgl_port.cpp` | LVGL display flush, touch input, screenshots |
 | `src/audio.cpp` | ES8311 codec and I2S setup, the touch tick |
+| `src/logo.c` | The logo, generated from `assets/logo.svg` by `tools/make_logo.py` (needs `rsvg-convert`) |
 | `src/display.h` | LovyanGFX panel and touch config |
 | `include/lv_conf.h` | LVGL settings and fonts |
 
