@@ -15,9 +15,9 @@
 #endif
 
 static LGFX lcd;
+static int touchY;  // bottom line, set once the rotation is known
 
 static constexpr int kStatusY = 120;
-static constexpr int kTouchY = 290;
 
 static void statusLine(int row, uint16_t color, const char* fmt, ...) {
   char buf[64];
@@ -99,7 +99,8 @@ void setup() {
   digitalWrite(AUDIO_EN, HIGH);  // keep the amp off
 
   lcd.init();
-  lcd.setRotation(0);  // portrait, USB-C at the bottom
+  lcd.setRotation(3);  // landscape, USB-C on the right
+  touchY = lcd.height() - 24;
   lcd.setBrightness(200);
   drawHeader();
 
@@ -108,16 +109,16 @@ void setup() {
   neopixelWrite(RGB_LED, 0, 16, 0);
 
   lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  lcd.drawString("Touch the screen", 8, kTouchY);
+  lcd.drawString("Touch the screen", 8, touchY);
 }
 
 void loop() {
   int32_t x, y;
   if (lcd.getTouch(&x, &y)) {
     lcd.fillCircle(x, y, 3, TFT_CYAN);
-    lcd.fillRect(0, kTouchY, lcd.width(), 20, TFT_BLACK);
+    lcd.fillRect(0, touchY, lcd.width(), 20, TFT_BLACK);
     lcd.setTextColor(TFT_CYAN, TFT_BLACK);
-    lcd.setCursor(8, kTouchY);
+    lcd.setCursor(8, touchY);
     lcd.printf("Touch %3d, %3d", (int)x, (int)y);
   }
   delay(10);

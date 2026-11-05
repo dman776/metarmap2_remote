@@ -41,7 +41,7 @@ class LGFX : public lgfx::LGFX_Device {
       cfg.offset_y = 0;
       cfg.offset_rotation = 0;
       cfg.readable = true;
-      cfg.invert = false;
+      cfg.invert = true;  // this ILI9341V panel shows inverted colours otherwise
       cfg.rgb_order = false;
       cfg.dlen_16bit = false;
       cfg.bus_shared = false;
