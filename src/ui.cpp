@@ -45,7 +45,7 @@ lv_style_t stCard, stChip, stChipOn, stTab, stTabOn, stTile, stPressed;
 lv_obj_t* tabButtons[2];
 lv_obj_t* panels[2];
 lv_obj_t *hostDot, *hostLabel;
-lv_obj_t *visName, *chipRow, *legendBox;
+lv_obj_t *chipRow, *legendBox;
 lv_obj_t *rotateSw, *clockBox, *clockArc, *clockLabel;
 lv_obj_t *brtSlider, *brtLabel;
 lv_obj_t *pausedBanner, *grid;
@@ -298,6 +298,7 @@ void showLegend() {
 
 void showVisualizer(int index) {
   shownIndex = index;
+  lv_obj_update_layout(chipRow);  // new chips need their positions to scroll to
   for (size_t i = 0; i < chips.size(); i++) {
     if ((int)i == index) {
       lv_obj_add_state(chips[i], LV_STATE_CHECKED);
@@ -305,11 +306,6 @@ void showVisualizer(int index) {
     } else {
       lv_obj_remove_state(chips[i], LV_STATE_CHECKED);
     }
-  }
-  if (index >= 0 && index < (int)status.visualizers.size()) {
-    lv_label_set_text(visName, status.visualizers[index].name.c_str());
-  } else if (live.valid && index == live.activeIndex) {
-    lv_label_set_text(visName, live.activeName.c_str());
   }
   // The legend comes with /api/status, fetched again when the visualizer
   // changes; until then the old one stays, dimmed.
@@ -585,15 +581,9 @@ lv_obj_t* toggle(lv_obj_t* parent, lv_event_cb_t cb) {
 }
 
 void buildVisualizerPanel(lv_obj_t* p) {
-  // the active visualizer's name
-  visName = label(p, "", &lv_font_montserrat_20, kText);
-  lv_label_set_long_mode(visName, LV_LABEL_LONG_DOT);
-  lv_obj_set_width(visName, LV_PCT(100));
-  lv_obj_set_style_text_align(visName, LV_TEXT_ALIGN_CENTER, 0);
-
-  // a chip for each visualizer, scrolling sideways
+  // a chip for each visualizer, scrolling sideways; the active one is lit
   chipRow = box(p, LV_FLEX_FLOW_ROW);
-  lv_obj_set_size(chipRow, LV_PCT(100), 28);
+  lv_obj_set_size(chipRow, LV_PCT(100), 36);
   lv_obj_set_style_pad_column(chipRow, 6, 0);
   lv_obj_add_flag(chipRow, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_set_scroll_dir(chipRow, LV_DIR_HOR);
