@@ -11,8 +11,10 @@
 #include "legend.h"
 #include "lvgl_port.h"
 #include "map_client.h"
+#include "updater.h"
 
-extern "C" const lv_image_dsc_t logo;  // logo.c, from assets/logo.svg
+extern "C" const lv_image_dsc_t logo;       // logo.c, from assets/logo.svg
+extern "C" const lv_image_dsc_t star_icon;  // star_icon.c, from assets/star.svg
 
 namespace {
 
@@ -45,9 +47,14 @@ constexpr uint32_t kSplashHoldMs = 2000;    // the splash stays this long after 
 constexpr uint32_t kWifiTimeoutMs = 15000;  // then the splash names the network it can't join
 constexpr uint32_t kTouchHoldMs = 5000;     // touching this long shows the splash again
 constexpr uint32_t kSplashShowMs = 5000;    // for this long
+constexpr uint32_t kUpdateHoldMs = 10000;   // touching this long shows the update screen
+constexpr uint32_t kStar = 0xffd400;        // the update star
 constexpr const char* kRepo = "github.com/dman776/metarmap2";
 
 MapClient* client = nullptr;
+Updater* updater = nullptr;
+UpdateState upd;
+uint32_t updRev = 0;
 MapStatus status;
 MapLive live;
 Connection conn;
@@ -57,7 +64,7 @@ lv_style_t stCard, stChip, stChipOn, stTab, stTabOn, stTile, stPressed;
 
 lv_obj_t* tabButtons[2];
 lv_obj_t* panels[2];
-lv_obj_t *hostDot, *hostLabel;
+lv_obj_t *starIcon, *hostDot, *hostLabel;
 lv_obj_t *chipRow, *legendBox;
 lv_obj_t *rotateSw, *clockBox, *clockArc, *clockLabel;
 lv_obj_t *brtSlider, *brtLabel;
@@ -476,6 +483,9 @@ void buildBar(lv_obj_t* scr) {
   lv_obj_set_flex_grow(host, 1);
   lv_obj_set_flex_align(host, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
   lv_obj_set_style_pad_column(host, 5, 0);
+  starIcon = lv_image_create(host);  // an update is available
+  lv_image_set_src(starIcon, &star_icon);
+  lv_obj_add_flag(starIcon, LV_OBJ_FLAG_HIDDEN);
   hostDot = dot(host, 7, kNone);
   hostLabel = label(host, "connecting", &lv_font_montserrat_12, kMuted);
   lv_label_set_long_mode(hostLabel, LV_LABEL_LONG_DOT);
@@ -671,7 +681,10 @@ void tickSplash() {
   } else if (millis() - splashStart >= kWifiTimeoutMs) {
     // Taking too long: say which network, and whether it's even in range (the
     // S3 only sees 2.4 GHz networks). It keeps trying.
-    std::string text = (ws == WL_NO_SSID_AVAIL ? "Can't find " : "Can't join ") + wifiName();
+    std::string name = wifiName();
+    std::string text = name.empty()             ? "No Wi-Fi network set"
+                       : ws == WL_NO_SSID_AVAIL ? "Can't find " + name
+                                                : "Can't join " + name;
     if (text != lv_label_get_text(wifiStep)) lv_label_set_text(wifiStep, text.c_str());
     setStep(wifiState, "retrying", kAccent);
   } else {
@@ -697,22 +710,238 @@ void tickSplash() {
   if (millis() - connectedAt >= kSplashHoldMs) hideSplash();
 }
 
-// A touch held for 5 s shows the splash; once per touch.
+// ---- the update screen ---------------------------------------------------------------------------------------
+//
+// A 10 s touch: the installed firmware, the newest on the chosen channel
+// (Releases, Latest commit, Branch: metarmap2's), and UPDATE.
+
+lv_obj_t* updScr = nullptr;
+lv_obj_t* updChips[3];
+lv_obj_t *updBranchRow, *updBranch, *updAvailable, *updButton, *updProgressRow, *updBar, *updStatus, *updBack;
+std::string updBranchOptions;  // what the branch menu holds
+
+const char* const kChannelLabels[3] = {"Releases", "Latest commit", "Branch"};
+
+void enable(lv_obj_t* obj, bool on) {
+  if (on) {
+    lv_obj_remove_state(obj, LV_STATE_DISABLED);
+  } else {
+    lv_obj_add_state(obj, LV_STATE_DISABLED);
+  }
+}
+
+void showHidden(lv_obj_t* obj, bool shown) {
+  if (shown) {
+    lv_obj_remove_flag(obj, LV_OBJ_FLAG_HIDDEN);
+  } else {
+    lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
+void hideUpdate() {
+  lv_screen_load_anim(remoteScreen, LV_SCR_LOAD_ANIM_FADE_IN, 300, 0, true);  // then deletes it
+  updScr = nullptr;
+}
+
+void onChannel(lv_event_t* e) {
+  auto channel = (update::Channel)(intptr_t)lv_event_get_user_data(e);
+  std::string branch = upd.branch;
+  if (channel == update::Channel::Branch && branch.empty()) {
+    branch = upd.branches.empty() ? update::kMainBranch : upd.branches[0];
+  }
+  updater->setChannel(channel, branch);
+}
+
+void onBranch(lv_event_t*) {
+  char name[64];
+  lv_dropdown_get_selected_str(updBranch, name, sizeof(name));
+  updater->setChannel(update::Channel::Branch, name);
+}
+
+void refreshUpdate() {
+  if (!updScr) return;
+  bool busy = upd.phase == UpdateState::Installing || upd.phase == UpdateState::Restarting;
+  for (int i = 0; i < 3; i++) {
+    if (i == (int)upd.channel) {
+      lv_obj_add_state(updChips[i], LV_STATE_CHECKED);
+    } else {
+      lv_obj_remove_state(updChips[i], LV_STATE_CHECKED);
+    }
+    enable(updChips[i], !busy);
+  }
+
+  // The branch menu: the branches CI has built.
+  bool branchChannel = upd.channel == update::Channel::Branch;
+  showHidden(updBranchRow, branchChannel);
+  if (branchChannel) {
+    std::vector<std::string> names = upd.branches;
+    if (!upd.branch.empty() && std::find(names.begin(), names.end(), upd.branch) == names.end()) {
+      names.push_back(upd.branch);  // the chosen one, even before (or without) a build
+    }
+    std::string options;
+    for (const std::string& n : names) options += (options.empty() ? "" : "\n") + n;
+    if (options != updBranchOptions) {
+      updBranchOptions = options;
+      lv_dropdown_set_options(updBranch, options.c_str());
+    }
+    auto at = std::find(names.begin(), names.end(), upd.branch);
+    if (at != names.end()) lv_dropdown_set_selected(updBranch, at - names.begin());
+    enable(updBranch, !busy);
+  }
+
+  // What's available on that channel.
+  std::string text;
+  uint32_t color = kMuted;
+  if (upd.phase == UpdateState::Checking) {
+    text = "Checking...";
+  } else if (!upd.error.empty()) {
+    text = upd.error;
+    color = kIfr;
+  } else if (!upd.checked) {
+    text = "";
+  } else if (upd.candidate.empty()) {
+    text = "None published";
+  } else if (upd.available) {
+    text = upd.candidate;
+    color = kVfr;
+  } else {
+    text = upd.candidate + "  (up to date)";
+  }
+  lv_label_set_text(updAvailable, text.c_str());
+  lv_obj_set_style_text_color(updAvailable, hex(color), 0);
+
+  // UPDATE, or how the install is going.
+  showHidden(updButton, !busy);
+  showHidden(updProgressRow, busy);
+  enable(updButton, upd.available && upd.phase == UpdateState::Idle);
+  enable(updBack, !busy);
+  if (busy) {
+    lv_bar_set_value(updBar, upd.progress, LV_ANIM_OFF);
+    if (upd.phase == UpdateState::Restarting) {
+      lv_label_set_text(updStatus, "Restarting...");
+    } else {
+      lv_label_set_text_fmt(updStatus, "%d%%", upd.progress);
+    }
+  }
+}
+
+lv_obj_t* infoRow(lv_obj_t* parent, const char* name, const char* value, lv_obj_t** valueLabel = nullptr) {
+  lv_obj_t* row = box(parent, LV_FLEX_FLOW_ROW);
+  lv_obj_set_size(row, LV_PCT(100), LV_SIZE_CONTENT);
+  lv_obj_set_style_pad_column(row, 8, 0);
+  lv_obj_t* n = label(row, name, &lv_font_montserrat_14, kMuted);
+  lv_obj_set_width(n, 74);
+  lv_obj_t* v = label(row, value, &lv_font_montserrat_14, kText);
+  lv_obj_set_flex_grow(v, 1);
+  lv_label_set_long_mode(v, LV_LABEL_LONG_DOT);
+  if (valueLabel) *valueLabel = v;
+  return row;
+}
+
+void showUpdate() {
+  bool fromSplash = splash != nullptr;
+  updScr = lv_obj_create(nullptr);
+  lv_obj_remove_style_all(updScr);
+  lv_obj_set_style_bg_color(updScr, hex(kBg), 0);
+  lv_obj_set_style_bg_opa(updScr, LV_OPA_COVER, 0);
+  lv_obj_set_flex_flow(updScr, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_style_pad_all(updScr, 8, 0);
+  lv_obj_set_style_pad_row(updScr, 8, 0);
+
+  lv_obj_t* head = box(updScr, LV_FLEX_FLOW_ROW);
+  lv_obj_set_size(head, LV_PCT(100), 30);
+  lv_obj_set_flex_align(head, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  label(head, "Firmware update", &lv_font_montserrat_16, kText);
+  updBack = button(head, &stChip);
+  lv_obj_set_size(updBack, 64, LV_PCT(100));
+  lv_obj_set_style_opa(updBack, LV_OPA_40, LV_STATE_DISABLED);
+  lv_obj_center(label(updBack, "Back", &lv_font_montserrat_14, kText2));
+  lv_obj_add_event_cb(updBack, [](lv_event_t*) { hideUpdate(); }, LV_EVENT_CLICKED, nullptr);
+
+  lv_obj_t* chips = box(updScr, LV_FLEX_FLOW_ROW);
+  lv_obj_set_size(chips, LV_PCT(100), 34);
+  lv_obj_set_style_pad_column(chips, 6, 0);
+  for (int i = 0; i < 3; i++) {
+    lv_obj_t* chip = button(chips, &stChip);
+    lv_obj_add_style(chip, &stChipOn, LV_STATE_CHECKED);
+    lv_obj_set_style_opa(chip, LV_OPA_40, LV_STATE_DISABLED);
+    lv_obj_set_height(chip, LV_PCT(100));
+    lv_obj_set_flex_grow(chip, 1);
+    lv_obj_t* l = lv_label_create(chip);
+    lv_label_set_text(l, kChannelLabels[i]);
+    lv_obj_center(l);
+    lv_obj_add_event_cb(chip, onChannel, LV_EVENT_CLICKED, (void*)(intptr_t)i);
+    updChips[i] = chip;
+  }
+
+  updBranchRow = box(updScr, LV_FLEX_FLOW_ROW);
+  lv_obj_set_size(updBranchRow, LV_PCT(100), LV_SIZE_CONTENT);
+  lv_obj_set_flex_align(updBranchRow, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_column(updBranchRow, 8, 0);
+  lv_obj_set_width(label(updBranchRow, "Branch", &lv_font_montserrat_14, kMuted), 74);
+  updBranch = lv_dropdown_create(updBranchRow);
+  lv_obj_set_flex_grow(updBranch, 1);
+  lv_obj_set_height(updBranch, 32);
+  lv_obj_set_style_pad_ver(updBranch, 6, 0);
+  lv_obj_add_event_cb(updBranch, onBranch, LV_EVENT_VALUE_CHANGED, nullptr);
+  updBranchOptions.clear();
+
+  infoRow(updScr, "Installed", FIRMWARE_VERSION);
+  infoRow(updScr, "Available", "", &updAvailable);
+
+  lv_obj_t* spacer = box(updScr, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_grow(spacer, 1);
+
+  updButton = button(updScr, &stTile);
+  lv_obj_set_size(updButton, LV_PCT(100), 42);
+  lv_obj_set_style_bg_color(updButton, hex(kAccent), 0);
+  lv_obj_set_style_border_width(updButton, 0, 0);
+  lv_obj_set_style_opa(updButton, LV_OPA_30, LV_STATE_DISABLED);
+  lv_obj_center(label(updButton, "UPDATE", &lv_font_montserrat_16, kBg));
+  lv_obj_add_event_cb(updButton, [](lv_event_t*) { updater->install(); }, LV_EVENT_CLICKED, nullptr);
+
+  updProgressRow = box(updScr, LV_FLEX_FLOW_ROW);
+  lv_obj_set_size(updProgressRow, LV_PCT(100), 42);
+  lv_obj_set_flex_align(updProgressRow, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_column(updProgressRow, 10, 0);
+  updBar = lv_bar_create(updProgressRow);
+  lv_obj_set_flex_grow(updBar, 1);
+  lv_obj_set_height(updBar, 10);
+  lv_obj_set_style_bg_color(updBar, hex(kControl), LV_PART_MAIN);
+  lv_obj_set_style_bg_color(updBar, hex(kAccent), LV_PART_INDICATOR);
+  updStatus = label(updProgressRow, "", &lv_font_montserrat_14, kText);
+  lv_obj_set_width(updStatus, 96);
+  lv_obj_set_style_text_align(updStatus, LV_TEXT_ALIGN_RIGHT, 0);
+  lv_obj_add_flag(updProgressRow, LV_OBJ_FLAG_HIDDEN);
+
+  // The touch that's still down began on another screen: forget it.
+  lv_indev_reset(nullptr, nullptr);
+  lv_screen_load_anim(updScr, LV_SCR_LOAD_ANIM_FADE_IN, 300, 0, fromSplash);  // a splash on screen goes for good
+  if (fromSplash) splash = nullptr;
+  refreshUpdate();
+  if (upd.phase == UpdateState::Idle) updater->check();  // fresh, while it's open
+}
+
+// A touch held for 5 s shows the splash; held on to 10 s, the update screen.
 void checkLongTouch() {
-  static bool shown = false;
+  static int opened = 0;  // what this touch has opened: 1 the splash, 2 the update screen
   uint32_t held = lvgl_port_touch_held_ms();
   if (held == 0) {
-    shown = false;
-  } else if (held >= kTouchHoldMs && !shown && !splash) {
-    shown = true;
+    opened = 0;
+  } else if (held >= kUpdateHoldMs && opened < 2 && !updScr) {
+    opened = 2;
+    showUpdate();
+  } else if (held >= kTouchHoldMs && opened < 1 && !splash && !updScr) {
+    opened = 1;
     showSplash(remoteScreen, true);
   }
 }
 
 }  // namespace
 
-void ui_init(MapClient& c) {
+void ui_init(MapClient& c, Updater& u) {
   client = &c;
+  updater = &u;
   lv_display_t* disp = lv_display_get_default();
   lv_theme_t* theme = lv_theme_default_init(disp, hex(kAccent), hex(kMvfr), true, &lv_font_montserrat_14);
   lv_display_set_theme(disp, theme);
@@ -734,6 +963,10 @@ void ui_init(MapClient& c) {
 
 void ui_show_tab(int tab) { showTab(tab == 1 ? 1 : 0); }
 
+void ui_show_update() {
+  if (!updScr) showUpdate();
+}
+
 void ui_show_splash() {
   if (!splash) showSplash(remoteScreen, true);
 }
@@ -742,6 +975,10 @@ void ui_tick() {
   if (client->getConnection(conn, connRev)) showConnection();
   checkLongTouch();
   tickSplash();
+  if (updater->get(upd, updRev)) {
+    showHidden(starIcon, upd.available);
+    refreshUpdate();
+  }
 
   if (client->getStatus(status, statusRev)) {
     if (!sameVisualizers(status.visualizers)) buildChips();
