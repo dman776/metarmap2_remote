@@ -104,7 +104,7 @@ The remote is a small version of the map's `/remote` page, in its colors:
 
 - **Visualizer**: a chip for every visualizer, the active one lit (swipe the
   row to find one, tap to switch), the legend entries the map is
-  showing now (all VFR: just VFR), the Auto-rotate
+  showing now (all VFR: just VFR), and along the bottom the Auto-rotate
   switch (with a countdown to the next visualizer) and LED brightness.
 - **Locator**: a tile for every airport with its flight category; tap one to
   pulse its LED. The tile flashes when the map pulses it.
@@ -112,6 +112,10 @@ The remote is a small version of the map's `/remote` page, in its colors:
 Left out from the `/remote` page: the Map tab (the live map needs a
 browser), the visualizer's description, the previous/next buttons and the
 OLED switch.
+
+Each touch plays a short tick on the speaker (a 1.5–2 W speaker on the
+board's 2-pin speaker socket), through the board's ES8311 codec, which is
+set up over the touch controller's I2C bus at startup.
 
 ### How it talks to the map
 
@@ -130,6 +134,7 @@ catches up. Source layout:
 | `src/map_client.cpp` | HTTP polling and commands, on its own task |
 | `src/map_state.h` | The parsed API state |
 | `src/lvgl_port.cpp` | LVGL display flush, touch input, screenshots |
+| `src/audio.cpp` | ES8311 codec and I2S setup, the touch tick |
 | `src/display.h` | LovyanGFX panel and touch config |
 | `include/lv_conf.h` | LVGL settings and fonts |
 

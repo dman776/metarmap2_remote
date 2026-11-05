@@ -583,7 +583,7 @@ lv_obj_t* toggle(lv_obj_t* parent, lv_event_cb_t cb) {
 void buildVisualizerPanel(lv_obj_t* p) {
   // a chip for each visualizer, scrolling sideways; the active one is lit
   chipRow = box(p, LV_FLEX_FLOW_ROW);
-  lv_obj_set_size(chipRow, LV_PCT(100), 36);
+  lv_obj_set_size(chipRow, LV_PCT(100), 44);
   lv_obj_set_style_pad_column(chipRow, 6, 0);
   lv_obj_add_flag(chipRow, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_set_scroll_dir(chipRow, LV_DIR_HOR);
@@ -601,22 +601,19 @@ void buildVisualizerPanel(lv_obj_t* p) {
   lv_obj_add_flag(legendBox, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_set_scroll_dir(legendBox, LV_DIR_VER);
 
-  // the footer: auto-rotate with its countdown, LED brightness
-  lv_obj_t* foot = box(p, LV_FLEX_FLOW_COLUMN);
-  lv_obj_set_size(foot, LV_PCT(100), LV_SIZE_CONTENT);
+  // the footer, one row: auto-rotate with its countdown, LED brightness
+  lv_obj_t* foot = box(p, LV_FLEX_FLOW_ROW);
+  lv_obj_set_size(foot, LV_PCT(100), 34);
   lv_obj_set_style_border_side(foot, LV_BORDER_SIDE_TOP, 0);
   lv_obj_set_style_border_width(foot, 1, 0);
   lv_obj_set_style_border_color(foot, hex(kLine), 0);
   lv_obj_set_style_pad_top(foot, 4, 0);
-  lv_obj_set_style_pad_row(foot, 2, 0);
+  lv_obj_set_flex_align(foot, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_column(foot, 6, 0);
 
-  lv_obj_t* row1 = box(foot, LV_FLEX_FLOW_ROW);
-  lv_obj_set_size(row1, LV_PCT(100), 26);
-  lv_obj_set_flex_align(row1, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-  lv_obj_set_style_pad_column(row1, 8, 0);
-  footLabel(row1, "Auto-rotate");
-  rotateSw = toggle(row1, onRotate);
-  clockBox = box(row1, LV_FLEX_FLOW_ROW);
+  footLabel(foot, "Auto");
+  rotateSw = toggle(foot, onRotate);
+  clockBox = box(foot, LV_FLEX_FLOW_ROW);
   lv_obj_set_size(clockBox, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
   lv_obj_set_flex_align(clockBox, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
   lv_obj_set_style_pad_column(clockBox, 5, 0);
@@ -633,14 +630,12 @@ void buildVisualizerPanel(lv_obj_t* p) {
   lv_obj_set_style_arc_color(clockArc, hex(kAccent), LV_PART_INDICATOR);
   lv_obj_set_style_pad_all(clockArc, 0, 0);
   clockLabel = label(clockBox, "", &lv_font_montserrat_14, kMuted);
+  lv_obj_set_width(clockLabel, 34);  // the slider doesn't move as the digits change
   lv_obj_add_flag(clockBox, LV_OBJ_FLAG_HIDDEN);
 
-  lv_obj_t* row2 = box(foot, LV_FLEX_FLOW_ROW);
-  lv_obj_set_size(row2, LV_PCT(100), 26);
-  lv_obj_set_flex_align(row2, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-  lv_obj_set_style_pad_column(row2, 10, 0);
-  footLabel(row2, "LED brightness");
-  brtSlider = lv_slider_create(row2);
+  lv_obj_t* led = footLabel(foot, "LED");
+  lv_obj_set_style_margin_left(led, 4, 0);
+  brtSlider = lv_slider_create(foot);
   lv_obj_set_flex_grow(brtSlider, 1);
   lv_obj_set_height(brtSlider, 6);
   lv_slider_set_range(brtSlider, 0, 100);
@@ -649,8 +644,8 @@ void buildVisualizerPanel(lv_obj_t* p) {
   lv_obj_set_ext_click_area(brtSlider, 12);
   lv_obj_add_event_cb(brtSlider, onBrightness, LV_EVENT_VALUE_CHANGED, nullptr);
   lv_obj_add_event_cb(brtSlider, onBrightness, LV_EVENT_RELEASED, nullptr);
-  brtLabel = label(row2, "--%", &lv_font_montserrat_14, kText);
-  lv_obj_set_width(brtLabel, 40);
+  brtLabel = label(foot, "--%", &lv_font_montserrat_14, kText);
+  lv_obj_set_width(brtLabel, 38);
   lv_obj_set_style_text_align(brtLabel, LV_TEXT_ALIGN_RIGHT, 0);
 }
 

@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 
+#include "audio.h"
 #include "board_es3c28p.h"
 #include "display.h"
 #include "log.h"
@@ -23,9 +24,8 @@ static MapClient mapClient;
 void setup() {
   Serial.begin(115200);
 
-  pinMode(AUDIO_EN, OUTPUT);
-  digitalWrite(AUDIO_EN, HIGH);  // keep the amp off
   neopixelWrite(RGB_LED, 0, 0, 0);
+  audio_begin();  // before lcd.init(): it borrows the touch I2C pins
 
   lcd.init();
   lcd.setRotation(3);  // landscape, USB-C on the right

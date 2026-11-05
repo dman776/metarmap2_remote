@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 
+#include "audio.h"
 #include "log.h"
 
 static LGFX* g_lcd = nullptr;
@@ -19,14 +20,16 @@ static void flush(lv_display_t* disp, const lv_area_t* area, uint8_t* px) {
 }
 
 static void readTouch(lv_indev_t*, lv_indev_data_t* data) {
+  static bool wasPressed = false;
   int32_t x, y;
-  if (g_lcd->getTouch(&x, &y)) {
+  bool pressed = g_lcd->getTouch(&x, &y);
+  if (pressed) {
     data->point.x = x;
     data->point.y = y;
-    data->state = LV_INDEV_STATE_PRESSED;
-  } else {
-    data->state = LV_INDEV_STATE_RELEASED;
+    if (!wasPressed) audio_click();  // a tick as the finger lands
   }
+  data->state = pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+  wasPressed = pressed;
 }
 
 static void logPrint(lv_log_level_t, const char* buf) { LOGF("%s", buf); }
