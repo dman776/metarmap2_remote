@@ -458,7 +458,7 @@ void buildBar(lv_obj_t* scr) {
   lv_obj_set_flex_align(bar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
   lv_obj_t* tabs = box(bar, LV_FLEX_FLOW_ROW);
-  lv_obj_set_size(tabs, 196, 30);
+  lv_obj_set_size(tabs, 180, 30);  // leaves 120 px: star 12 + 5 + dot 7 + 5 + address 88 = 117
   lv_obj_set_style_bg_color(tabs, hex(kSurface), 0);
   lv_obj_set_style_bg_opa(tabs, LV_OPA_COVER, 0);
   lv_obj_set_style_border_width(tabs, 1, 0);
@@ -490,7 +490,7 @@ void buildBar(lv_obj_t* scr) {
   hostDot = dot(host, 7, kNone);
   hostLabel = label(host, "connecting", &lv_font_montserrat_12, kMuted);
   lv_label_set_long_mode(hostLabel, LV_LABEL_LONG_DOT);
-  lv_obj_set_width(hostLabel, 92);
+  lv_obj_set_width(hostLabel, 88);
   lv_obj_set_style_text_align(hostLabel, LV_TEXT_ALIGN_RIGHT, 0);
 }
 
