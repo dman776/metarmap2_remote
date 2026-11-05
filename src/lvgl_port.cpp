@@ -19,17 +19,27 @@ static void flush(lv_display_t* disp, const lv_area_t* area, uint8_t* px) {
   lv_display_flush_ready(disp);
 }
 
+// The FT6336 sometimes misses a finger for a reading in the middle of a
+// touch. Count it as lifted only after it has been gone this long, so one
+// touch is one press (one tick, one click) for LVGL.
+static constexpr uint32_t kReleaseMs = 60;
+
 static void readTouch(lv_indev_t*, lv_indev_data_t* data) {
-  static bool wasPressed = false;
+  static bool down = false;
+  static uint32_t lastSeen = 0;
+  static lv_point_t last = {0, 0};
   int32_t x, y;
-  bool pressed = g_lcd->getTouch(&x, &y);
-  if (pressed) {
-    data->point.x = x;
-    data->point.y = y;
-    if (!wasPressed) audio_click();  // a tick as the finger lands
+  if (g_lcd->getTouch(&x, &y)) {
+    if (!down) audio_click();  // a tick as the finger lands
+    down = true;
+    lastSeen = millis();
+    last.x = x;
+    last.y = y;
+  } else if (down && millis() - lastSeen >= kReleaseMs) {
+    down = false;
   }
-  data->state = pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
-  wasPressed = pressed;
+  data->point = last;
+  data->state = down ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
 }
 
 static void logPrint(lv_log_level_t, const char* buf) { LOGF("%s", buf); }
