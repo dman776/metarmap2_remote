@@ -5,9 +5,9 @@ METARMap2 installation from another device. It connects to the map's built-in
 HTTP API, so the Raspberry Pi can continue to fetch weather data and run the
 LEDs and optional OLED display locally.
 
-> **Project status:** This repository currently contains a project concept, not
-> a working application. The features below describe the intended direction;
-> they are not yet implemented.
+> **Project status:** Firmware is set up for the ES3C28P touchscreen (see
+> [Hardware](#hardware)) and can reach a map. The features below describe the
+> intended direction; they are not yet implemented.
 
 ## What it could do
 
@@ -63,8 +63,40 @@ for the METARMap2 web UI, a weather-data provider, or the
 purpose is to make the map's essential status and controls convenient from a
 separate device.
 
+## Hardware
+
+The remote runs on an LCDwiki **ES3C28P**
+([wiki](https://www.lcdwiki.com/2.8inch_ESP32-S3_Display)):
+
+- ESP32-S3 (N16R8): 16 MB flash, 8 MB octal PSRAM, 2.4 GHz Wi-Fi only
+- 2.8" ILI9341V 240×320 SPI LCD with PWM backlight
+- FT6336G capacitive touch (I2C)
+- RGB LED, microSD, I2S speaker/mic, Li-Po charger with battery sense
+
+The full pin map is in [include/board_es3c28p.h](include/board_es3c28p.h).
+
 ## Development
 
-There is no application code or installation process in this repository yet.
-Once implementation begins, this section should document the chosen runtime,
-setup instructions, configuration, and tests.
+The firmware is a [PlatformIO](https://platformio.org/) project using the
+Arduino framework and [LovyanGFX](https://github.com/lovyan03/LovyanGFX) for
+the display and touch.
+
+1. Copy `include/secrets.example.h` to `include/secrets.h` (git-ignored) and
+   set your Wi-Fi network and the map's host and port.
+2. Connect the board's USB-C port. It enumerates as the S3's native
+   USB-Serial/JTAG (`/dev/cu.usbmodem*` on macOS), so no driver is needed.
+3. Build, flash and watch the console:
+
+   ```sh
+   pio run
+   pio run -t upload
+   pio device monitor
+   ```
+
+If an upload can't find the board, hold **BOOT**, tap **RESET**, release
+**BOOT**, and upload again.
+
+The current firmware is a bring-up check: it draws colour bars, reports flash
+and PSRAM, joins Wi-Fi, requests the map's `/api/status`, and plots touches.
+If it can't see the configured network, it lists the networks it can see on
+the serial console.
