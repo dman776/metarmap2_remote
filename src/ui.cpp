@@ -1,10 +1,13 @@
 #include "ui.h"
 
 #include <WiFi.h>
+#include <esp_wifi.h>
 #include <lvgl.h>
 
 #include <algorithm>
+#include <string>
 
+#include "legend.h"
 #include "map_client.h"
 
 extern "C" const lv_image_dsc_t logo;  // logo.c, from assets/logo.svg
@@ -34,10 +37,11 @@ constexpr uint32_t kNone = 0x5b6b7e;
 constexpr int kW = 320, kH = 240;
 constexpr int kBarH = 34;
 constexpr int kPad = 6;
-constexpr int kCols = 4;  // Locator tiles per row
-constexpr uint32_t kHoldMs = 3000;
-constexpr uint32_t kSplashHoldMs = 2000;  // the splash stays this long after connecting
-constexpr const char* kRepo = "github.com/dman776/metarmap2_remote";  // a touched control keeps its value while the map catches up
+constexpr int kCols = 4;                    // Locator tiles per row
+constexpr uint32_t kHoldMs = 3000;          // a touched control keeps its value while the map catches up
+constexpr uint32_t kSplashHoldMs = 2000;    // the splash stays this long after connecting
+constexpr uint32_t kWifiTimeoutMs = 15000;  // then the splash names the network it can't join
+constexpr const char* kRepo = "github.com/dman776/metarmap2_remote";
 
 MapClient* client = nullptr;
 MapStatus status;
@@ -61,12 +65,12 @@ struct Tile {
   lv_obj_t* dot;
   lv_obj_t* label;
   int pixel;
-  String category;
+  std::string category;
 };
 std::vector<Tile> tiles;
-String tileKey;  // the station codes and pixels the tiles were built for
+std::string tileKey;  // the station codes and pixels the tiles were built for
 
-int shownIndex = -1;          // the visualizer on screen
+int shownIndex = -1;           // the visualizer on screen
 std::vector<bool> legendUsed;  // the legend entries on screen
 uint32_t brtTouched = 0, rotateTouched = 0;
 bool rotateRunning = false;
@@ -76,7 +80,7 @@ double lastLocateAt = NAN;
 
 lv_color_t hex(uint32_t c) { return lv_color_hex(c); }
 
-uint32_t categoryColor(const String& cat) {
+uint32_t categoryColor(const std::string& cat) {
   if (cat == "VFR") return kVfr;
   if (cat == "MVFR") return kMvfr;
   if (cat == "IFR") return kIfr;
@@ -172,96 +176,7 @@ lv_obj_t* dot(lv_obj_t* parent, int size, uint32_t color) {
   return d;
 }
 
-// ---- which legend entries the map is showing --------------------------------------------------------------
-//
-// The map doesn't say which legend entry each LED is showing, so match each
-// LED's look from /api/live against the legend: effect and color, a color
-// along a gradient entry, the lightning flag for the flash entry.
-
-constexpr float kNearGradient = 40;  // RGB distance that counts as on a gradient
-
-float rgbDist2(float r, float g, float b, uint32_t c) {
-  float dr = r - (c >> 16 & 0xff), dg = g - (c >> 8 & 0xff), db = b - (c & 0xff);
-  return dr * dr + dg * dg + db * db;
-}
-
-// The squared RGB distance from c to the gradient's nearest point.
-float gradientDist2(uint32_t c, const std::vector<uint32_t>& stops) {
-  float best = INFINITY;
-  float cr = c >> 16 & 0xff, cg = c >> 8 & 0xff, cb = c & 0xff;
-  for (size_t i = 0; i + 1 < stops.size(); i++) {
-    uint32_t a = stops[i], b = stops[i + 1];
-    float ar = a >> 16 & 0xff, ag = a >> 8 & 0xff, ab = a & 0xff;
-    float vr = (b >> 16 & 0xff) - ar, vg = (b >> 8 & 0xff) - ag, vb = (b & 0xff) - ab;
-    float len2 = vr * vr + vg * vg + vb * vb;
-    float t = len2 > 0 ? ((cr - ar) * vr + (cg - ag) * vg + (cb - ab) * vb) / len2 : 0;
-    t = std::max(0.0f, std::min(1.0f, t));
-    best = std::min(best, rgbDist2(ar + t * vr, ag + t * vg, ab + t * vb, c));
-  }
-  return best;
-}
-
-bool isGradient(const LegendItem& item) {
-  return item.colors.size() > 1 && item.effect != "flash" && item.effect != "alternate";
-}
-
-// The legend's name for what an LED is doing: a blink between two colors is
-// the legend's "alternate".
-String legendEffect(const Station& s) {
-  if (s.colors.empty() || s.effect == "off") return "off";
-  if (s.effect == "blink" && s.colors.size() > 1) return "alternate";
-  return s.effect;
-}
-
-void markStation(const Station& s, std::vector<bool>& used) {
-  const std::vector<LegendItem>& legend = status.legend;
-  if (s.lightning) {  // its own color is hidden under the flashes
-    for (size_t i = 0; i < legend.size(); i++) {
-      if (legend[i].effect == "flash") used[i] = true;
-    }
-    return;
-  }
-  String effect = legendEffect(s);
-  uint32_t color = s.colors.empty() ? 0 : s.colors[0];
-  int nearest = -1;
-  float nearestDist = INFINITY;
-  bool hit = false;
-  for (size_t i = 0; i < legend.size(); i++) {
-    const LegendItem& item = legend[i];
-    if (item.effect != effect) continue;
-    if (effect == "off") {
-      used[i] = hit = true;
-    } else if (isGradient(item)) {
-      float d = gradientDist2(color, item.colors);
-      if (d <= kNearGradient * kNearGradient) used[i] = hit = true;
-      if (d < nearestDist) nearestDist = d, nearest = i;
-    } else if (!item.colors.empty()) {
-      if (item.colors[0] == color) used[i] = hit = true;
-      float d = rgbDist2(item.colors[0] >> 16 & 0xff, item.colors[0] >> 8 & 0xff, item.colors[0] & 0xff, color);
-      if (d < nearestDist) nearestDist = d, nearest = i;
-    }
-  }
-  // No exact match (e.g. an estimated category breathes in its category's
-  // color, but the legend shows it in green): the nearest entry with that
-  // effect.
-  if (!hit && nearest >= 0) used[nearest] = true;
-}
-
-// Which legend entries are on the map now. None until the legend, the LEDs
-// and the chip on screen are all for the same visualizer (after a change, the
-// legend comes with the next /api/status), so it never shows unfiltered. All
-// of them while one effect drives the whole strip (Rainbow, Chase), or when
-// nothing matched.
-std::vector<bool> legendInUse() {
-  size_t n = status.legend.size();
-  bool ready = live.valid && live.activeIndex == status.activeIndex && status.activeIndex == shownIndex;
-  if (!ready) return std::vector<bool>(n, false);
-  if (live.strip) return std::vector<bool>(n, true);
-  std::vector<bool> used(n, false);
-  for (const Station& s : live.stations) markStation(s, used);
-  if (std::find(used.begin(), used.end(), true) == used.end()) return std::vector<bool>(n, true);
-  return used;
-}
+std::vector<bool> legendInUse() { return legend::inUse(status, live, shownIndex); }
 
 // ---- the visualizer ----------------------------------------------------------------------------------------
 
@@ -280,7 +195,7 @@ void showLegend() {
 
     // The LED: a dot in its color, a bar for a gradient, a ring for off.
     const auto& c = item.colors;
-    bool gradient = c.size() > 1 && item.effect != "flash" && item.effect != "alternate";
+    bool gradient = legend::isGradient(item);
     lv_obj_t* led = dot(row, 10, c.empty() ? kBg : c[0]);
     if (c.empty() || item.effect == "off") {
       lv_obj_set_style_bg_opa(led, LV_OPA_TRANSP, 0);
@@ -413,7 +328,7 @@ void showBrightness() {
 
 void onTile(lv_event_t* e) {
   int pixel = (int)(intptr_t)lv_event_get_user_data(e);
-  client->command("/locate/" + String(pixel));
+  client->command("/locate/" + std::to_string(pixel));
 }
 
 void unflash(lv_timer_t* t) {
@@ -457,14 +372,14 @@ void buildTiles() {
 }
 
 void showStations() {
-  String key;
-  for (const Station& s : live.stations) key += s.code + ":" + s.pixel + (s.isVirtual ? "v," : ",");
+  std::string key;
+  for (const Station& s : live.stations) key += s.code + ":" + std::to_string(s.pixel) + (s.isVirtual ? "v," : ",");
   if (key != tileKey) {
     tileKey = key;
     buildTiles();
   }
   for (size_t i = 0; i < tiles.size() && i < live.stations.size(); i++) {
-    const String& cat = live.stations[i].category;
+    const std::string& cat = live.stations[i].category;
     if (tiles[i].category != cat) {
       tiles[i].category = cat;
       lv_obj_set_style_bg_color(tiles[i].dot, hex(categoryColor(cat)), 0);
@@ -573,9 +488,7 @@ lv_obj_t* panel(lv_obj_t* scr) {
   return p;
 }
 
-lv_obj_t* footLabel(lv_obj_t* parent, const char* text) {
-  return label(parent, text, &lv_font_montserrat_12, kMuted);
-}
+lv_obj_t* footLabel(lv_obj_t* parent, const char* text) { return label(parent, text, &lv_font_montserrat_12, kMuted); }
 
 lv_obj_t* toggle(lv_obj_t* parent, lv_event_cb_t cb) {
   lv_obj_t* sw = lv_switch_create(parent);
@@ -678,14 +591,24 @@ void buildLocatorPanel(lv_obj_t* p) {
 
 lv_obj_t* splash = nullptr;
 lv_obj_t* remoteScreen = nullptr;
-lv_obj_t *wifiState, *mapState;
+lv_obj_t *wifiStep, *wifiState, *mapState;
+uint32_t splashStart = 0;
 uint32_t connectedAt = 0;
 
-lv_obj_t* splashStep(lv_obj_t* parent, const String& text) {
+// The network the remote is set to join (secrets.h), from the Wi-Fi driver.
+std::string wifiName() {
+  wifi_config_t cfg = {};
+  if (esp_wifi_get_config(WIFI_IF_STA, &cfg) != ESP_OK) return "";
+  return std::string((const char*)cfg.sta.ssid, strnlen((const char*)cfg.sta.ssid, sizeof(cfg.sta.ssid)));
+}
+
+// A "Connecting to ..." line; returns its state label (OK, retrying).
+lv_obj_t* splashStep(lv_obj_t* parent, const char* text, lv_obj_t** textLabel = nullptr) {
   lv_obj_t* row = box(parent, LV_FLEX_FLOW_ROW);
   lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
   lv_obj_set_style_pad_column(row, 6, 0);
-  label(row, text.c_str(), &lv_font_montserrat_14, kText2);
+  lv_obj_t* l = label(row, text, &lv_font_montserrat_14, kText2);
+  if (textLabel) *textLabel = l;
   return label(row, "", &lv_font_montserrat_14, kAccent);
 }
 
@@ -709,16 +632,29 @@ void showSplash(lv_obj_t* remote) {
   label(splash, "MetarMap", &lv_font_montserrat_28, kText);
   lv_obj_t* repo = label(splash, kRepo, &lv_font_montserrat_12, kMuted);
   lv_obj_set_style_margin_bottom(repo, 10, 0);
-  wifiState = splashStep(splash, "Connecting to Wi-Fi...");
+  wifiState = splashStep(splash, "Connecting to Wi-Fi...", &wifiStep);
   mapState = splashStep(splash, "Connecting to the map...");
 
   lv_screen_load(splash);
+  splashStart = millis();
 }
 
 void tickSplash() {
   if (!splash) return;
-  bool wifi = WiFi.status() == WL_CONNECTED;
-  setStep(wifiState, wifi ? "OK" : "", kVfr);
+  wl_status_t ws = WiFi.status();
+  bool wifi = ws == WL_CONNECTED;
+  if (wifi) {
+    lv_label_set_text(wifiStep, "Connecting to Wi-Fi...");
+    setStep(wifiState, "OK", kVfr);
+  } else if (millis() - splashStart >= kWifiTimeoutMs) {
+    // Taking too long: say which network, and whether it's even in range (the
+    // S3 only sees 2.4 GHz networks). It keeps trying.
+    std::string text = (ws == WL_NO_SSID_AVAIL ? "Can't find " : "Can't join ") + wifiName();
+    if (text != lv_label_get_text(wifiStep)) lv_label_set_text(wifiStep, text.c_str());
+    setStep(wifiState, "retrying", kAccent);
+  } else {
+    setStep(wifiState, "", kVfr);
+  }
   if (conn.online) {
     setStep(mapState, "OK", kVfr);
   } else if (wifi && conn.wifi && conn.httpCode != 0) {

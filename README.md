@@ -101,9 +101,11 @@ If an upload can't find the board, hold **BOOT**, tap **RESET**, release
 ### Screens
 
 At startup a splash screen shows the MetarMap logo, name and this repo, with
-"Connecting to Wi-Fi..." and "Connecting to the map..." each turning OK (or
-the map's showing "retrying" while it doesn't answer). Two seconds after both
-are OK, the remote fades in.
+"Connecting to Wi-Fi..." and "Connecting to the map..." each turning OK. If
+the Wi-Fi hasn't joined after 15 s, the line names the network ("Can't find
+<network>" when it isn't in range or is 5 GHz only, else "Can't join") and keeps
+retrying; the map's line says "retrying" while the map doesn't answer. Two
+seconds after both are OK, the remote fades in.
 
 The remote is a small version of the map's `/remote` page, in its colors:
 
@@ -137,12 +139,33 @@ catches up. Source layout:
 | `src/main.cpp` | Setup, Wi-Fi, the LVGL loop |
 | `src/ui.cpp` | The screens |
 | `src/map_client.cpp` | HTTP polling and commands, on its own task |
+| `src/map_parse.cpp` | The API's JSON into `MapLive` and `MapStatus` |
+| `src/legend.cpp` | Which legend entries the map is showing |
 | `src/map_state.h` | The parsed API state |
 | `src/lvgl_port.cpp` | LVGL display flush, touch input, screenshots |
 | `src/audio.cpp` | ES8311 codec and I2S setup, the touch tick |
 | `src/logo.c` | The logo, generated from `assets/logo.svg` by `tools/make_logo.py` (needs `rsvg-convert`) |
 | `src/display.h` | LovyanGFX panel and touch config |
 | `include/lv_conf.h` | LVGL settings and fonts |
+
+### Tests and lint
+
+The code that doesn't need the board (parsing the map's JSON, matching the
+legend) is plain C++ with unit tests that run on your computer, using
+PlatformIO's Unity framework. The JSON fixtures in `test/test_parse` are real
+(trimmed) answers from a map.
+
+```sh
+pio test -e native         # unit tests
+pio check                  # static analysis (cppcheck)
+pre-commit install         # once: clang-format and ruff on every commit
+pre-commit run -a          # or run them on everything now
+```
+
+C++ is formatted by clang-format (Google style, 120 columns: `.clang-format`)
+and the Python tools by ruff (`ruff.toml`). GitHub Actions runs all of these
+and builds the firmware on every push and pull request
+(`.github/workflows/ci.yml`).
 
 ### Screenshots
 

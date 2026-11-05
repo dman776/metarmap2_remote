@@ -4,9 +4,8 @@
 #include <WiFi.h>
 #include <esp_heap_caps.h>
 
-#include <algorithm>
-
 #include "log.h"
+#include "map_parse.h"
 
 namespace {
 
@@ -18,18 +17,9 @@ constexpr uint32_t kTimeoutMs = 5000;
 struct SpiRamAllocator : ArduinoJson::Allocator {
   void* allocate(size_t n) override { return heap_caps_malloc(n, MALLOC_CAP_SPIRAM); }
   void deallocate(void* p) override { heap_caps_free(p); }
-  void* reallocate(void* p, size_t n) override {
-    return heap_caps_realloc(p, n, MALLOC_CAP_SPIRAM);
-  }
+  void* reallocate(void* p, size_t n) override { return heap_caps_realloc(p, n, MALLOC_CAP_SPIRAM); }
 };
 SpiRamAllocator spiram;
-
-uint32_t parseColor(const char* hex) {
-  if (!hex || hex[0] != '#') return 0;
-  return strtoul(hex + 1, nullptr, 16);
-}
-
-double numberOrNan(JsonVariantConst v) { return v.isNull() ? NAN : v.as<double>(); }
 
 }  // namespace
 
@@ -42,7 +32,7 @@ void MapClient::begin(const char* host, uint16_t port) {
   xTaskCreatePinnedToCore(taskEntry, "map_client", 12 * 1024, this, 1, nullptr, 0);
 }
 
-void MapClient::command(const String& path) {
+void MapClient::command(const std::string& path) {
   Cmd cmd{};
   strlcpy(cmd.path, path.c_str(), sizeof(cmd.path));
   if (xQueueSend(queue_, &cmd, 0) != pdTRUE) LOGF("map: command queue full, dropped %s\n", cmd.path);
@@ -131,8 +121,7 @@ int MapClient::get(const char* path, uint32_t timeoutMs, JsonDocument* doc, Json
   if (!http.begin(tcp, host_, port_, path)) return HTTPC_ERROR_CONNECTION_REFUSED;
   int code = http.GET();
   if (code == HTTP_CODE_OK && doc) {
-    DeserializationError err =
-        deserializeJson(*doc, http.getStream(), DeserializationOption::Filter(*filter));
+    DeserializationError err = deserializeJson(*doc, http.getStream(), DeserializationOption::Filter(*filter));
     if (err) {
       LOGF("map: %s: bad JSON (%s)\n", path, err.c_str());
       code = -100;
@@ -144,25 +133,7 @@ int MapClient::get(const char* path, uint32_t timeoutMs, JsonDocument* doc, Json
 
 void MapClient::pollLive() {
   static JsonDocument filter(&spiram);
-  if (filter.isNull()) {
-    filter["now"] = true;
-    filter["brightness"] = true;
-    JsonObject v = filter["visualizer"].to<JsonObject>();
-    v["active"] = true;
-    v["name"] = true;
-    v["exclusive"] = true;
-    v["autoRotate"] = true;
-    JsonObject led = filter["leds"].add<JsonObject>();
-    led["code"] = true;
-    led["pixel"] = true;
-    led["virtual"] = true;
-    led["flightCategory"] = true;
-    led["lightning"] = true;
-    led["look"]["effect"] = true;
-    led["look"]["colors"] = true;
-    filter["locate"] = true;
-    filter["strip"] = true;
-  }
+  if (filter.isNull()) liveFilter(filter);
 
   JsonDocument doc(&spiram);
   int code = get("/api/live", kTimeoutMs, &doc, &filter);
@@ -171,37 +142,8 @@ void MapClient::pollLive() {
     return;
   }
 
-  MapLive live;
-  live.valid = true;
-  live.now = doc["now"] | 0.0;
+  MapLive live = parseLive(doc.as<JsonVariantConst>());
   live.rxMillis = millis();
-  live.brightness = doc["brightness"] | 0.0f;
-  JsonObjectConst v = doc["visualizer"];
-  live.activeIndex = v["active"] | -1;
-  live.activeName = v["name"] | "";
-  live.exclusive = v["exclusive"] | false;
-  live.autoRotate = v["autoRotate"]["enabled"] | false;
-  live.autoSeconds = v["autoRotate"]["seconds"] | 0;
-  live.autoNext = numberOrNan(v["autoRotate"]["next"]);
-  live.strip = !doc["strip"].isNull();
-  for (JsonObjectConst led : doc["leds"].as<JsonArrayConst>()) {
-    Station s;
-    s.code = led["code"] | "";
-    s.pixel = led["pixel"] | -1;
-    s.isVirtual = led["virtual"] | false;
-    s.category = led["flightCategory"] | "";
-    s.lightning = led["lightning"] | false;
-    s.effect = led["look"]["effect"] | "off";
-    for (JsonVariantConst c : led["look"]["colors"].as<JsonArrayConst>()) {
-      uint32_t color = parseColor(c);  // a cycle repeats its colors
-      if (std::find(s.colors.begin(), s.colors.end(), color) == s.colors.end()) s.colors.push_back(color);
-    }
-    live.stations.push_back(s);
-  }
-  if (!doc["locate"].isNull()) {
-    live.locatePixel = doc["locate"]["pixel"] | -1;
-    live.locateAt = numberOrNan(doc["locate"]["at"]);
-  }
 
   xSemaphoreTake(mutex_, portMAX_DELAY);
   live_ = std::move(live);
@@ -212,21 +154,7 @@ void MapClient::pollLive() {
 
 void MapClient::pollStatus() {
   static JsonDocument filter(&spiram);
-  if (filter.isNull()) {
-    filter["version"] = true;
-    filter["ip"] = true;
-    JsonObject v = filter["visualizer"].to<JsonObject>();
-    v["active"] = true;
-    JsonObject item = v["legend"].add<JsonObject>();
-    item["label"] = true;
-    item["detail"] = true;
-    item["effect"] = true;
-    item["colors"] = true;
-    JsonObject vis = filter["visualizers"].add<JsonObject>();
-    vis["id"] = true;
-    vis["name"] = true;
-    vis["exclusive"] = true;
-  }
+  if (filter.isNull()) statusFilter(filter);
 
   JsonDocument doc(&spiram);
   int code = get("/api/status", kTimeoutMs, &doc, &filter);
@@ -235,26 +163,7 @@ void MapClient::pollStatus() {
     return;
   }
 
-  MapStatus status;
-  status.valid = true;
-  status.version = doc["version"] | "";
-  status.ip = doc["ip"] | "";
-  status.activeIndex = doc["visualizer"]["active"] | -1;
-  for (JsonObjectConst item : doc["visualizer"]["legend"].as<JsonArrayConst>()) {
-    LegendItem li;
-    li.label = item["label"] | "";
-    li.detail = item["detail"] | "";
-    li.effect = item["effect"] | "solid";
-    for (JsonVariantConst c : item["colors"].as<JsonArrayConst>()) li.colors.push_back(parseColor(c));
-    status.legend.push_back(li);
-  }
-  for (JsonObjectConst vis : doc["visualizers"].as<JsonArrayConst>()) {
-    Visualizer v;
-    v.id = vis["id"] | "";
-    v.name = vis["name"] | "";
-    v.exclusive = vis["exclusive"] | false;
-    status.visualizers.push_back(v);
-  }
+  MapStatus status = parseStatus(doc.as<JsonVariantConst>());
 
   xSemaphoreTake(mutex_, portMAX_DELAY);
   status_ = std::move(status);

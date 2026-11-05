@@ -5,7 +5,7 @@
 
 extern volatile bool g_serialBusy;
 
-#define LOGF(...)                                \
-  do {                                           \
+#define LOGF(...)                                  \
+  do {                                             \
     if (!g_serialBusy) Serial.printf(__VA_ARGS__); \
   } while (0)

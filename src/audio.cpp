@@ -4,7 +4,9 @@
 #include <Wire.h>
 #include <driver/i2s.h>
 
+#include <algorithm>
 #include <cmath>
+#include <iterator>
 
 #include "board_es3c28p.h"
 #include "log.h"
@@ -13,7 +15,7 @@ namespace {
 
 constexpr uint8_t kCodecAddr = 0x18;  // ES8311 with CE low
 constexpr i2s_port_t kPort = I2S_NUM_0;
-constexpr int kRate = 16000;          // MCLK = 256 x 16 kHz = 4.096 MHz
+constexpr int kRate = 16000;  // MCLK = 256 x 16 kHz = 4.096 MHz
 
 // The tick: a 2.4 kHz tone dying away over a few ms, stereo 16-bit.
 constexpr int kClickFrames = kRate * 25 / 1000;
@@ -35,10 +37,12 @@ bool codecWrite(uint8_t reg, uint8_t value) {
 // The sequence and clock values follow Espressif's es8311 driver (esp-adf,
 // esp-bsp) for 4.096 MHz MCLK at 16 kHz.
 bool codecInit() {
-  struct {
+  struct Write {
     uint8_t reg, value;
-  } const seq[] = {
-      {0x00, 0x1F},  // reset
+  };
+  // One write per line, so each comment stays with its register.
+  // clang-format off
+  static const Write seq[] = {
       {0x45, 0x00},
       {0x01, 0x30},  // clocks from the MCLK pin
       {0x02, 0x00},  // pre-divide 1, multiply 1
@@ -69,14 +73,13 @@ bool codecInit() {
       {0x31, 0x00},  // unmute
       {0x32, 0xBF},  // DAC volume 0 dB
   };
-  for (const auto& w : seq) {
-    if (!codecWrite(w.reg, w.value)) return false;
-    if (w.reg == 0x00 && w.value == 0x1F) {
-      delay(20);
-      codecWrite(0x00, 0x00);
-    }
-  }
-  return true;
+  // clang-format on
+
+  // Reset, then the setup.
+  if (!codecWrite(0x00, 0x1F)) return false;
+  delay(20);
+  if (!codecWrite(0x00, 0x00)) return false;
+  return std::all_of(std::begin(seq), std::end(seq), [](const Write& w) { return codecWrite(w.reg, w.value); });
 }
 
 bool startI2s() {

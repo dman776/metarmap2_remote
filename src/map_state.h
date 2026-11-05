@@ -1,44 +1,47 @@
 // What the remote knows about the map, from its JSON API. The same split
 // as the map's /remote page: /api/live polled often, /api/status for the
 // visualizer list and the active visualizer's legend.
+//
+// Plain C++ (no Arduino types), so the parsing and legend code that uses it
+// can be unit tested on the host.
 #pragma once
 
-#include <Arduino.h>
-
 #include <cmath>
+#include <cstdint>
+#include <string>
 #include <vector>
 
 struct Visualizer {
-  String id;
-  String name;
+  std::string id;
+  std::string name;
   bool exclusive = false;
 };
 
 struct LegendItem {
-  String label;
-  String detail;
-  String effect;                 // solid, blink, pulse, flash, chase, off...
+  std::string label;
+  std::string detail;
+  std::string effect;            // solid, blink, pulse, flash, alternate, chase, off
   std::vector<uint32_t> colors;  // 0xRRGGBB; empty for "off"
 };
 
 // GET /api/status
 struct MapStatus {
   bool valid = false;
-  String version;
-  String ip;
+  std::string version;
+  std::string ip;
   int activeIndex = -1;  // the visualizer the legend is for
   std::vector<LegendItem> legend;
   std::vector<Visualizer> visualizers;
 };
 
 struct Station {
-  String code;
+  std::string code;
   int pixel = -1;
   bool isVirtual = false;
-  String category;  // VFR, MVFR, IFR, LIFR, or "" when unknown
+  std::string category;  // VFR, MVFR, IFR, LIFR, or "" when unknown
   // What the LED is showing now: its effect (solid, off, blink, pulse,
   // cycle) and colors (0xRRGGBB, each once).
-  String effect;
+  std::string effect;
   std::vector<uint32_t> colors;
   bool lightning = false;
 };
@@ -50,12 +53,12 @@ struct MapLive {
   uint32_t rxMillis = 0;  // our millis() when the answer arrived
   float brightness = 0;
   int activeIndex = -1;
-  String activeName;
+  std::string activeName;
   bool exclusive = false;
   bool autoRotate = false;
   int autoSeconds = 0;
-  double autoNext = NAN;  // map clock; NAN while auto-rotate is off
-  bool strip = false;     // one effect (rainbow, chase) drives the whole strip
+  double autoNext = NAN;          // map clock; NAN while auto-rotate is off
+  bool strip = false;             // one effect (rainbow, chase) drives the whole strip
   std::vector<Station> stations;  // in LED order
   int locatePixel = -1;
   double locateAt = NAN;

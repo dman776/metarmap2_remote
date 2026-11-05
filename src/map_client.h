@@ -12,6 +12,8 @@
 #include <freertos/queue.h>
 #include <freertos/semphr.h>
 
+#include <string>
+
 #include "map_state.h"
 
 class MapClient {
@@ -20,7 +22,7 @@ class MapClient {
 
   // A control endpoint, e.g. "/visualizer/next"; /api/live is polled again
   // right after it.
-  void command(const String& path);
+  void command(const std::string& path);
 
   bool getStatus(MapStatus& out, uint32_t& rev);
   bool getLive(MapLive& out, uint32_t& rev);
