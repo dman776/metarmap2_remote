@@ -9,6 +9,7 @@
 
 #include "firmware_version.h"
 #include "legend.h"
+#include "lvgl_port.h"
 #include "map_client.h"
 
 extern "C" const lv_image_dsc_t logo;  // logo.c, from assets/logo.svg
@@ -42,6 +43,8 @@ constexpr int kCols = 4;                    // Locator tiles per row
 constexpr uint32_t kHoldMs = 3000;          // a touched control keeps its value while the map catches up
 constexpr uint32_t kSplashHoldMs = 2000;    // the splash stays this long after connecting
 constexpr uint32_t kWifiTimeoutMs = 15000;  // then the splash names the network it can't join
+constexpr uint32_t kTouchHoldMs = 5000;     // touching this long shows the splash again
+constexpr uint32_t kSplashShowMs = 5000;    // for this long
 constexpr const char* kRepo = "github.com/dman776/metarmap2";
 
 MapClient* client = nullptr;
@@ -587,10 +590,12 @@ void buildLocatorPanel(lv_obj_t* p) {
 
 // ---- the splash screen -------------------------------------------------------------------------------------
 //
-// The logo, the name and the repo, with the Wi-Fi and the map connecting;
-// once both are OK it stays a moment, then the remote fades in.
+// The logo, the name, the repo and the version, with the Wi-Fi and the map
+// connecting; once both are OK it stays a moment, then the remote fades in.
+// A 5 s touch shows it again for 5 s (the version, the connection).
 
 lv_obj_t* splash = nullptr;
+bool splashOnDemand = false;  // shown by a long touch, not at startup
 lv_obj_t* remoteScreen = nullptr;
 lv_obj_t *wifiStep, *wifiState, *mapState;
 uint32_t splashStart = 0;
@@ -618,8 +623,9 @@ void setStep(lv_obj_t* state, const char* text, uint32_t color) {
   lv_obj_set_style_text_color(state, hex(color), 0);
 }
 
-void showSplash(lv_obj_t* remote) {
+void showSplash(lv_obj_t* remote, bool onDemand) {
   remoteScreen = remote;
+  splashOnDemand = onDemand;
   splash = lv_obj_create(nullptr);
   lv_obj_remove_style_all(splash);
   lv_obj_set_style_bg_color(splash, hex(kBg), 0);
@@ -638,8 +644,21 @@ void showSplash(lv_obj_t* remote) {
   wifiState = splashStep(splash, "Connecting to Wi-Fi...", &wifiStep);
   mapState = splashStep(splash, "Connecting to the map...");
 
-  lv_screen_load(splash);
+  if (onDemand) {
+    // The touch that's still down began on the remote: forget it, so lifting
+    // the finger doesn't tap whatever it was on.
+    lv_indev_reset(nullptr, nullptr);
+    lv_screen_load_anim(splash, LV_SCR_LOAD_ANIM_FADE_IN, 300, 0, false);
+  } else {
+    lv_screen_load(splash);
+  }
   splashStart = millis();
+  connectedAt = 0;
+}
+
+void hideSplash() {
+  lv_screen_load_anim(remoteScreen, LV_SCR_LOAD_ANIM_FADE_IN, 400, 0, true);  // then deletes the splash
+  splash = nullptr;
 }
 
 void tickSplash() {
@@ -666,14 +685,27 @@ void tickSplash() {
     setStep(mapState, "", kAccent);
   }
 
+  if (splashOnDemand) {
+    if (millis() - splashStart >= kSplashShowMs) hideSplash();
+    return;
+  }
   if (!(wifi && conn.online)) {
     connectedAt = 0;
     return;
   }
   if (!connectedAt) connectedAt = millis() ? millis() : 1;
-  if (millis() - connectedAt >= kSplashHoldMs) {
-    lv_screen_load_anim(remoteScreen, LV_SCR_LOAD_ANIM_FADE_IN, 400, 0, true);  // then deletes the splash
-    splash = nullptr;
+  if (millis() - connectedAt >= kSplashHoldMs) hideSplash();
+}
+
+// A touch held for 5 s shows the splash; once per touch.
+void checkLongTouch() {
+  static bool shown = false;
+  uint32_t held = lvgl_port_touch_held_ms();
+  if (held == 0) {
+    shown = false;
+  } else if (held >= kTouchHoldMs && !shown && !splash) {
+    shown = true;
+    showSplash(remoteScreen, true);
   }
 }
 
@@ -697,13 +729,18 @@ void ui_init(MapClient& c) {
   panels[1] = panel(scr);
   buildLocatorPanel(panels[1]);
   showTab(0);
-  showSplash(scr);
+  showSplash(scr, false);
 }
 
 void ui_show_tab(int tab) { showTab(tab == 1 ? 1 : 0); }
 
+void ui_show_splash() {
+  if (!splash) showSplash(remoteScreen, true);
+}
+
 void ui_tick() {
   if (client->getConnection(conn, connRev)) showConnection();
+  checkLongTouch();
   tickSplash();
 
   if (client->getStatus(status, statusRev)) {

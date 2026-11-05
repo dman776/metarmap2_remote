@@ -24,22 +24,29 @@ static void flush(lv_display_t* disp, const lv_area_t* area, uint8_t* px) {
 // touch is one press (one tick, one click) for LVGL.
 static constexpr uint32_t kReleaseMs = 60;
 
+static bool touchDown = false;
+static uint32_t touchDownAt = 0;
+
+uint32_t lvgl_port_touch_held_ms() { return touchDown ? millis() - touchDownAt : 0; }
+
 static void readTouch(lv_indev_t*, lv_indev_data_t* data) {
-  static bool down = false;
   static uint32_t lastSeen = 0;
   static lv_point_t last = {0, 0};
   int32_t x, y;
   if (g_lcd->getTouch(&x, &y)) {
-    if (!down) audio_click();  // a tick as the finger lands
-    down = true;
+    if (!touchDown) {
+      audio_click();  // a tick as the finger lands
+      touchDownAt = millis();
+    }
+    touchDown = true;
     lastSeen = millis();
     last.x = x;
     last.y = y;
-  } else if (down && millis() - lastSeen >= kReleaseMs) {
-    down = false;
+  } else if (touchDown && millis() - lastSeen >= kReleaseMs) {
+    touchDown = false;
   }
   data->point = last;
-  data->state = down ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+  data->state = touchDown ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
 }
 
 static void logPrint(lv_log_level_t, const char* buf) { LOGF("%s", buf); }

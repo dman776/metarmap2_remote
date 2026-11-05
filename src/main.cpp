@@ -49,7 +49,7 @@ void loop() {
   ui_tick();
 
   // Serial console: "S" sends a screenshot (tools/screenshot.py); "1" and
-  // "2" open the Visualizer and Locator tabs.
+  // "2" open the Visualizer and Locator tabs; "3" shows the splash screen.
   if (Serial.available()) {
     int c = Serial.read();
     if (c == 'S') {
@@ -58,6 +58,8 @@ void loop() {
       g_serialBusy = false;
     } else if (c == '1' || c == '2') {
       ui_show_tab(c - '1');
+    } else if (c == '3') {
+      ui_show_splash();
     }
   }
   delay(5);

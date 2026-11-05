@@ -3,7 +3,7 @@
 
     python3 tools/screenshot.py /dev/cu.usbmodem143201 screen.png [tab]
 
-tab, if given, opens that tab first: 1 Visualizer, 2 Locator.
+tab, if given, opens that tab first: 1 Visualizer, 2 Locator, 3 the splash screen.
 
 Needs pyserial. The firmware answers an "S" on the serial port with
 "SCREENSHOT <w> <h>", the pixels as little-endian RGB565, then "END".
@@ -22,7 +22,7 @@ def read_screen(port, tab=None):
     s = serial.Serial(port, 115200, timeout=5)
     s.reset_input_buffer()
     if tab:
-        s.write(tab.encode())  # "1" Visualizer, "2" Locator
+        s.write(tab.encode())  # "1" Visualizer, "2" Locator, "3" splash
         time.sleep(0.5)
     s.write(b"S")
     deadline = time.time() + 10

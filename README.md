@@ -110,6 +110,9 @@ version, from `git describe` at build time (`tools/version.py`): a release tag
 like `v26.11.05`, commits after it (`v26.11.05+3 abc1234`), or just the commit
 before the first tag, with `modified` for a build with uncommitted changes.
 
+Touch and hold the screen for 5 s to see the splash screen again (the version
+and the connection) for 5 s.
+
 The remote is a small version of the map's `/remote` page, in its colors:
 
 - **Visualizer**: a chip for every visualizer, the active one lit (swipe the
@@ -178,4 +181,5 @@ With the board connected, `tools/screenshot.py` saves the screen as a PNG
 ```sh
 python3 tools/screenshot.py /dev/cu.usbmodem* screen.png      # current tab
 python3 tools/screenshot.py /dev/cu.usbmodem* locator.png 2   # Locator tab
+python3 tools/screenshot.py /dev/cu.usbmodem* splash.png 3    # splash screen
 ```
