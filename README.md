@@ -103,7 +103,8 @@ If an upload can't find the board, hold **BOOT**, tap **RESET**, release
 The remote is a small version of the map's `/remote` page, in its colors:
 
 - **Visualizer**: the active visualizer's name, a chip for every visualizer
-  (swipe the row to find one, tap to switch), its legend, the Auto-rotate
+  (swipe the row to find one, tap to switch), the legend entries the map is
+  showing now (all VFR: just VFR), the Auto-rotate
   switch (with a countdown to the next visualizer) and LED brightness.
 - **Locator**: a tile for every airport with its flight category; tap one to
   pulse its LED. The tile flashes when the map pulses it.

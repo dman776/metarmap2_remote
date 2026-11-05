@@ -36,6 +36,11 @@ struct Station {
   int pixel = -1;
   bool isVirtual = false;
   String category;  // VFR, MVFR, IFR, LIFR, or "" when unknown
+  // What the LED is showing now: its effect (solid, off, blink, pulse,
+  // cycle) and colors (0xRRGGBB, each once).
+  String effect;
+  std::vector<uint32_t> colors;
+  bool lightning = false;
 };
 
 // GET /api/live
@@ -50,6 +55,7 @@ struct MapLive {
   bool autoRotate = false;
   int autoSeconds = 0;
   double autoNext = NAN;  // map clock; NAN while auto-rotate is off
+  bool strip = false;     // one effect (rainbow, chase) drives the whole strip
   std::vector<Station> stations;  // in LED order
   int locatePixel = -1;
   double locateAt = NAN;

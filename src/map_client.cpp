@@ -4,6 +4,8 @@
 #include <WiFi.h>
 #include <esp_heap_caps.h>
 
+#include <algorithm>
+
 #include "log.h"
 
 namespace {
@@ -155,7 +157,11 @@ void MapClient::pollLive() {
     led["pixel"] = true;
     led["virtual"] = true;
     led["flightCategory"] = true;
+    led["lightning"] = true;
+    led["look"]["effect"] = true;
+    led["look"]["colors"] = true;
     filter["locate"] = true;
+    filter["strip"] = true;
   }
 
   JsonDocument doc(&spiram);
@@ -177,12 +183,19 @@ void MapClient::pollLive() {
   live.autoRotate = v["autoRotate"]["enabled"] | false;
   live.autoSeconds = v["autoRotate"]["seconds"] | 0;
   live.autoNext = numberOrNan(v["autoRotate"]["next"]);
+  live.strip = !doc["strip"].isNull();
   for (JsonObjectConst led : doc["leds"].as<JsonArrayConst>()) {
     Station s;
     s.code = led["code"] | "";
     s.pixel = led["pixel"] | -1;
     s.isVirtual = led["virtual"] | false;
     s.category = led["flightCategory"] | "";
+    s.lightning = led["lightning"] | false;
+    s.effect = led["look"]["effect"] | "off";
+    for (JsonVariantConst c : led["look"]["colors"].as<JsonArrayConst>()) {
+      uint32_t color = parseColor(c);  // a cycle repeats its colors
+      if (std::find(s.colors.begin(), s.colors.end(), color) == s.colors.end()) s.colors.push_back(color);
+    }
     live.stations.push_back(s);
   }
   if (!doc["locate"].isNull()) {

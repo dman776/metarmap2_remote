@@ -2,6 +2,8 @@
 
 #include <lvgl.h>
 
+#include <algorithm>
+
 #include "map_client.h"
 
 namespace {
@@ -59,8 +61,8 @@ struct Tile {
 std::vector<Tile> tiles;
 String tileKey;  // the station codes and pixels the tiles were built for
 
-int shownIndex = -1;   // the visualizer on screen
-int legendIndex = -2;  // the visualizer the legend on screen is for
+int shownIndex = -1;          // the visualizer on screen
+std::vector<bool> legendUsed;  // the legend entries on screen
 uint32_t brtTouched = 0, rotateTouched = 0;
 bool rotateRunning = false;
 uint32_t rotateAtMs = 0;  // our millis() when the next visualizer comes
@@ -165,15 +167,105 @@ lv_obj_t* dot(lv_obj_t* parent, int size, uint32_t color) {
   return d;
 }
 
+// ---- which legend entries the map is showing --------------------------------------------------------------
+//
+// The map doesn't say which legend entry each LED is showing, so match each
+// LED's look from /api/live against the legend: effect and color, a color
+// along a gradient entry, the lightning flag for the flash entry.
+
+constexpr float kNearGradient = 40;  // RGB distance that counts as on a gradient
+
+float rgbDist2(float r, float g, float b, uint32_t c) {
+  float dr = r - (c >> 16 & 0xff), dg = g - (c >> 8 & 0xff), db = b - (c & 0xff);
+  return dr * dr + dg * dg + db * db;
+}
+
+// The squared RGB distance from c to the gradient's nearest point.
+float gradientDist2(uint32_t c, const std::vector<uint32_t>& stops) {
+  float best = INFINITY;
+  float cr = c >> 16 & 0xff, cg = c >> 8 & 0xff, cb = c & 0xff;
+  for (size_t i = 0; i + 1 < stops.size(); i++) {
+    uint32_t a = stops[i], b = stops[i + 1];
+    float ar = a >> 16 & 0xff, ag = a >> 8 & 0xff, ab = a & 0xff;
+    float vr = (b >> 16 & 0xff) - ar, vg = (b >> 8 & 0xff) - ag, vb = (b & 0xff) - ab;
+    float len2 = vr * vr + vg * vg + vb * vb;
+    float t = len2 > 0 ? ((cr - ar) * vr + (cg - ag) * vg + (cb - ab) * vb) / len2 : 0;
+    t = std::max(0.0f, std::min(1.0f, t));
+    best = std::min(best, rgbDist2(ar + t * vr, ag + t * vg, ab + t * vb, c));
+  }
+  return best;
+}
+
+bool isGradient(const LegendItem& item) {
+  return item.colors.size() > 1 && item.effect != "flash" && item.effect != "alternate";
+}
+
+// The legend's name for what an LED is doing: a blink between two colors is
+// the legend's "alternate".
+String legendEffect(const Station& s) {
+  if (s.colors.empty() || s.effect == "off") return "off";
+  if (s.effect == "blink" && s.colors.size() > 1) return "alternate";
+  return s.effect;
+}
+
+void markStation(const Station& s, std::vector<bool>& used) {
+  const std::vector<LegendItem>& legend = status.legend;
+  if (s.lightning) {  // its own color is hidden under the flashes
+    for (size_t i = 0; i < legend.size(); i++) {
+      if (legend[i].effect == "flash") used[i] = true;
+    }
+    return;
+  }
+  String effect = legendEffect(s);
+  uint32_t color = s.colors.empty() ? 0 : s.colors[0];
+  int nearest = -1;
+  float nearestDist = INFINITY;
+  bool hit = false;
+  for (size_t i = 0; i < legend.size(); i++) {
+    const LegendItem& item = legend[i];
+    if (item.effect != effect) continue;
+    if (effect == "off") {
+      used[i] = hit = true;
+    } else if (isGradient(item)) {
+      float d = gradientDist2(color, item.colors);
+      if (d <= kNearGradient * kNearGradient) used[i] = hit = true;
+      if (d < nearestDist) nearestDist = d, nearest = i;
+    } else if (!item.colors.empty()) {
+      if (item.colors[0] == color) used[i] = hit = true;
+      float d = rgbDist2(item.colors[0] >> 16 & 0xff, item.colors[0] >> 8 & 0xff, item.colors[0] & 0xff, color);
+      if (d < nearestDist) nearestDist = d, nearest = i;
+    }
+  }
+  // No exact match (e.g. an estimated category breathes in its category's
+  // color, but the legend shows it in green): the nearest entry with that
+  // effect.
+  if (!hit && nearest >= 0) used[nearest] = true;
+}
+
+// Which legend entries are on the map now. All of them while the legend and
+// the LEDs are for different visualizers, while one effect drives the whole
+// strip (Rainbow, Chase), or when nothing matched.
+std::vector<bool> legendInUse() {
+  size_t n = status.legend.size();
+  bool sameVisualizer = live.valid && live.activeIndex == status.activeIndex;
+  if (!sameVisualizer || live.strip) return std::vector<bool>(n, true);
+  std::vector<bool> used(n, false);
+  for (const Station& s : live.stations) markStation(s, used);
+  if (std::find(used.begin(), used.end(), true) == used.end()) return std::vector<bool>(n, true);
+  return used;
+}
+
 // ---- the visualizer ----------------------------------------------------------------------------------------
 
 void showLegend() {
   lv_obj_clean(legendBox);
-  legendIndex = status.activeIndex;
+  legendUsed = legendInUse();
   bool current = status.activeIndex == shownIndex;
   lv_obj_set_style_opa(legendBox, current ? LV_OPA_COVER : LV_OPA_50, 0);
   int itemW = (kW - 2 * kPad - 4) / 2;
-  for (const LegendItem& item : status.legend) {
+  for (size_t i = 0; i < status.legend.size(); i++) {
+    if (!legendUsed[i]) continue;
+    const LegendItem& item = status.legend[i];
     lv_obj_t* row = box(legendBox, LV_FLEX_FLOW_ROW);
     lv_obj_add_style(row, &stCard, 0);
     lv_obj_set_size(row, itemW, 22);
@@ -628,6 +720,7 @@ void ui_tick() {
     showRotation();
     showBrightness();
     showStations();
+    if (legendInUse() != legendUsed) showLegend();
   }
 
   static uint32_t lastTick = 0;
