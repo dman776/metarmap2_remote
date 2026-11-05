@@ -43,11 +43,23 @@ drives LEDs itself.
   trying. The map's line says "retrying" while the map doesn't answer.
 - Touch and hold the screen for 5 s to see it again for 5 s.
 
+**Firmware updates**
+
+- The remote checks GitHub for new firmware at startup and every 6 hours. When
+  there is some, a yellow star appears in the top bar, left of the map's dot.
+- Keep holding a touch past the splash screen, to 10 s, for the update screen:
+  the installed and available versions, the update channel, and **UPDATE**,
+  which downloads the new firmware, checks it, installs it and restarts.
+- The channels are metarmap2's: **Releases** (the newest release, if newer than
+  the installed one), **Latest commit** (the newest commit of `main`) and
+  **Branch** (the newest commit of the branch you pick). The choice is saved.
+
 **Everywhere**
 
 - A short tick from the speaker on each touch.
 - The map's address, top right, with a green dot; "can't reach the map" and a
-  dimmed screen while it doesn't answer.
+  dimmed screen while it doesn't answer. A yellow star beside it: a firmware
+  update.
 - Like the `/remote` page, a control you just touched keeps your setting for
   3 s while the map catches up.
 
@@ -76,7 +88,9 @@ You need [PlatformIO](https://platformio.org/) (the VS Code extension or
 1. Copy `include/secrets.example.h` to `include/secrets.h` and fill it in:
    your Wi-Fi network and password, and the map's address and port
    (`metarmap.local` or its IP; port `80` unless you changed
-   `web_server.port`). `secrets.h` is git-ignored.
+   `web_server.port`). `secrets.h` is git-ignored. The remote saves these in
+   its flash when it starts, so they stay through firmware updates, which
+   don't have them; flash again with a changed `secrets.h` to change them.
 2. Connect the board by USB-C. It shows up as a serial port
    (`/dev/cu.usbmodem*` on macOS); no driver is needed.
 3. Build and flash:
@@ -97,8 +111,14 @@ doesn't know the map's username and password and can't change its saved
 configuration (auto-rotate is the one setting those endpoints save).
 
 Keep the map and the remote on a trusted local network, and don't expose the
-map's web server to the internet. The Wi-Fi password is stored in the firmware,
-so treat the board like any device that knows it.
+map's web server to the internet. The Wi-Fi password is stored in the board's
+flash, so treat the board like any device that knows it.
+
+Firmware updates come only from this repo's GitHub releases, over HTTPS: the
+remote trusts just the root certificates GitHub's API and downloads use
+(`src/github_roots.h`), and checks each download against the SHA-256 GitHub
+gives for it before switching to it. The published firmware has no Wi-Fi
+settings in it.
 
 ## How it works
 
@@ -107,6 +127,13 @@ and `/api/status` every minute, and again whenever the visualizer changes (for
 its legend), the same split the `/remote` page uses. The touch screen runs on
 the other core, so a slow answer never freezes it. Controls are queued to the
 background task and the next `/api/live` shows their result.
+
+Firmware updates use the board's two firmware slots: the new firmware goes
+into the spare one while the running one carries on, and the board switches
+only after the whole file has arrived and matched its checksum. A failed or
+interrupted download leaves the running firmware as it was. (The board's
+bootloader can't roll back on its own, so if new firmware didn't start at all,
+flash it by USB.)
 
 The map doesn't say which legend entry each LED shows, so the remote works it
 out from each LED's current look in `/api/live`: its effect and color (so
@@ -127,8 +154,12 @@ for the endpoints.
 | `src/map_state.h` | The map's state as the remote knows it |
 | `src/lvgl_port.cpp` | Display and touch for LVGL, screenshots |
 | `src/audio.cpp` | The codec and the touch tick |
+| `src/updater.cpp` | Checking GitHub and installing firmware, on its own task |
+| `src/update_check.cpp` | GitHub's release JSON, versions, what's an update |
+| `src/settings.cpp` | Wi-Fi, map and update settings, in flash |
 | `src/display.h` | Display and touch driver settings (LovyanGFX) |
-| `src/logo.c` | The logo, generated from `assets/logo.svg` |
+| `src/logo.c`, `src/star_icon.c` | Images, generated from `assets/*.svg` |
+| `src/github_roots.h` | The certificates trusted for GitHub, generated |
 | `include/lv_conf.h` | LVGL settings and fonts |
 
 ## Development
@@ -139,8 +170,8 @@ The firmware uses the Arduino framework with [LVGL](https://lvgl.io/) 9,
 
 ### Tests and lint
 
-The parsing and legend code is plain C++ with unit tests that run on your
-computer (PlatformIO's Unity framework). The JSON fixtures in
+The parsing, legend and update-check code is plain C++ with unit tests that
+run on your computer (PlatformIO's Unity framework). The JSON fixtures in
 `test/test_parse` are real, trimmed answers from a map.
 
 ```sh
@@ -166,11 +197,23 @@ The splash screen's version comes from `git describe` at build time
 | Before the first tag | `abc1234` |
 | With uncommitted changes | `... modified` |
 
+### Publishing firmware
+
+`.github/workflows/publish.yml` builds the firmware for the update channels:
+
+- Push a release tag (`git tag v26.11.05 && git push origin v26.11.05`): it
+  creates the GitHub release, if there isn't one, and attaches
+  `metarmap_remote-es3c28p.bin`. That's the **Releases** channel.
+- Each push to a branch replaces a pre-release tagged `build-<branch>` with that
+  commit's firmware: `build-main` is **Latest commit**, the others are
+  **Branch**. Deleting a branch removes its build.
+
 ### Serial console and screenshots
 
 At 115200 baud the console logs the version, the connection and each control
-sent. It also takes one-letter commands: `1` and `2` open the Visualizer and
-Locator tabs, `3` shows the splash screen, and `S` sends a screenshot, which
+sent, and the update checks. It also takes one-letter commands: `1` and `2`
+open the Visualizer and Locator tabs, `3` shows the splash screen, `4` the
+update screen, and `S` sends a screenshot, which
 `tools/screenshot.py` saves as a PNG (it needs pyserial):
 
 ```sh
@@ -178,8 +221,11 @@ python3 tools/screenshot.py /dev/cu.usbmodem* screen.png      # as it is
 python3 tools/screenshot.py /dev/cu.usbmodem* locator.png 2   # Locator tab first
 ```
 
-### The logo
+### Generated files
 
-`src/logo.c` is generated from `assets/logo.svg` (the map's header logo) by
-`python3 tools/make_logo.py`, which needs `rsvg-convert`
-(`brew install librsvg`).
+- `src/logo.c` and `src/star_icon.c` come from `assets/logo.svg` (the map's
+  header logo) and `assets/star.svg`: `python3 tools/make_images.py`, which
+  needs `rsvg-convert` (`brew install librsvg`).
+- `src/github_roots.h` comes from Mozilla's root certificate list:
+  `python3 tools/make_ca.py`. Run it again if update checks start failing with
+  a certificate error.
