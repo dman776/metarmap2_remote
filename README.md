@@ -1,165 +1,147 @@
 # METARMap Remote
 
-METARMap Remote is the idea for a companion interface to monitor and control a
-METARMap2 installation from another device. It connects to the map's built-in
-HTTP API, so the Raspberry Pi can continue to fetch weather data and run the
-LEDs and optional OLED display locally.
+A touchscreen remote for a [METARMap2](https://github.com/dman776/metarmap2)
+map: firmware for a 2.8" ESP32-S3 touch display that sits beside the map and
+works like a small version of the map's `/remote` page. Pick the visualizer,
+see what the LEDs mean, set the LED brightness, turn auto-rotate on or off,
+and find an airport's LED.
 
-> **Project status:** The firmware runs on the ES3C28P touchscreen (see
-> [Hardware](#hardware)) with the Visualizer and Locator screens of the map's
-> `/remote` page (see [Screens](#screens)). Some features below are still
-> ideas.
+The map stays in charge. The remote reads the map's state over its HTTP API and
+sends it the same controls the `/remote` page does; it never fetches weather or
+drives LEDs itself.
 
-## What it could do
+| Visualizer | Locator | Splash |
+|---|---|---|
+| ![The Visualizer tab](docs/visualizer.png) | ![The Locator tab](docs/locator.png) | ![The splash screen](docs/splash.png) |
 
-- Show whether a map is reachable and summarize its current state.
-- Display the configured airports, their latest flight categories, and when
-  METARs were last fetched.
-- Change the active visualizer and LED brightness.
-- Turn the OLED display on or off, when the map has one.
-- Request a fresh METAR update and pulse an airport's LED to locate it.
-- Work well on phones, tablets, and desktop browsers.
+## What it does
 
-The map remains the source of truth: METARMap Remote would read the map's
-reported status and send controls to that map, rather than fetching weather or
-driving LEDs itself.
+**Visualizer tab**
 
-## How it would connect
+- A chip for every visualizer, the running one lit. Swipe the row to find one
+  and tap it to switch the map to it; the row follows the map when something
+  else changes the visualizer (auto-rotate, the web UI, Home Assistant).
+- The legend, showing only the entries the map is showing now: if every
+  airport is VFR, just VFR (plus lightning or missing reports, if any). It
+  appears once the map has switched, never unfiltered.
+- Along the bottom: **Auto** (auto-rotate on or off, with a ring counting down
+  to the next visualizer) and **LED** brightness.
 
-METARMap2 runs a web server on the port configured by `web_server.port`
-(port `80` by default). A remote client would be configured with the map's
-hostname or IP address and port, then use its HTTP API:
+**Locator tab**
 
-- `GET /api/status` for map state and airport data.
-- `GET /api/live` for current LED and OLED activity.
-- `GET /api/metar/<code>` for an airport's decoded report.
-- Control routes such as `/visualizer/<n>`, `/brightness/<level>`,
-  `/display/on`, `/display/off`, `/locate/<pixel>`, and `/fetch`.
-- Authenticated `/config/edit/...` routes for settings, if configuration
-  editing is included.
+- A tile for every airport, with its flight category's color. Tap one to pulse
+  its LED white; a tile also flashes when the map pulses it from anywhere.
+- While Rainbow or Chase runs, a banner says locating is paused.
 
-See the [METARMap2 API documentation](https://github.com/dman776/metarmap2/blob/master/API.md)
-for response formats, authentication details, and the complete endpoint list.
-The [METARMap2 project](https://github.com/dman776/metarmap2) explains how to
-build and set up the map.
+**Splash screen**
 
-## Network and security
+- At startup: the MetarMap logo, the metarmap2 repo, the firmware version, and
+  "Connecting to Wi-Fi..." and "Connecting to the map..." turning OK. Two
+  seconds after both are OK, the remote fades in.
+- If Wi-Fi hasn't joined after 15 s, it names the network: "Can't find
+  *network*" (out of range, or 5 GHz only) or "Can't join *network*", and keeps
+  trying. The map's line says "retrying" while the map doesn't answer.
+- Touch and hold the screen for 5 s to see it again for 5 s.
 
-The map API is intended to be used on a trusted local network. Do not expose
-the Raspberry Pi's web server directly to the public internet. For access while
-away from home, use a private VPN or another secure network connection.
+**Everywhere**
 
-Authenticated routes use the map's HTTP Basic credentials. Change the
-default `metar` / `map` credentials before connecting a remote client, and
-avoid storing credentials in browser-visible code or sharing them with
-untrusted services. Any implementation should use encrypted transport when
-traffic crosses an untrusted network and should make it clear which actions
-change map settings.
+- A short tick from the speaker on each touch.
+- The map's address, top right, with a green dot; "can't reach the map" and a
+  dimmed screen while it doesn't answer.
+- Like the `/remote` page, a control you just touched keeps your setting for
+  3 s while the map catches up.
 
-## Intended boundaries
-
-METARMap Remote is envisioned as a lightweight controller, not a replacement
-for the METARMap2 web UI, a weather-data provider, or the
-[Home Assistant integration](https://github.com/dman776/metarmap2_ha). Its
-purpose is to make the map's essential status and controls convenient from a
-separate device.
+The `/remote` page's Map tab (the live map needs a browser), the visualizer's
+description, the previous/next buttons and the OLED switch are left out.
 
 ## Hardware
 
-The remote runs on an LCDwiki **ES3C28P**
-([wiki](https://www.lcdwiki.com/2.8inch_ESP32-S3_Display)):
+An LCDwiki **ES3C28P** ([wiki](https://www.lcdwiki.com/2.8inch_ESP32-S3_Display)):
 
-- ESP32-S3 (N16R8): 16 MB flash, 8 MB octal PSRAM, 2.4 GHz Wi-Fi only
-- 2.8" ILI9341V 240×320 SPI LCD with PWM backlight
-- FT6336G capacitive touch (I2C)
-- RGB LED, microSD, I2S speaker/mic, Li-Po charger with battery sense
+- ESP32-S3 (N16R8): 16 MB flash, 8 MB PSRAM, Wi-Fi (2.4 GHz only)
+- 2.8" ILI9341V 320×240 LCD, used in landscape with the USB-C port on the right
+- FT6336G capacitive touch
+- ES8311 audio codec and FM8002E amplifier, for a small speaker (up to 2 W
+  into 4 Ω, per the wiki) on the 2-pin 1.25 mm speaker socket. It's optional:
+  without one the remote is just silent
 
-The full pin map is in [include/board_es3c28p.h](include/board_es3c28p.h).
+Power it from USB-C. The pin map is in
+[include/board_es3c28p.h](include/board_es3c28p.h).
 
-## Development
+## Setup
 
-The firmware is a [PlatformIO](https://platformio.org/) project using the
-Arduino framework, [LVGL](https://lvgl.io/) 9 for the screens,
-[LovyanGFX](https://github.com/lovyan03/LovyanGFX) for the display and touch,
-and [ArduinoJson](https://arduinojson.org/) for the map's API.
+You need [PlatformIO](https://platformio.org/) (the VS Code extension or
+`pip install platformio`) and a METARMap2 map on your network.
 
-1. Copy `include/secrets.example.h` to `include/secrets.h` (git-ignored) and
-   set your Wi-Fi network and the map's host and port.
-2. Connect the board's USB-C port. It enumerates as the S3's native
-   USB-Serial/JTAG (`/dev/cu.usbmodem*` on macOS), so no driver is needed.
-3. Build, flash and watch the console:
+1. Copy `include/secrets.example.h` to `include/secrets.h` and fill it in:
+   your Wi-Fi network and password, and the map's address and port
+   (`metarmap.local` or its IP; port `80` unless you changed
+   `web_server.port`). `secrets.h` is git-ignored.
+2. Connect the board by USB-C. It shows up as a serial port
+   (`/dev/cu.usbmodem*` on macOS); no driver is needed.
+3. Build and flash:
 
    ```sh
-   pio run
    pio run -t upload
-   pio device monitor
+   pio device monitor        # optional: the serial console
    ```
 
-If an upload can't find the board, hold **BOOT**, tap **RESET**, release
+If the upload can't find the board, hold **BOOT**, tap **RESET**, release
 **BOOT**, and upload again.
 
-### Screens
+## Network and security
 
-At startup a splash screen shows the MetarMap logo, name and the metarmap2 repo, with
-"Connecting to Wi-Fi..." and "Connecting to the map..." each turning OK. If
-the Wi-Fi hasn't joined after 15 s, the line names the network ("Can't find
-<network>" when it isn't in range or is 5 GHz only, else "Can't join") and keeps
-retrying; the map's line says "retrying" while the map doesn't answer. Two
-seconds after both are OK, the remote fades in. It also shows the firmware's
-version, from `git describe` at build time (`tools/version.py`): a release tag
-like `v26.11.05`, commits after it (`v26.11.05+3 abc1234`), or just the commit
-before the first tag, with `modified` for a build with uncommitted changes.
+The remote only uses the map's endpoints that need no login: `/api/live`,
+`/api/status`, `/visualizer/...`, `/brightness/...` and `/locate/...`. It
+doesn't know the map's username and password and can't change its saved
+configuration (auto-rotate is the one setting those endpoints save).
 
-Touch and hold the screen for 5 s to see the splash screen again (the version
-and the connection) for 5 s.
+Keep the map and the remote on a trusted local network, and don't expose the
+map's web server to the internet. The Wi-Fi password is stored in the firmware,
+so treat the board like any device that knows it.
 
-The remote is a small version of the map's `/remote` page, in its colors:
+## How it works
 
-- **Visualizer**: a chip for every visualizer, the active one lit (swipe the
-  row to find one, tap to switch), the legend entries the map is
-  showing now (all VFR: just VFR), and along the bottom the Auto-rotate
-  switch (with a countdown to the next visualizer) and LED brightness.
-- **Locator**: a tile for every airport with its flight category; tap one to
-  pulse its LED. The tile flashes when the map pulses it.
+A background task on the ESP32's second core polls `/api/live` every 1.5 s
+and `/api/status` every minute, and again whenever the visualizer changes (for
+its legend), the same split the `/remote` page uses. The touch screen runs on
+the other core, so a slow answer never freezes it. Controls are queued to the
+background task and the next `/api/live` shows their result.
 
-Left out from the `/remote` page: the Map tab (the live map needs a
-browser), the visualizer's description, the previous/next buttons and the
-OLED switch.
+The map doesn't say which legend entry each LED shows, so the remote works it
+out from each LED's current look in `/api/live`: its effect and color (so
+blinking red isn't solid red), a color along a gradient entry (temperature,
+pressure), the lightning flag for the flash entry, else the nearest entry with
+the same effect.
 
-Each touch plays a short tick on the speaker (a 1.5–2 W speaker on the
-board's 2-pin speaker socket), through the board's ES8311 codec, which is
-set up over the touch controller's I2C bus at startup.
-
-### How it talks to the map
-
-A background task on the second core polls `/api/live` every 1.5 s and
-`/api/status` every minute, and again whenever the visualizer changes (for its
-legend). Controls send the map's GET endpoints
-(`/visualizer/<id>`, `/visualizer/auto_rotate/on|off`, `/brightness/<level>`,
-`/locate/<pixel>`). As on the
-`/remote` page, a control you touch keeps your value for 3 s while the map
-catches up. Source layout:
+See the [METARMap2 API documentation](https://github.com/dman776/metarmap2/blob/master/API.md)
+for the endpoints.
 
 | File | What it does |
 |---|---|
-| `src/main.cpp` | Setup, Wi-Fi, the LVGL loop |
-| `src/ui.cpp` | The screens |
-| `src/map_client.cpp` | HTTP polling and commands, on its own task |
+| `src/main.cpp` | Setup, Wi-Fi, the main loop, serial commands |
+| `src/ui.cpp` | The screens (LVGL) |
+| `src/map_client.cpp` | Polling the map and sending controls, on its own task |
 | `src/map_parse.cpp` | The API's JSON into `MapLive` and `MapStatus` |
 | `src/legend.cpp` | Which legend entries the map is showing |
-| `src/map_state.h` | The parsed API state |
-| `src/lvgl_port.cpp` | LVGL display flush, touch input, screenshots |
-| `src/audio.cpp` | ES8311 codec and I2S setup, the touch tick |
-| `src/logo.c` | The logo, generated from `assets/logo.svg` by `tools/make_logo.py` (needs `rsvg-convert`) |
-| `src/display.h` | LovyanGFX panel and touch config |
+| `src/map_state.h` | The map's state as the remote knows it |
+| `src/lvgl_port.cpp` | Display and touch for LVGL, screenshots |
+| `src/audio.cpp` | The codec and the touch tick |
+| `src/display.h` | Display and touch driver settings (LovyanGFX) |
+| `src/logo.c` | The logo, generated from `assets/logo.svg` |
 | `include/lv_conf.h` | LVGL settings and fonts |
+
+## Development
+
+The firmware uses the Arduino framework with [LVGL](https://lvgl.io/) 9,
+[LovyanGFX](https://github.com/lovyan03/LovyanGFX) and
+[ArduinoJson](https://arduinojson.org/) 7.
 
 ### Tests and lint
 
-The code that doesn't need the board (parsing the map's JSON, matching the
-legend) is plain C++ with unit tests that run on your computer, using
-PlatformIO's Unity framework. The JSON fixtures in `test/test_parse` are real
-(trimmed) answers from a map.
+The parsing and legend code is plain C++ with unit tests that run on your
+computer (PlatformIO's Unity framework). The JSON fixtures in
+`test/test_parse` are real, trimmed answers from a map.
 
 ```sh
 pio test -e native         # unit tests
@@ -168,18 +150,36 @@ pre-commit install         # once: clang-format and ruff on every commit
 pre-commit run -a          # or run them on everything now
 ```
 
-C++ is formatted by clang-format (Google style, 120 columns: `.clang-format`)
-and the Python tools by ruff (`ruff.toml`). GitHub Actions runs all of these
-and builds the firmware on every push and pull request
-(`.github/workflows/ci.yml`).
+C++ is formatted by clang-format (Google style, 120 columns) and the Python
+tools by ruff. GitHub Actions runs all of these and builds the firmware on
+every push and pull request.
 
-### Screenshots
+### Version
 
-With the board connected, `tools/screenshot.py` saves the screen as a PNG
-(it needs pyserial):
+The splash screen's version comes from `git describe` at build time
+(`tools/version.py`). Releases are tagged like metarmap2's, e.g. `v26.11.05`:
+
+| Build | Shows |
+|---|---|
+| At a release tag | `v26.11.05` |
+| Commits after it | `v26.11.05+3 abc1234` |
+| Before the first tag | `abc1234` |
+| With uncommitted changes | `... modified` |
+
+### Serial console and screenshots
+
+At 115200 baud the console logs the version, the connection and each control
+sent. It also takes one-letter commands: `1` and `2` open the Visualizer and
+Locator tabs, `3` shows the splash screen, and `S` sends a screenshot, which
+`tools/screenshot.py` saves as a PNG (it needs pyserial):
 
 ```sh
-python3 tools/screenshot.py /dev/cu.usbmodem* screen.png      # current tab
-python3 tools/screenshot.py /dev/cu.usbmodem* locator.png 2   # Locator tab
-python3 tools/screenshot.py /dev/cu.usbmodem* splash.png 3    # splash screen
+python3 tools/screenshot.py /dev/cu.usbmodem* screen.png      # as it is
+python3 tools/screenshot.py /dev/cu.usbmodem* locator.png 2   # Locator tab first
 ```
+
+### The logo
+
+`src/logo.c` is generated from `assets/logo.svg` (the map's header logo) by
+`python3 tools/make_logo.py`, which needs `rsvg-convert`
+(`brew install librsvg`).
