@@ -12,7 +12,7 @@ namespace {
 // GitHub's /releases JSON (fields as the API gives them), trimmed: a release,
 // a branch build, one without the firmware file, and an unrelated pre-release.
 const char* kReleases = R"json([
-  {"tag_name": "v26.11.06", "name": "v26.11.06", "draft": false, "prerelease": false,
+  {"tag_name": "v26.11.06", "name": "Initial release", "draft": false, "prerelease": false,
    "target_commitish": "main", "body": "Release notes...",
    "assets": [
      {"name": "notes.txt", "size": 10, "browser_download_url": "https://github.com/x/notes.txt"},
@@ -59,7 +59,7 @@ void test_parse_release() {
   TEST_ASSERT_EQUAL_UINT(5, list.size());
   const Release& r = list[0];
   TEST_ASSERT_EQUAL_STRING("v26.11.06", r.tag.c_str());
-  TEST_ASSERT_EQUAL_STRING("v26.11.06", r.version.c_str());
+  TEST_ASSERT_EQUAL_STRING("v26.11.06", r.version.c_str());  // the tag, not the title
   TEST_ASSERT_FALSE(r.prerelease);
   TEST_ASSERT_EQUAL_STRING("", r.commit.c_str());  // only builds carry a commit
   // The firmware file, not the other asset.

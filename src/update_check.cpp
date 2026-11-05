@@ -38,8 +38,11 @@ void releaseListFilter(JsonDocument& filter) {
 Release parseRelease(JsonVariantConst json) {
   Release r;
   r.tag = json["tag_name"] | "";
+  // A release's title is free text ("Initial release"): show its tag. A build's
+  // title is CI's: that build's FIRMWARE_VERSION.
   std::string name = json["name"] | "";
-  r.version = name.empty() ? r.tag : name;
+  bool build = r.tag.rfind(kBuildPrefix, 0) == 0;
+  r.version = build && !name.empty() ? name : r.tag;
   r.prerelease = json["prerelease"] | false;
   if (r.tag.rfind(kBuildPrefix, 0) == 0) r.commit = json["target_commitish"] | "";
   for (JsonVariantConst asset : json["assets"].as<JsonArrayConst>()) {
