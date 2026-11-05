@@ -65,10 +65,11 @@ class LGFX : public lgfx::LGFX_Device {
       cfg.pin_int = TOUCH_INT;
       cfg.pin_rst = TOUCH_RST;
       cfg.freq = 400000;
-      cfg.x_min = 0;
-      cfg.x_max = LCD_WIDTH - 1;
-      cfg.y_min = 0;
-      cfg.y_max = LCD_HEIGHT - 1;
+      // The touch panel is rotated 180° from the LCD; min > max flips an axis.
+      cfg.x_min = LCD_WIDTH - 1;
+      cfg.x_max = 0;
+      cfg.y_min = LCD_HEIGHT - 1;
+      cfg.y_max = 0;
       cfg.offset_rotation = 0;
       cfg.bus_shared = false;
       touch_.config(cfg);
