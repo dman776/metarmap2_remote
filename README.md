@@ -100,7 +100,7 @@ If an upload can't find the board, hold **BOOT**, tap **RESET**, release
 
 ### Screens
 
-At startup a splash screen shows the MetarMap logo, name and this repo, with
+At startup a splash screen shows the MetarMap logo, name and the metarmap2 repo, with
 "Connecting to Wi-Fi..." and "Connecting to the map..." each turning OK. If
 the Wi-Fi hasn't joined after 15 s, the line names the network ("Can't find
 <network>" when it isn't in range or is 5 GHz only, else "Can't join") and keeps

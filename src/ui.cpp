@@ -41,7 +41,7 @@ constexpr int kCols = 4;                    // Locator tiles per row
 constexpr uint32_t kHoldMs = 3000;          // a touched control keeps its value while the map catches up
 constexpr uint32_t kSplashHoldMs = 2000;    // the splash stays this long after connecting
 constexpr uint32_t kWifiTimeoutMs = 15000;  // then the splash names the network it can't join
-constexpr const char* kRepo = "github.com/dman776/metarmap2_remote";
+constexpr const char* kRepo = "github.com/dman776/metarmap2";
 
 MapClient* client = nullptr;
 MapStatus status;
