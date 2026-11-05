@@ -1,0 +1,5 @@
+# The Python tools (tools/*.py), checked like metarmap2's code.
+line-length = 120
+
+[lint]
+select = ["E", "F", "I"]

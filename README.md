@@ -5,9 +5,10 @@ METARMap2 installation from another device. It connects to the map's built-in
 HTTP API, so the Raspberry Pi can continue to fetch weather data and run the
 LEDs and optional OLED display locally.
 
-> **Project status:** This repository currently contains a project concept, not
-> a working application. The features below describe the intended direction;
-> they are not yet implemented.
+> **Project status:** The firmware runs on the ES3C28P touchscreen (see
+> [Hardware](#hardware)) with the Visualizer and Locator screens of the map's
+> `/remote` page (see [Screens](#screens)). Some features below are still
+> ideas.
 
 ## What it could do
 
@@ -63,8 +64,122 @@ for the METARMap2 web UI, a weather-data provider, or the
 purpose is to make the map's essential status and controls convenient from a
 separate device.
 
+## Hardware
+
+The remote runs on an LCDwiki **ES3C28P**
+([wiki](https://www.lcdwiki.com/2.8inch_ESP32-S3_Display)):
+
+- ESP32-S3 (N16R8): 16 MB flash, 8 MB octal PSRAM, 2.4 GHz Wi-Fi only
+- 2.8" ILI9341V 240×320 SPI LCD with PWM backlight
+- FT6336G capacitive touch (I2C)
+- RGB LED, microSD, I2S speaker/mic, Li-Po charger with battery sense
+
+The full pin map is in [include/board_es3c28p.h](include/board_es3c28p.h).
+
 ## Development
 
-There is no application code or installation process in this repository yet.
-Once implementation begins, this section should document the chosen runtime,
-setup instructions, configuration, and tests.
+The firmware is a [PlatformIO](https://platformio.org/) project using the
+Arduino framework, [LVGL](https://lvgl.io/) 9 for the screens,
+[LovyanGFX](https://github.com/lovyan03/LovyanGFX) for the display and touch,
+and [ArduinoJson](https://arduinojson.org/) for the map's API.
+
+1. Copy `include/secrets.example.h` to `include/secrets.h` (git-ignored) and
+   set your Wi-Fi network and the map's host and port.
+2. Connect the board's USB-C port. It enumerates as the S3's native
+   USB-Serial/JTAG (`/dev/cu.usbmodem*` on macOS), so no driver is needed.
+3. Build, flash and watch the console:
+
+   ```sh
+   pio run
+   pio run -t upload
+   pio device monitor
+   ```
+
+If an upload can't find the board, hold **BOOT**, tap **RESET**, release
+**BOOT**, and upload again.
+
+### Screens
+
+At startup a splash screen shows the MetarMap logo, name and the metarmap2 repo, with
+"Connecting to Wi-Fi..." and "Connecting to the map..." each turning OK. If
+the Wi-Fi hasn't joined after 15 s, the line names the network ("Can't find
+<network>" when it isn't in range or is 5 GHz only, else "Can't join") and keeps
+retrying; the map's line says "retrying" while the map doesn't answer. Two
+seconds after both are OK, the remote fades in. It also shows the firmware's
+version, from `git describe` at build time (`tools/version.py`): a release tag
+like `v26.11.05`, commits after it (`v26.11.05+3 abc1234`), or just the commit
+before the first tag, with `modified` for a build with uncommitted changes.
+
+Touch and hold the screen for 5 s to see the splash screen again (the version
+and the connection) for 5 s.
+
+The remote is a small version of the map's `/remote` page, in its colors:
+
+- **Visualizer**: a chip for every visualizer, the active one lit (swipe the
+  row to find one, tap to switch), the legend entries the map is
+  showing now (all VFR: just VFR), and along the bottom the Auto-rotate
+  switch (with a countdown to the next visualizer) and LED brightness.
+- **Locator**: a tile for every airport with its flight category; tap one to
+  pulse its LED. The tile flashes when the map pulses it.
+
+Left out from the `/remote` page: the Map tab (the live map needs a
+browser), the visualizer's description, the previous/next buttons and the
+OLED switch.
+
+Each touch plays a short tick on the speaker (a 1.5–2 W speaker on the
+board's 2-pin speaker socket), through the board's ES8311 codec, which is
+set up over the touch controller's I2C bus at startup.
+
+### How it talks to the map
+
+A background task on the second core polls `/api/live` every 1.5 s and
+`/api/status` every minute, and again whenever the visualizer changes (for its
+legend). Controls send the map's GET endpoints
+(`/visualizer/<id>`, `/visualizer/auto_rotate/on|off`, `/brightness/<level>`,
+`/locate/<pixel>`). As on the
+`/remote` page, a control you touch keeps your value for 3 s while the map
+catches up. Source layout:
+
+| File | What it does |
+|---|---|
+| `src/main.cpp` | Setup, Wi-Fi, the LVGL loop |
+| `src/ui.cpp` | The screens |
+| `src/map_client.cpp` | HTTP polling and commands, on its own task |
+| `src/map_parse.cpp` | The API's JSON into `MapLive` and `MapStatus` |
+| `src/legend.cpp` | Which legend entries the map is showing |
+| `src/map_state.h` | The parsed API state |
+| `src/lvgl_port.cpp` | LVGL display flush, touch input, screenshots |
+| `src/audio.cpp` | ES8311 codec and I2S setup, the touch tick |
+| `src/logo.c` | The logo, generated from `assets/logo.svg` by `tools/make_logo.py` (needs `rsvg-convert`) |
+| `src/display.h` | LovyanGFX panel and touch config |
+| `include/lv_conf.h` | LVGL settings and fonts |
+
+### Tests and lint
+
+The code that doesn't need the board (parsing the map's JSON, matching the
+legend) is plain C++ with unit tests that run on your computer, using
+PlatformIO's Unity framework. The JSON fixtures in `test/test_parse` are real
+(trimmed) answers from a map.
+
+```sh
+pio test -e native         # unit tests
+pio check                  # static analysis (cppcheck)
+pre-commit install         # once: clang-format and ruff on every commit
+pre-commit run -a          # or run them on everything now
+```
+
+C++ is formatted by clang-format (Google style, 120 columns: `.clang-format`)
+and the Python tools by ruff (`ruff.toml`). GitHub Actions runs all of these
+and builds the firmware on every push and pull request
+(`.github/workflows/ci.yml`).
+
+### Screenshots
+
+With the board connected, `tools/screenshot.py` saves the screen as a PNG
+(it needs pyserial):
+
+```sh
+python3 tools/screenshot.py /dev/cu.usbmodem* screen.png      # current tab
+python3 tools/screenshot.py /dev/cu.usbmodem* locator.png 2   # Locator tab
+python3 tools/screenshot.py /dev/cu.usbmodem* splash.png 3    # splash screen
+```

@@ -1,0 +1,6 @@
+# C++ style: Google's, at metarmap2's 120 columns. pre-commit runs it.
+BasedOnStyle: Google
+ColumnLimit: 120
+DerivePointerAlignment: false
+PointerAlignment: Left
+IncludeBlocks: Preserve
