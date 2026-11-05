@@ -2,24 +2,16 @@
 
 #include <HTTPClient.h>
 #include <WiFi.h>
-#include <esp_heap_caps.h>
 
 #include "log.h"
 #include "map_parse.h"
+#include "spiram.h"
 
 namespace {
 
 constexpr uint32_t kLiveMs = 1500;         // the /remote page polls every 1 s
 constexpr uint32_t kStatusMs = 60 * 1000;  // and /api/status every minute
 constexpr uint32_t kTimeoutMs = 5000;
-
-// The JSON documents live in PSRAM: /api/live is ~18 KB, /api/status ~25 KB.
-struct SpiRamAllocator : ArduinoJson::Allocator {
-  void* allocate(size_t n) override { return heap_caps_malloc(n, MALLOC_CAP_SPIRAM); }
-  void deallocate(void* p) override { heap_caps_free(p); }
-  void* reallocate(void* p, size_t n) override { return heap_caps_realloc(p, n, MALLOC_CAP_SPIRAM); }
-};
-SpiRamAllocator spiram;
 
 }  // namespace
 
@@ -132,10 +124,10 @@ int MapClient::get(const char* path, uint32_t timeoutMs, JsonDocument* doc, Json
 }
 
 void MapClient::pollLive() {
-  static JsonDocument filter(&spiram);
+  static JsonDocument filter(spiram());
   if (filter.isNull()) liveFilter(filter);
 
-  JsonDocument doc(&spiram);
+  JsonDocument doc(spiram());
   int code = get("/api/live", kTimeoutMs, &doc, &filter);
   if (code != HTTP_CODE_OK) {
     setConnection(true, false, code);
@@ -153,10 +145,10 @@ void MapClient::pollLive() {
 }
 
 void MapClient::pollStatus() {
-  static JsonDocument filter(&spiram);
+  static JsonDocument filter(spiram());
   if (filter.isNull()) statusFilter(filter);
 
-  JsonDocument doc(&spiram);
+  JsonDocument doc(spiram());
   int code = get("/api/status", kTimeoutMs, &doc, &filter);
   if (code != HTTP_CODE_OK) {
     LOGF("map: /api/status -> %d\n", code);

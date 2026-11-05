@@ -1,0 +1,71 @@
+name: publish
+
+# Firmware for the remote's update channels (src/update_check.h):
+#   a release tag (v26.11.05)  -> metarmap_remote-es3c28p.bin on that GitHub release   (Releases)
+#   a push to a branch         -> a pre-release tagged build-<branch>, replaced each push (Latest commit, Branch)
+#   a deleted branch           -> its build-<branch> pre-release removed
+# These builds have no include/secrets.h: the remote keeps its Wi-Fi settings in flash.
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  delete:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ASSET: metarmap_remote-es3c28p.bin
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  firmware:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # the tags, for the version
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v6
+        with:
+          path: ~/.platformio
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+      - name: Build
+        run: |
+          pip install platformio
+          pio run -e es3c28p
+          cp .pio/build/es3c28p/firmware.bin "$ASSET"
+          sed -n 's/^#define FIRMWARE_VERSION "\(.*\)"$/\1/p' include/firmware_version.h | tee version.txt
+
+      - name: Release
+        if: github.ref_type == 'tag'
+        run: |
+          tag="$GITHUB_REF_NAME"
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --verify-tag --title "$tag" --generate-notes
+          gh release upload "$tag" "$ASSET" --clobber
+
+      - name: Branch build
+        if: github.ref_type == 'branch'
+        run: |
+          tag="build-$(echo "$GITHUB_REF_NAME" | sed 's/[^A-Za-z0-9._-]/-/g')"
+          gh release delete "$tag" --cleanup-tag --yes >/dev/null 2>&1 || true
+          gh release create "$tag" "$ASSET" --prerelease --latest=false --target "$GITHUB_SHA" \
+            --title "$(cat version.txt)" \
+            --notes "Firmware for the remote's Latest commit and Branch update channels: branch \`$GITHUB_REF_NAME\` at $GITHUB_SHA. Replaced on each push."
+
+  cleanup:
+    if: github.event_name == 'delete' && github.event.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove the branch's build
+        run: |
+          tag="build-$(echo "${{ github.event.ref }}" | sed 's/[^A-Za-z0-9._-]/-/g')"
+          gh release delete "$tag" --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" || true

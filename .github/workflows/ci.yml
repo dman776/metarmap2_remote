@@ -37,7 +37,5 @@ jobs:
         run: pio test -e native
       - name: Static analysis
         run: pio check -e es3c28p --fail-on-defect=low
-      - name: Build
-        run: |
-          cp include/secrets.example.h include/secrets.h
-          pio run -e es3c28p
+      - name: Build (no secrets.h, like the published firmware)
+        run: pio run -e es3c28p
