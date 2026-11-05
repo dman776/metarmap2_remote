@@ -1,5 +1,6 @@
 #include "ui.h"
 
+#include <WiFi.h>
 #include <lvgl.h>
 
 #include <algorithm>
@@ -35,7 +36,7 @@ constexpr int kBarH = 34;
 constexpr int kPad = 6;
 constexpr int kCols = 4;  // Locator tiles per row
 constexpr uint32_t kHoldMs = 3000;
-constexpr uint32_t kSplashMs = 2500;  // the splash screen, before the remote fades in
+constexpr uint32_t kSplashHoldMs = 2000;  // the splash stays this long after connecting
 constexpr const char* kRepo = "github.com/dman776/metarmap2_remote";  // a touched control keeps its value while the map catches up
 
 MapClient* client = nullptr;
@@ -670,25 +671,71 @@ void buildLocatorPanel(lv_obj_t* p) {
   lv_obj_set_scroll_dir(grid, LV_DIR_VER);
 }
 
-// The logo, the name and the repo, while the remote starts up behind it; then
-// the remote fades in.
+// ---- the splash screen -------------------------------------------------------------------------------------
+//
+// The logo, the name and the repo, with the Wi-Fi and the map connecting;
+// once both are OK it stays a moment, then the remote fades in.
+
+lv_obj_t* splash = nullptr;
+lv_obj_t* remoteScreen = nullptr;
+lv_obj_t *wifiState, *mapState;
+uint32_t connectedAt = 0;
+
+lv_obj_t* splashStep(lv_obj_t* parent, const String& text) {
+  lv_obj_t* row = box(parent, LV_FLEX_FLOW_ROW);
+  lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+  lv_obj_set_style_pad_column(row, 6, 0);
+  label(row, text.c_str(), &lv_font_montserrat_14, kText2);
+  return label(row, "", &lv_font_montserrat_14, kAccent);
+}
+
+void setStep(lv_obj_t* state, const char* text, uint32_t color) {
+  if (strcmp(lv_label_get_text(state), text) != 0) lv_label_set_text(state, text);
+  lv_obj_set_style_text_color(state, hex(color), 0);
+}
+
 void showSplash(lv_obj_t* remote) {
-  lv_obj_t* splash = lv_obj_create(nullptr);
+  remoteScreen = remote;
+  splash = lv_obj_create(nullptr);
   lv_obj_remove_style_all(splash);
   lv_obj_set_style_bg_color(splash, hex(kBg), 0);
   lv_obj_set_style_bg_opa(splash, LV_OPA_COVER, 0);
   lv_obj_set_flex_flow(splash, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_flex_align(splash, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-  lv_obj_set_style_pad_row(splash, 6, 0);
+  lv_obj_set_style_pad_row(splash, 2, 0);
 
   lv_obj_t* img = lv_image_create(splash);
   lv_image_set_src(img, &logo);
-  lv_obj_set_style_margin_bottom(img, 4, 0);
   label(splash, "MetarMap", &lv_font_montserrat_28, kText);
-  label(splash, kRepo, &lv_font_montserrat_12, kMuted);
+  lv_obj_t* repo = label(splash, kRepo, &lv_font_montserrat_12, kMuted);
+  lv_obj_set_style_margin_bottom(repo, 10, 0);
+  wifiState = splashStep(splash, "Connecting to Wi-Fi...");
+  mapState = splashStep(splash, "Connecting to the map...");
 
   lv_screen_load(splash);
-  lv_screen_load_anim(remote, LV_SCR_LOAD_ANIM_FADE_IN, 400, kSplashMs, true);  // then deletes the splash
+}
+
+void tickSplash() {
+  if (!splash) return;
+  bool wifi = WiFi.status() == WL_CONNECTED;
+  setStep(wifiState, wifi ? "OK" : "", kVfr);
+  if (conn.online) {
+    setStep(mapState, "OK", kVfr);
+  } else if (wifi && conn.wifi && conn.httpCode != 0) {
+    setStep(mapState, "retrying", kAccent);  // the map didn't answer
+  } else {
+    setStep(mapState, "", kAccent);
+  }
+
+  if (!(wifi && conn.online)) {
+    connectedAt = 0;
+    return;
+  }
+  if (!connectedAt) connectedAt = millis() ? millis() : 1;
+  if (millis() - connectedAt >= kSplashHoldMs) {
+    lv_screen_load_anim(remoteScreen, LV_SCR_LOAD_ANIM_FADE_IN, 400, 0, true);  // then deletes the splash
+    splash = nullptr;
+  }
 }
 
 }  // namespace
@@ -718,6 +765,7 @@ void ui_show_tab(int tab) { showTab(tab == 1 ? 1 : 0); }
 
 void ui_tick() {
   if (client->getConnection(conn, connRev)) showConnection();
+  tickSplash();
 
   if (client->getStatus(status, statusRev)) {
     if (!sameVisualizers(status.visualizers)) buildChips();

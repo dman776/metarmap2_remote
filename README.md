@@ -100,8 +100,10 @@ If an upload can't find the board, hold **BOOT**, tap **RESET**, release
 
 ### Screens
 
-At startup a splash screen shows the MetarMap logo, name and this repo for
-2.5 s while the remote connects, then the remote fades in.
+At startup a splash screen shows the MetarMap logo, name and this repo, with
+"Connecting to Wi-Fi..." and "Connecting to the map..." each turning OK (or
+the map's showing "retrying" while it doesn't answer). Two seconds after both
+are OK, the remote fades in.
 
 The remote is a small version of the map's `/remote` page, in its colors:
 
