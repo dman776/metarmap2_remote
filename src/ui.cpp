@@ -242,13 +242,16 @@ void markStation(const Station& s, std::vector<bool>& used) {
   if (!hit && nearest >= 0) used[nearest] = true;
 }
 
-// Which legend entries are on the map now. All of them while the legend and
-// the LEDs are for different visualizers, while one effect drives the whole
-// strip (Rainbow, Chase), or when nothing matched.
+// Which legend entries are on the map now. None until the legend, the LEDs
+// and the chip on screen are all for the same visualizer (after a change, the
+// legend comes with the next /api/status), so it never shows unfiltered. All
+// of them while one effect drives the whole strip (Rainbow, Chase), or when
+// nothing matched.
 std::vector<bool> legendInUse() {
   size_t n = status.legend.size();
-  bool sameVisualizer = live.valid && live.activeIndex == status.activeIndex;
-  if (!sameVisualizer || live.strip) return std::vector<bool>(n, true);
+  bool ready = live.valid && live.activeIndex == status.activeIndex && status.activeIndex == shownIndex;
+  if (!ready) return std::vector<bool>(n, false);
+  if (live.strip) return std::vector<bool>(n, true);
   std::vector<bool> used(n, false);
   for (const Station& s : live.stations) markStation(s, used);
   if (std::find(used.begin(), used.end(), true) == used.end()) return std::vector<bool>(n, true);
@@ -260,8 +263,6 @@ std::vector<bool> legendInUse() {
 void showLegend() {
   lv_obj_clean(legendBox);
   legendUsed = legendInUse();
-  bool current = status.activeIndex == shownIndex;
-  lv_obj_set_style_opa(legendBox, current ? LV_OPA_COVER : LV_OPA_50, 0);
   int itemW = (kW - 2 * kPad - 4) / 2;
   for (size_t i = 0; i < status.legend.size(); i++) {
     if (!legendUsed[i]) continue;
@@ -307,9 +308,8 @@ void showVisualizer(int index) {
       lv_obj_remove_state(chips[i], LV_STATE_CHECKED);
     }
   }
-  // The legend comes with /api/status, fetched again when the visualizer
-  // changes; until then the old one stays, dimmed.
-  lv_obj_set_style_opa(legendBox, status.activeIndex == index ? LV_OPA_COVER : LV_OPA_50, 0);
+  // Clear the old legend; the new one shows once it can be filtered.
+  if (legendInUse() != legendUsed) showLegend();
 }
 
 void onChip(lv_event_t* e) {
