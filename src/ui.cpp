@@ -746,8 +746,9 @@ void hideUpdate() {
 void onChannel(lv_event_t* e) {
   auto channel = (update::Channel)(intptr_t)lv_event_get_user_data(e);
   std::string branch = upd.branch;
-  if (channel == update::Channel::Branch && branch.empty()) {
-    branch = upd.branches.empty() ? update::kMainBranch : upd.branches[0];
+  if (channel == update::Channel::Branch && !upd.branches.empty() &&
+      std::find(upd.branches.begin(), upd.branches.end(), branch) == upd.branches.end()) {
+    branch = upd.branches[0];  // the saved branch has no build: one that has
   }
   updater->setChannel(channel, branch);
 }

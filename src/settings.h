@@ -14,7 +14,7 @@ struct Settings {
   std::string mapHost;
   uint16_t mapPort = 80;
   std::string updateChannel = "releases";  // releases, latest, branch (update_check.h)
-  std::string updateBranch = "main";
+  std::string updateBranch;                // "" until one is picked
 };
 
 // The saved settings, after saving secrets.h's if this build has them.
