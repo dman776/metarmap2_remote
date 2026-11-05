@@ -113,6 +113,11 @@ void test_release_channel() {
   TEST_ASSERT_TRUE(update::isUpdate(c, release("v26.11.06"), "v26.11.05", "aaaaaaa"));
   TEST_ASSERT_TRUE(update::isUpdate(c, release("v26.12.01"), "v26.11.30", "aaaaaaa"));  // by number, not text
   TEST_ASSERT_TRUE(update::isUpdate(c, release("v26.11.10"), "v26.11.9", "aaaaaaa"));
+  // A second release the same day (metarmap2's .1, .2...).
+  TEST_ASSERT_TRUE(update::isUpdate(c, release("v26.11.05.1"), "v26.11.05", "aaaaaaa"));
+  TEST_ASSERT_TRUE(update::isUpdate(c, release("v26.11.05.2"), "v26.11.05.1", "aaaaaaa"));
+  TEST_ASSERT_TRUE(update::isUpdate(c, release("v26.11.06"), "v26.11.05.1", "aaaaaaa"));
+  TEST_ASSERT_FALSE(update::isUpdate(c, release("v26.11.05"), "v26.11.05.1", "aaaaaaa"));
   TEST_ASSERT_FALSE(update::isUpdate(c, release("v26.11.05"), "v26.11.05", "aaaaaaa"));  // the same
   TEST_ASSERT_FALSE(update::isUpdate(c, release("v26.11.04"), "v26.11.05", "aaaaaaa"));  // older
   // Commits after v26.11.05 run FIRMWARE_TAG v26.11.05: v26.11.05 isn't newer.

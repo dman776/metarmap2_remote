@@ -188,7 +188,9 @@ every push and pull request.
 ### Version
 
 The splash screen's version comes from `git describe` at build time
-(`tools/version.py`). Releases are tagged like metarmap2's, e.g. `v26.11.05`:
+(`tools/version.py`). Releases are named like metarmap2's, by the date they're
+made: `vYY.MM.DD` (`v26.11.07`), with `.1`, `.2`... for another release the same
+day (`v26.11.07.1`).
 
 | Build | Shows |
 |---|---|
@@ -201,7 +203,7 @@ The splash screen's version comes from `git describe` at build time
 
 `.github/workflows/publish.yml` builds the firmware for the update channels:
 
-- Push a release tag (`git tag v26.11.05 && git push origin v26.11.05`): it
+- Push a release tag named for today (`git tag v26.11.07 && git push origin v26.11.07`): it
   creates the GitHub release, if there isn't one, and attaches
   `metarmap_remote-es3c28p.bin`. That's the **Releases** channel.
 - Each push to a branch replaces a pre-release tagged `build-<branch>` with that
