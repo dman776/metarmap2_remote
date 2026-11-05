@@ -105,8 +105,8 @@ void MapClient::run() {
       pollLive();
     }
 
-    // The description and legend belong to one visualizer: fetch them again
-    // when it changes, like the /remote page does.
+    // The legend belongs to one visualizer: fetch it again when it changes,
+    // like the /remote page does.
     xSemaphoreTake(mutex_, portMAX_DELAY);
     bool stale = live_.valid && live_.activeIndex != status_.activeIndex;
     bool online = conn_.online;
@@ -150,8 +150,6 @@ void MapClient::pollLive() {
     v["name"] = true;
     v["exclusive"] = true;
     v["autoRotate"] = true;
-    filter["display"]["enabled"] = true;
-    filter["display"]["on"] = true;
     JsonObject led = filter["leds"].add<JsonObject>();
     led["code"] = true;
     led["pixel"] = true;
@@ -179,8 +177,6 @@ void MapClient::pollLive() {
   live.autoRotate = v["autoRotate"]["enabled"] | false;
   live.autoSeconds = v["autoRotate"]["seconds"] | 0;
   live.autoNext = numberOrNan(v["autoRotate"]["next"]);
-  live.displayEnabled = doc["display"]["enabled"] | false;
-  live.displayOn = doc["display"]["on"] | false;
   for (JsonObjectConst led : doc["leds"].as<JsonArrayConst>()) {
     Station s;
     s.code = led["code"] | "";
@@ -208,7 +204,6 @@ void MapClient::pollStatus() {
     filter["ip"] = true;
     JsonObject v = filter["visualizer"].to<JsonObject>();
     v["active"] = true;
-    v["description"] = true;
     JsonObject item = v["legend"].add<JsonObject>();
     item["label"] = true;
     item["detail"] = true;
@@ -232,7 +227,6 @@ void MapClient::pollStatus() {
   status.version = doc["version"] | "";
   status.ip = doc["ip"] | "";
   status.activeIndex = doc["visualizer"]["active"] | -1;
-  status.description = doc["visualizer"]["description"] | "";
   for (JsonObjectConst item : doc["visualizer"]["legend"].as<JsonArrayConst>()) {
     LegendItem li;
     li.label = item["label"] | "";

@@ -102,21 +102,23 @@ If an upload can't find the board, hold **BOOT**, tap **RESET**, release
 
 The remote is a small version of the map's `/remote` page, in its colors:
 
-- **Visualizer**: the active visualizer's name and description with previous
-  and next buttons, a chip for every visualizer, its legend, and the
-  Auto-rotate switch (with a countdown to the next visualizer), the OLED
-  switch (when the OLED is enabled in Config) and LED brightness.
+- **Visualizer**: the active visualizer's name, a chip for every visualizer
+  (swipe the row to find one, tap to switch), its legend, the Auto-rotate
+  switch (with a countdown to the next visualizer) and LED brightness.
 - **Locator**: a tile for every airport with its flight category; tap one to
   pulse its LED. The tile flashes when the map pulses it.
 
-The `/remote` page's Map tab is left out: the live map needs a browser.
+Left out from the `/remote` page: the Map tab (the live map needs a
+browser), the visualizer's description, the previous/next buttons and the
+OLED switch.
 
 ### How it talks to the map
 
 A background task on the second core polls `/api/live` every 1.5 s and
 `/api/status` every minute, and again whenever the visualizer changes (for its
-description and legend). Controls send the map's GET endpoints
-(`/visualizer/<id>`, `/brightness/<level>`, `/locate/<pixel>`...). As on the
+legend). Controls send the map's GET endpoints
+(`/visualizer/<id>`, `/visualizer/auto_rotate/on|off`, `/brightness/<level>`,
+`/locate/<pixel>`). As on the
 `/remote` page, a control you touch keeps your value for 3 s while the map
 catches up. Source layout:
 

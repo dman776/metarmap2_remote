@@ -38,14 +38,14 @@ MapLive live;
 Connection conn;
 uint32_t statusRev = 0, liveRev = 0, connRev = 0;
 
-lv_style_t stCard, stChip, stChipOn, stIconBtn, stTab, stTabOn, stTile, stPressed;
+lv_style_t stCard, stChip, stChipOn, stTab, stTabOn, stTile, stPressed;
 
 lv_obj_t* tabButtons[2];
 lv_obj_t* panels[2];
 lv_obj_t *hostDot, *hostLabel;
-lv_obj_t *visName, *visDesc, *chipRow, *legendBox;
+lv_obj_t *visName, *chipRow, *legendBox;
 lv_obj_t *rotateSw, *clockBox, *clockArc, *clockLabel;
-lv_obj_t *oledBox, *oledSw, *brtSlider, *brtLabel;
+lv_obj_t *brtSlider, *brtLabel;
 lv_obj_t *pausedBanner, *grid;
 
 std::vector<lv_obj_t*> chips;  // by visualizer index
@@ -61,7 +61,7 @@ String tileKey;  // the station codes and pixels the tiles were built for
 
 int shownIndex = -1;   // the visualizer on screen
 int legendIndex = -2;  // the visualizer the legend on screen is for
-uint32_t brtTouched = 0, rotateTouched = 0, oledTouched = 0;
+uint32_t brtTouched = 0, rotateTouched = 0;
 bool rotateRunning = false;
 uint32_t rotateAtMs = 0;  // our millis() when the next visualizer comes
 int rotateSeconds = 0;
@@ -103,14 +103,6 @@ void initStyles() {
   lv_style_set_bg_opa(&stChipOn, LV_OPA_COVER);
   lv_style_set_border_color(&stChipOn, hex(kAccent));
   lv_style_set_text_color(&stChipOn, hex(kAccent));
-
-  lv_style_init(&stIconBtn);
-  lv_style_set_radius(&stIconBtn, 10);
-  lv_style_set_border_width(&stIconBtn, 1);
-  lv_style_set_border_color(&stIconBtn, hex(kControl));
-  lv_style_set_bg_color(&stIconBtn, hex(kSurface2));
-  lv_style_set_bg_opa(&stIconBtn, LV_OPA_COVER);
-  lv_style_set_text_color(&stIconBtn, hex(kText));
 
   lv_style_init(&stTab);
   lv_style_set_radius(&stTab, 8);
@@ -227,11 +219,9 @@ void showVisualizer(int index) {
   } else if (live.valid && index == live.activeIndex) {
     lv_label_set_text(visName, live.activeName.c_str());
   }
-  // The description and legend come with /api/status, fetched again when the
-  // visualizer changes; until then the old legend stays, dimmed.
-  bool current = status.activeIndex == index;
-  lv_label_set_text(visDesc, current ? status.description.c_str() : "");
-  lv_obj_set_style_opa(legendBox, current ? LV_OPA_COVER : LV_OPA_50, 0);
+  // The legend comes with /api/status, fetched again when the visualizer
+  // changes; until then the old one stays, dimmed.
+  lv_obj_set_style_opa(legendBox, status.activeIndex == index ? LV_OPA_COVER : LV_OPA_50, 0);
 }
 
 void onChip(lv_event_t* e) {
@@ -324,26 +314,6 @@ void showBrightness() {
   int pct = (int)lroundf(live.brightness * 100);
   lv_slider_set_value(brtSlider, pct, LV_ANIM_OFF);
   showBrightnessLabel(pct);
-}
-
-void onOled(lv_event_t*) {
-  oledTouched = millis();
-  client->command(lv_obj_has_state(oledSw, LV_STATE_CHECKED) ? "/display/on" : "/display/off");
-}
-
-void showOled() {
-  // Like the /remote page: no switch when the OLED is turned off in Config.
-  if (!live.displayEnabled) {
-    lv_obj_add_flag(oledBox, LV_OBJ_FLAG_HIDDEN);
-    return;
-  }
-  lv_obj_remove_flag(oledBox, LV_OBJ_FLAG_HIDDEN);
-  if (recentlyTouched(oledTouched)) return;
-  if (live.displayOn) {
-    lv_obj_add_state(oledSw, LV_STATE_CHECKED);
-  } else {
-    lv_obj_remove_state(oledSw, LV_STATE_CHECKED);
-  }
 }
 
 // ---- the locator -------------------------------------------------------------------------------------------
@@ -510,18 +480,6 @@ lv_obj_t* panel(lv_obj_t* scr) {
   return p;
 }
 
-lv_obj_t* iconButton(lv_obj_t* parent, const char* symbol, const char* path) {
-  lv_obj_t* b = button(parent, &stIconBtn);
-  lv_obj_set_size(b, 36, 36);
-  lv_obj_t* l = lv_label_create(b);
-  lv_label_set_text(l, symbol);
-  lv_obj_center(l);
-  lv_obj_add_event_cb(
-      b, [](lv_event_t* e) { client->command((const char*)lv_event_get_user_data(e)); },
-      LV_EVENT_CLICKED, (void*)path);
-  return b;
-}
-
 lv_obj_t* footLabel(lv_obj_t* parent, const char* text) {
   return label(parent, text, &lv_font_montserrat_12, kMuted);
 }
@@ -535,24 +493,11 @@ lv_obj_t* toggle(lv_obj_t* parent, lv_event_cb_t cb) {
 }
 
 void buildVisualizerPanel(lv_obj_t* p) {
-  // ‹ name and description ›
-  lv_obj_t* head = box(p, LV_FLEX_FLOW_ROW);
-  lv_obj_set_size(head, LV_PCT(100), 38);
-  lv_obj_set_flex_align(head, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-  iconButton(head, LV_SYMBOL_LEFT, "/visualizer/previous");
-  lv_obj_t* text = box(head, LV_FLEX_FLOW_COLUMN);
-  lv_obj_set_height(text, LV_SIZE_CONTENT);
-  lv_obj_set_flex_grow(text, 1);
-  lv_obj_set_flex_align(text, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-  visName = label(text, "", &lv_font_montserrat_20, kText);
+  // the active visualizer's name
+  visName = label(p, "", &lv_font_montserrat_20, kText);
   lv_label_set_long_mode(visName, LV_LABEL_LONG_DOT);
-  lv_obj_set_width(visName, 220);
+  lv_obj_set_width(visName, LV_PCT(100));
   lv_obj_set_style_text_align(visName, LV_TEXT_ALIGN_CENTER, 0);
-  visDesc = label(text, "", &lv_font_montserrat_12, kMuted);
-  lv_label_set_long_mode(visDesc, LV_LABEL_LONG_SCROLL_CIRCULAR);
-  lv_obj_set_width(visDesc, 220);
-  lv_obj_set_style_text_align(visDesc, LV_TEXT_ALIGN_CENTER, 0);
-  iconButton(head, LV_SYMBOL_RIGHT, "/visualizer/next");
 
   // a chip for each visualizer, scrolling sideways
   chipRow = box(p, LV_FLEX_FLOW_ROW);
@@ -574,7 +519,7 @@ void buildVisualizerPanel(lv_obj_t* p) {
   lv_obj_add_flag(legendBox, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_set_scroll_dir(legendBox, LV_DIR_VER);
 
-  // the footer: auto-rotate with its countdown, the OLED, LED brightness
+  // the footer: auto-rotate with its countdown, LED brightness
   lv_obj_t* foot = box(p, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_size(foot, LV_PCT(100), LV_SIZE_CONTENT);
   lv_obj_set_style_border_side(foot, LV_BORDER_SIDE_TOP, 0);
@@ -607,16 +552,6 @@ void buildVisualizerPanel(lv_obj_t* p) {
   lv_obj_set_style_pad_all(clockArc, 0, 0);
   clockLabel = label(clockBox, "", &lv_font_montserrat_14, kMuted);
   lv_obj_add_flag(clockBox, LV_OBJ_FLAG_HIDDEN);
-
-  lv_obj_t* spacer = box(row1, LV_FLEX_FLOW_ROW);
-  lv_obj_set_flex_grow(spacer, 1);
-  oledBox = box(row1, LV_FLEX_FLOW_ROW);
-  lv_obj_set_size(oledBox, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-  lv_obj_set_flex_align(oledBox, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-  lv_obj_set_style_pad_column(oledBox, 8, 0);
-  footLabel(oledBox, "OLED");
-  oledSw = toggle(oledBox, onOled);
-  lv_obj_add_flag(oledBox, LV_OBJ_FLAG_HIDDEN);
 
   lv_obj_t* row2 = box(foot, LV_FLEX_FLOW_ROW);
   lv_obj_set_size(row2, LV_PCT(100), 26);
@@ -692,7 +627,6 @@ void ui_tick() {
     if (live.activeIndex != shownIndex) showVisualizer(live.activeIndex);
     showRotation();
     showBrightness();
-    showOled();
     showStations();
   }
 

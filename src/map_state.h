@@ -1,6 +1,6 @@
 // What the remote knows about the map, from its JSON API. The same split
 // as the map's /remote page: /api/live polled often, /api/status for the
-// visualizer list and the active visualizer's description and legend.
+// visualizer list and the active visualizer's legend.
 #pragma once
 
 #include <Arduino.h>
@@ -26,8 +26,7 @@ struct MapStatus {
   bool valid = false;
   String version;
   String ip;
-  int activeIndex = -1;  // the visualizer the description and legend are for
-  String description;
+  int activeIndex = -1;  // the visualizer the legend is for
   std::vector<LegendItem> legend;
   std::vector<Visualizer> visualizers;
 };
@@ -51,8 +50,6 @@ struct MapLive {
   bool autoRotate = false;
   int autoSeconds = 0;
   double autoNext = NAN;  // map clock; NAN while auto-rotate is off
-  bool displayEnabled = false;
-  bool displayOn = false;
   std::vector<Station> stations;  // in LED order
   int locatePixel = -1;
   double locateAt = NAN;
