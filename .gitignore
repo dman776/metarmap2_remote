@@ -4,4 +4,5 @@
 .vscode/launch.json
 .vscode/ipch
 include/secrets.h
+include/firmware_version.h
 .DS_Store

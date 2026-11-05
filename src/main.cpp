@@ -5,6 +5,7 @@
 #include "audio.h"
 #include "board_es3c28p.h"
 #include "display.h"
+#include "firmware_version.h"
 #include "log.h"
 #include "lvgl_port.h"
 #include "map_client.h"
@@ -23,6 +24,7 @@ static MapClient mapClient;
 
 void setup() {
   Serial.begin(115200);
+  LOGF("METARMap Remote %s\n", FIRMWARE_VERSION);
 
   neopixelWrite(RGB_LED, 0, 0, 0);
   audio_begin();  // before lcd.init(): it borrows the touch I2C pins

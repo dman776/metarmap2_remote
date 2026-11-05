@@ -105,7 +105,10 @@ At startup a splash screen shows the MetarMap logo, name and the metarmap2 repo,
 the Wi-Fi hasn't joined after 15 s, the line names the network ("Can't find
 <network>" when it isn't in range or is 5 GHz only, else "Can't join") and keeps
 retrying; the map's line says "retrying" while the map doesn't answer. Two
-seconds after both are OK, the remote fades in.
+seconds after both are OK, the remote fades in. It also shows the firmware's
+version, from `git describe` at build time (`tools/version.py`): a release tag
+like `v26.11.05`, commits after it (`v26.11.05+3 abc1234`), or just the commit
+before the first tag, with `modified` for a build with uncommitted changes.
 
 The remote is a small version of the map's `/remote` page, in its colors:
 

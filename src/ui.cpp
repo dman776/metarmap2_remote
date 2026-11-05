@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <string>
 
+#include "firmware_version.h"
 #include "legend.h"
 #include "map_client.h"
 
@@ -630,8 +631,10 @@ void showSplash(lv_obj_t* remote) {
   lv_obj_t* img = lv_image_create(splash);
   lv_image_set_src(img, &logo);
   label(splash, "MetarMap", &lv_font_montserrat_28, kText);
-  lv_obj_t* repo = label(splash, kRepo, &lv_font_montserrat_12, kMuted);
-  lv_obj_set_style_margin_bottom(repo, 10, 0);
+  label(splash, kRepo, &lv_font_montserrat_12, kMuted);
+  std::string version = std::string("Remote ") + FIRMWARE_VERSION;
+  lv_obj_t* ver = label(splash, version.c_str(), &lv_font_montserrat_12, kMuted);
+  lv_obj_set_style_margin_bottom(ver, 10, 0);
   wifiState = splashStep(splash, "Connecting to Wi-Fi...", &wifiStep);
   mapState = splashStep(splash, "Connecting to the map...");
 
