@@ -64,6 +64,69 @@ std::string used(const std::vector<bool>& v) {
 void setUp() {}
 void tearDown() {}
 
+// ---- a map that says which entries are in use (visualizer.legendInUse) ----
+
+// flightCategoryLegend() with the keys the map gives each entry.
+std::vector<LegendItem> keyedFlightCategoryLegend() {
+  std::vector<LegendItem> legend = flightCategoryLegend();
+  const char* keys[] = {"VFR", "MVFR", "IFR", "LIFR", "estimated", "missing", "lightning", "no_report"};
+  for (size_t i = 0; i < legend.size(); i++) legend[i].key = keys[i];
+  return legend;
+}
+
+Fixture saying(std::vector<std::string> inUse, std::vector<Station> stations = {}) {
+  Fixture f = showing(keyedFlightCategoryLegend(), stations);
+  f.live.hasLegendInUse = true;
+  f.live.legendInUse = inUse;
+  return f;
+}
+
+void test_the_maps_list_is_taken_at_its_word() {
+  // The LED would match VFR by color; the map says otherwise.
+  Fixture f = saying({"MVFR", "no_report"}, {led("solid", {0x00ff00})});
+  TEST_ASSERT_EQUAL_STRING("1 7 ", used(inUse(f)).c_str());
+}
+
+void test_the_map_knows_an_estimated_category() {
+  // The guess can only pick Estimated for an estimated MVFR (blue breathing);
+  // the map names both entries.
+  Fixture f = saying({"MVFR", "estimated"}, {led("pulse", {0x0000ff})});
+  TEST_ASSERT_EQUAL_STRING("1 4 ", used(inUse(f)).c_str());
+}
+
+void test_the_map_names_lightning_and_the_color_under_it() {
+  Fixture f = saying({"IFR", "lightning"}, {led("cycle", {0xffff00, 0xff0000}, true)});
+  TEST_ASSERT_EQUAL_STRING("2 6 ", used(inUse(f)).c_str());
+}
+
+void test_an_empty_list_from_the_map_shows_the_whole_legend() {
+  TEST_ASSERT_EQUAL_STRING("0 1 2 3 4 5 6 7 ", used(inUse(saying({}))).c_str());
+}
+
+void test_the_maps_list_still_waits_for_its_own_legend() {
+  Fixture f = saying({"VFR"});
+  f.live.activeIndex = 1;  // the map has moved on; the legend is still visualizer 0's
+  TEST_ASSERT_EQUAL_STRING("", used(inUse(f)).c_str());
+}
+
+void test_an_older_map_is_still_matched_by_look() {
+  // No legendInUse (an older map): the LEDs' looks, as before.
+  Fixture f = showing(keyedFlightCategoryLegend(), {led("solid", {0x00ff00})});
+  TEST_ASSERT_FALSE(legend::fromMap(f.status, f.live));
+  TEST_ASSERT_EQUAL_STRING("0 ", used(inUse(f)).c_str());
+}
+
+void test_a_legend_without_keys_is_matched_by_look() {
+  // legendInUse, but a legend from before keys (the status is a minute behind): nothing to match it to.
+  Fixture f = showing(flightCategoryLegend(), {led("solid", {0x00ff00})});
+  f.live.hasLegendInUse = true;
+  f.live.legendInUse = {"MVFR"};
+  TEST_ASSERT_FALSE(legend::fromMap(f.status, f.live));
+  TEST_ASSERT_EQUAL_STRING("0 ", used(inUse(f)).c_str());
+}
+
+// ---- matching the LEDs' looks (a map that doesn't say) ----
+
 void test_all_vfr_shows_only_vfr() {
   Fixture f = showing(flightCategoryLegend(), {led("solid", {0x00ff00}), led("solid", {0x00ff00})});
   TEST_ASSERT_EQUAL_STRING("0 ", used(inUse(f)).c_str());
@@ -172,6 +235,13 @@ void test_nothing_matched_shows_the_whole_legend() {
 
 int main() {
   UNITY_BEGIN();
+  RUN_TEST(test_the_maps_list_is_taken_at_its_word);
+  RUN_TEST(test_the_map_knows_an_estimated_category);
+  RUN_TEST(test_the_map_names_lightning_and_the_color_under_it);
+  RUN_TEST(test_an_empty_list_from_the_map_shows_the_whole_legend);
+  RUN_TEST(test_the_maps_list_still_waits_for_its_own_legend);
+  RUN_TEST(test_an_older_map_is_still_matched_by_look);
+  RUN_TEST(test_a_legend_without_keys_is_matched_by_look);
   RUN_TEST(test_all_vfr_shows_only_vfr);
   RUN_TEST(test_each_category_present);
   RUN_TEST(test_blink_is_not_the_solid_color);

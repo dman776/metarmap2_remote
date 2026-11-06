@@ -139,11 +139,17 @@ interrupted download leaves the running firmware as it was. (The board's
 bootloader can't roll back on its own, so if new firmware didn't start at all,
 flash it by USB.)
 
-The map doesn't say which legend entry each LED shows, so the remote works it
-out from each LED's current look in `/api/live`: its effect and color (so
-blinking red isn't solid red), a color along a gradient entry (temperature,
-pressure), the lightning flag for the flash entry, else the nearest entry with
-the same effect.
+Which legend entries are in use comes from the map: `/api/live`'s
+`visualizer.legendInUse` names them by the `key` each entry has in
+`/api/status`. The map knows exactly what each LED shows (an estimated MVFR is
+MVFR and Estimated; light snow is Snow and Light). The remote always filters,
+whatever the map's own "Only show legend items in use" setting is.
+
+A map from before `legendInUse` doesn't say, so the remote works it out from
+each LED's current look in `/api/live`: its effect and color (so blinking red
+isn't solid red), a color along a gradient entry (temperature, pressure), the
+lightning flag for the flash entry, else the nearest entry with the same
+effect.
 
 See the [METARMap2 API documentation](https://github.com/dman776/metarmap2/blob/master/API.md)
 for the endpoints.

@@ -26,6 +26,7 @@ void liveFilter(JsonDocument& filter) {
   v["name"] = true;
   v["exclusive"] = true;
   v["autoRotate"] = true;
+  v["legendInUse"] = true;
   JsonObject led = filter["leds"].add<JsonObject>();
   led["code"] = true;
   led["pixel"] = true;
@@ -45,6 +46,7 @@ void statusFilter(JsonDocument& filter) {
   JsonObject v = filter["visualizer"].to<JsonObject>();
   v["active"] = true;
   JsonObject item = v["legend"].add<JsonObject>();
+  item["key"] = true;
   item["label"] = true;
   item["detail"] = true;
   item["effect"] = true;
@@ -68,6 +70,10 @@ MapLive parseLive(JsonVariantConst doc) {
   live.autoSeconds = v["autoRotate"]["seconds"] | 0;
   live.autoNext = numberOrNan(v["autoRotate"]["next"]);
   live.strip = !doc["strip"].isNull();
+  if (v["legendInUse"].is<JsonArrayConst>()) {
+    live.hasLegendInUse = true;
+    for (JsonVariantConst key : v["legendInUse"].as<JsonArrayConst>()) live.legendInUse.push_back(key | "");
+  }
   for (JsonVariantConst led : doc["leds"].as<JsonArrayConst>()) {
     Station s;
     s.code = led["code"] | "";
@@ -97,6 +103,7 @@ MapStatus parseStatus(JsonVariantConst doc) {
   status.activeIndex = doc["visualizer"]["active"] | -1;
   for (JsonVariantConst item : doc["visualizer"]["legend"].as<JsonArrayConst>()) {
     LegendItem li;
+    li.key = item["key"] | "";
     li.label = item["label"] | "";
     li.detail = item["detail"] | "";
     li.effect = item["effect"] | "solid";

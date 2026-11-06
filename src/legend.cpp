@@ -61,6 +61,14 @@ void markStation(const std::vector<LegendItem>& legend, const Station& s, std::v
 
 }  // namespace
 
+bool fromMap(const MapStatus& status, const MapLive& live) {
+  if (!live.hasLegendInUse || status.legend.empty()) return false;
+  for (const LegendItem& item : status.legend) {
+    if (item.key.empty()) return false;
+  }
+  return true;
+}
+
 bool isGradient(const LegendItem& item) {
   return item.colors.size() > 1 && item.effect != "flash" && item.effect != "alternate";
 }
@@ -85,7 +93,14 @@ std::vector<bool> inUse(const MapStatus& status, const MapLive& live, int shownI
   if (!ready) return std::vector<bool>(n, false);
   if (live.strip) return std::vector<bool>(n, true);
   std::vector<bool> used(n, false);
-  for (const Station& s : live.stations) markStation(status.legend, s, used);
+  if (fromMap(status, live)) {
+    for (size_t i = 0; i < n; i++) {
+      const std::vector<std::string>& keys = live.legendInUse;
+      used[i] = std::find(keys.begin(), keys.end(), status.legend[i].key) != keys.end();
+    }
+  } else {
+    for (const Station& s : live.stations) markStation(status.legend, s, used);
+  }
   if (std::find(used.begin(), used.end(), true) == used.end()) return std::vector<bool>(n, true);
   return used;
 }

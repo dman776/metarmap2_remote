@@ -103,6 +103,23 @@ void test_live_nulls() {
   TEST_ASSERT_TRUE(std::isnan(live.locateAt));
 }
 
+void test_live_legend_in_use() {
+  const char* json = R"({"now": 100.0, "visualizer": {"active": 0, "name": "Flight Category",
+      "legendInUse": ["VFR", "no_report"], "legendInUseOnly": false}, "strip": null, "leds": []})";
+  MapLive live = parseLive(filtered(json, liveFilter).as<JsonVariantConst>());
+  TEST_ASSERT_TRUE(live.hasLegendInUse);
+  TEST_ASSERT_EQUAL_UINT(2, live.legendInUse.size());
+  TEST_ASSERT_EQUAL_STRING("VFR", live.legendInUse[0].c_str());
+  TEST_ASSERT_EQUAL_STRING("no_report", live.legendInUse[1].c_str());
+}
+
+void test_live_without_legend_in_use() {
+  // An older map doesn't send it; a whole-strip effect sends null.
+  TEST_ASSERT_FALSE(parseLive(filtered(kLiveJson, liveFilter).as<JsonVariantConst>()).hasLegendInUse);
+  const char* json = R"({"visualizer": {"active": 13, "legendInUse": null}, "strip": {"effect": "rainbow"}})";
+  TEST_ASSERT_FALSE(parseLive(filtered(json, liveFilter).as<JsonVariantConst>()).hasLegendInUse);
+}
+
 void test_live_filter_drops_the_rest() {
   // The METAR text, positions and names are most of /api/live; the remote
   // doesn't keep them.
@@ -153,6 +170,18 @@ void test_status_legend() {
   TEST_ASSERT_TRUE(off.colors.empty());
 }
 
+void test_status_legend_keys() {
+  const char* json = R"({"visualizer": {"active": 0, "legend": [
+      {"key": "VFR", "label": "VFR", "detail": "Green", "colors": ["#00ff00"], "effect": "solid", "inUse": true},
+      {"key": "no_report", "label": "METAR not available", "detail": "Off", "colors": [], "effect": "off"}]}})";
+  MapStatus status = parseStatus(filtered(json, statusFilter).as<JsonVariantConst>());
+  TEST_ASSERT_EQUAL_STRING("VFR", status.legend[0].key.c_str());
+  TEST_ASSERT_EQUAL_STRING("no_report", status.legend[1].key.c_str());
+  // an older map's legend has none
+  MapStatus older = parseStatus(filtered(kStatusJson, statusFilter).as<JsonVariantConst>());
+  TEST_ASSERT_TRUE(older.legend[0].key.empty());
+}
+
 void test_status_filter_drops_the_rest() {
   JsonDocument doc = filtered(kStatusJson, statusFilter);
   TEST_ASSERT_TRUE(doc["airports"].isNull());
@@ -167,9 +196,12 @@ int main() {
   RUN_TEST(test_live_locate);
   RUN_TEST(test_live_stations);
   RUN_TEST(test_live_nulls);
+  RUN_TEST(test_live_legend_in_use);
+  RUN_TEST(test_live_without_legend_in_use);
   RUN_TEST(test_live_filter_drops_the_rest);
   RUN_TEST(test_status);
   RUN_TEST(test_status_legend);
+  RUN_TEST(test_status_legend_keys);
   RUN_TEST(test_status_filter_drops_the_rest);
   return UNITY_END();
 }

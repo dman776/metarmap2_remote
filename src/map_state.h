@@ -22,6 +22,7 @@ struct LegendItem {
   std::string detail;
   std::string effect;            // solid, blink, pulse, flash, alternate, chase, off
   std::vector<uint32_t> colors;  // 0xRRGGBB; empty for "off"
+  std::string key;  // what /api/live's legendInUse names it by; "" from a map without it (last: keeps {label, ...})
 };
 
 // GET /api/status
@@ -57,8 +58,12 @@ struct MapLive {
   bool exclusive = false;
   bool autoRotate = false;
   int autoSeconds = 0;
-  double autoNext = NAN;          // map clock; NAN while auto-rotate is off
-  bool strip = false;             // one effect (rainbow, chase) drives the whole strip
+  double autoNext = NAN;  // map clock; NAN while auto-rotate is off
+  bool strip = false;     // one effect (rainbow, chase) drives the whole strip
+  // the legend entries (keys) the LEDs show now, as the map works them out; hasLegendInUse is false for a map
+  // that doesn't say (older ones), or while a whole-strip effect runs
+  bool hasLegendInUse = false;
+  std::vector<std::string> legendInUse;
   std::vector<Station> stations;  // in LED order
   int locatePixel = -1;
   double locateAt = NAN;
