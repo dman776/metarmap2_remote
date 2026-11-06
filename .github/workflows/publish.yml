@@ -18,8 +18,11 @@ on:
 permissions:
   contents: write
 
+# One run per branch or tag. A delete event's github.ref is the default branch, so it's keyed by the deleted
+# branch (github.event.ref) instead: otherwise deleting two branches cancels one cleanup, and a delete can
+# cancel a build of main.
 concurrency:
-  group: publish-${{ github.ref }}
+  group: publish-${{ github.event_name == 'delete' && format('deleted-{0}', github.event.ref) || github.ref }}
   cancel-in-progress: true
 
 env:
