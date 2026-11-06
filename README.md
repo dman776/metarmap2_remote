@@ -211,6 +211,9 @@ day (`v26.11.07.1`).
   commit's firmware: `build-main` is **Latest commit**, the others are
   **Branch**. Deleting a branch removes its build.
 
+A push or pull request that changes only the README and `docs/` doesn't run the
+checks or build firmware. Tag pushes always do.
+
 ### Serial console and screenshots
 
 At 115200 baud the console logs the version, the connection and each control
