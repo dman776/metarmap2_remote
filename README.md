@@ -199,7 +199,7 @@ for the endpoints.
 | `src/audio.cpp` | The codec, the touch tick and the I2S output |
 | `src/stream.cpp` | The Radio: reading an MP3 stream and playing it, on two tasks |
 | `src/stream_dsp.cpp` | The stream's ring buffer, resampler and URL parsing |
-| `src/third_party/minimp3.h` | The MP3 decoder (public domain), as its author wrote it |
+| `src/third_party/minimp3.h` | The MP3 decoder (public domain); one marked change: its scratch can live in PSRAM |
 | `src/updater.cpp` | Checking GitHub and installing firmware, on its own task |
 | `src/update_check.cpp` | GitHub's release JSON, versions, what's an update |
 | `src/settings.cpp` | Wi-Fi, map and update settings, in flash |

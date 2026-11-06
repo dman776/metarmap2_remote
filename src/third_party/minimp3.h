@@ -1715,7 +1715,13 @@ int mp3dec_decode_frame(mp3dec_t *dec, const uint8_t *mp3, int mp3_bytes, mp3d_s
     int i = 0, igr, frame_size = 0, success = 1;
     const uint8_t *hdr;
     bs_t bs_frame[1];
+    /* metarmap2_remote: MINIMP3_SCRATCH, if defined, names a mp3dec_scratch_t to use instead of one on the stack
+       (about 16 KB), so the decoding task's stack can be small. Not in the original. */
+#ifdef MINIMP3_SCRATCH
+#define scratch (*(MINIMP3_SCRATCH))
+#else
     mp3dec_scratch_t scratch;
+#endif
 
     if (mp3_bytes > 4 && dec->header[0] == 0xff && hdr_compare(dec->header, mp3))
     {
@@ -1804,6 +1810,9 @@ int mp3dec_decode_frame(mp3dec_t *dec, const uint8_t *mp3, int mp3_bytes, mp3d_s
     }
     return success*hdr_frame_samples(dec->header);
 }
+#ifdef MINIMP3_SCRATCH
+#undef scratch
+#endif
 
 #ifdef MINIMP3_FLOAT_OUTPUT
 void mp3dec_f32_to_s16(const float *in, int16_t *out, int num_samples)

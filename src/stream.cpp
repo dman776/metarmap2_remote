@@ -15,6 +15,10 @@
 #include "log.h"
 #include "stream_dsp.h"
 
+// minimp3's ~16 KB of scratch lives in PSRAM (one decoder at a time), not on the player's stack: task stacks must be
+// in internal RAM, which TLS needs too.
+static void* g_mp3Scratch = nullptr;  // a mp3dec_scratch_t (minimp3 names the type only once it's included)
+#define MINIMP3_SCRATCH static_cast<mp3dec_scratch_t*>(g_mp3Scratch)
 #define MINIMP3_ONLY_MP3
 #define MINIMP3_IMPLEMENTATION
 #include "third_party/minimp3.h"
@@ -33,7 +37,7 @@ constexpr uint32_t kRetryMs = 4000;
 constexpr int kMaxRedirects = 3;
 constexpr int kVolume = 160;  // of 256: the little speaker distorts near full scale
 constexpr uint32_t kReaderStack = 12 * 1024;
-constexpr uint32_t kPlayerStack = 28 * 1024;  // minimp3 keeps about 15 KB of scratch on the stack
+constexpr uint32_t kPlayerStack = 8 * 1024;  // minimp3's scratch is in PSRAM (g_mp3Scratch)
 constexpr uint32_t kPublishMs = 250;
 
 std::string streamUrl;
@@ -360,6 +364,12 @@ void stream_begin(const std::string& url) {
   uint8_t* storage = static_cast<uint8_t*>(heap_caps_malloc(kRingBytes, MALLOC_CAP_SPIRAM));
   if (!storage) {
     LOGF("stream: no PSRAM for the buffer\n");
+    return;
+  }
+  g_mp3Scratch = heap_caps_malloc(sizeof(mp3dec_scratch_t), MALLOC_CAP_SPIRAM);
+  if (!g_mp3Scratch) {
+    heap_caps_free(storage);
+    LOGF("stream: no PSRAM for the decoder\n");
     return;
   }
   streamUrl = url;
