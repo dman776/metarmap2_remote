@@ -10,9 +10,9 @@ The map stays in charge. The remote reads the map's state over its HTTP API and
 sends it the same controls the `/remote` page does; it never fetches weather or
 drives LEDs itself.
 
-| Visualizer | Locator | Splash |
-|---|---|---|
-| ![The Visualizer tab](docs/visualizer.png) | ![The Locator tab](docs/locator.png) | ![The splash screen](docs/splash.png) |
+| Visualizer | Locator | Splash | Update |
+|---|---|---|---|
+| ![The Visualizer tab, with the update star](docs/visualizer.png) | ![The Locator tab](docs/locator.png) | ![The splash screen](docs/splash.png) | ![The firmware update screen](docs/update.png) |
 
 ## What it does
 
