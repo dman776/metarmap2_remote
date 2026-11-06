@@ -4,11 +4,14 @@ name: publish
 #   a release tag (v26.11.05)  -> metarmap_remote-es3c28p.bin on that GitHub release   (Releases)
 #   a push to a branch         -> a pre-release tagged build-<branch>, replaced each push (Latest commit, Branch)
 #   a deleted branch           -> its build-<branch> pre-release removed
+# A branch push that changes only the README and docs/ doesn't build: the branch's firmware is the same.
+# (Path filters aren't evaluated for tag pushes, so a release tag always builds.)
 # These builds have no include/secrets.h: the remote keeps its Wi-Fi settings in flash.
 
 on:
   push:
     branches: ["**"]
+    paths-ignore: ["README.md", "docs/**"]
     tags: ["v*"]
   delete:
 

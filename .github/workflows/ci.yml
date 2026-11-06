@@ -1,8 +1,11 @@
 name: ci
 
+# Not for a push or pull request that changes only the README and docs/.
 on:
   push:
+    paths-ignore: ["README.md", "docs/**"]
   pull_request:
+    paths-ignore: ["README.md", "docs/**"]
 
 permissions:
   contents: read
