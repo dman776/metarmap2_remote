@@ -1,6 +1,6 @@
-# METARMap Remote
+# MetarMap2 Remote
 
-A touchscreen remote for a [METARMap2](https://github.com/dman776/metarmap2)
+A touchscreen remote for a [MetarMap2](https://github.com/dman776/metarmap2)
 map: firmware for a 2.8" ESP32-S3 touch display that sits beside the map and
 works like a small version of the map's `/remote` page. Pick the visualizer,
 see what the LEDs mean, set the LED brightness, turn auto-rotate on or off,
@@ -35,7 +35,7 @@ drives LEDs itself.
 
 **Splash screen**
 
-- At startup: the MetarMap logo, the metarmap2 repo, the remote's firmware
+- At startup: the MetarMap2 logo, the metarmap2 repo, the remote's firmware
   version and the map's (once it answers), and
   "Connecting to Wi-Fi..." and "Connecting to the map..." turning OK. Two
   seconds after both are OK, the remote fades in.
@@ -97,7 +97,7 @@ slicer and slice it again.
 ## Setup
 
 You need [PlatformIO](https://platformio.org/) (the VS Code extension or
-`pip install platformio`) and a METARMap2 map on your network.
+`pip install platformio`) and a MetarMap2 map on your network.
 
 1. Copy `include/secrets.example.h` to `include/secrets.h` and fill it in:
    your Wi-Fi network and password, and the map's address and port
@@ -161,7 +161,7 @@ isn't solid red), a color along a gradient entry (temperature, pressure), the
 lightning flag for the flash entry, else the nearest entry with the same
 effect.
 
-See the [METARMap2 API documentation](https://github.com/dman776/metarmap2/blob/master/API.md)
+See the [MetarMap2 API documentation](https://github.com/dman776/metarmap2/blob/master/API.md)
 for the endpoints.
 
 | File | What it does |

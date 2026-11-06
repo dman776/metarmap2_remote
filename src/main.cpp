@@ -1,4 +1,4 @@
-// METARMap Remote: a small version of the map's /remote page on the ES3C28P.
+// MetarMap2 Remote: a small version of the map's /remote page on the ES3C28P.
 #include <Arduino.h>
 #include <WiFi.h>
 
@@ -22,7 +22,7 @@ static Settings settings;  // read once at startup; the clients keep pointers in
 
 void setup() {
   Serial.begin(115200);
-  LOGF("METARMap Remote %s\n", FIRMWARE_VERSION);
+  LOGF("MetarMap2 Remote %s\n", FIRMWARE_VERSION);
 
   settings = settings_load();  // Wi-Fi and map: from secrets.h, else as saved
   neopixelWrite(RGB_LED, 0, 0, 0);
