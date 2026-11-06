@@ -41,7 +41,9 @@ constexpr uint32_t kLifr = 0xd77bff;
 constexpr uint32_t kNone = 0x5b6b7e;
 
 constexpr int kW = 320, kH = 240;
-constexpr int kBarH = 34;
+constexpr int kChipH = 44;  // the visualizer chips' height; the tabs in the bar match it
+// the bar: 4 px above the tabs, which are kChipH inside their 2 px padding and 1 px border
+constexpr int kBarH = 4 + kChipH + 2 * (2 + 1);
 constexpr int kPad = 6;
 constexpr int kCols = 4;                    // Locator tiles per row
 constexpr uint32_t kHoldMs = 3000;          // a touched control keeps its value while the map catches up
@@ -460,7 +462,7 @@ void buildBar(lv_obj_t* scr) {
   lv_obj_set_flex_align(bar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
   lv_obj_t* tabs = box(bar, LV_FLEX_FLOW_ROW);
-  lv_obj_set_size(tabs, 180, 30);  // leaves 120 px: star 12 + 5 + dot 7 + 5 + address 88 = 117
+  lv_obj_set_size(tabs, 180, kChipH + 2 * (2 + 1));  // leaves 120 px: star 12 + 5 + dot 7 + 5 + address 88 = 117
   lv_obj_set_style_bg_color(tabs, hex(kSurface), 0);
   lv_obj_set_style_bg_opa(tabs, LV_OPA_COVER, 0);
   lv_obj_set_style_border_width(tabs, 1, 0);
@@ -518,7 +520,7 @@ lv_obj_t* toggle(lv_obj_t* parent, lv_event_cb_t cb) {
 void buildVisualizerPanel(lv_obj_t* p) {
   // a chip for each visualizer, scrolling sideways; the active one is lit
   chipRow = box(p, LV_FLEX_FLOW_ROW);
-  lv_obj_set_size(chipRow, LV_PCT(100), 44);
+  lv_obj_set_size(chipRow, LV_PCT(100), kChipH);
   lv_obj_set_style_pad_column(chipRow, 6, 0);
   lv_obj_add_flag(chipRow, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_set_scroll_dir(chipRow, LV_DIR_HOR);
