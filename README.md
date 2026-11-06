@@ -84,6 +84,16 @@ An LCDwiki **ES3C28P** ([wiki](https://www.lcdwiki.com/2.8inch_ESP32-S3_Display)
 Power it from USB-C. The pin map is in
 [include/board_es3c28p.h](include/board_es3c28p.h).
 
+### Bezel
+
+A bezel you can print on your own 3D printer holds the screen in your map:
+[bezel/Metarmap Remote es3c28p_bezel_and_frame.3mf](bezel/Metarmap%20Remote%20es3c28p_bezel_and_frame.3mf)
+for the ES3C28P. It's a Bambu Studio / OrcaSlicer project with two parts, a
+black bezel and a yellow logo, so it prints in two colors (or in one, if you
+leave the logo out). The project is sliced for a Flashforge AD5X with 0.2 mm
+layers, 4 walls and 15% infill; pick your own printer and filament in the
+slicer and slice it again.
+
 ## Setup
 
 You need [PlatformIO](https://platformio.org/) (the VS Code extension or
