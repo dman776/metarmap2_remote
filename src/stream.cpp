@@ -9,6 +9,7 @@
 
 #include <atomic>
 #include <memory>
+#include <new>
 
 #include "audio.h"
 #include "log.h"
@@ -42,6 +43,10 @@ StreamState state;
 uint32_t stateRev = 0;
 
 std::atomic<bool> wanted{false};
+// The tasks run only while playing, so their stacks (in internal RAM, which TLS needs too) are free otherwise. Each
+// Play starts a generation; a task from an older one stops without touching anything shared.
+std::atomic<uint32_t> generation{0};
+std::atomic<int> players{0};       // player tasks still running (one, or for a moment two)
 std::atomic<uint32_t> epoch{0};    // the reader bumps it for each connection...
 std::atomic<uint32_t> acked{0};    // ...and the player says it has dropped what it had (and may read the ring)
 std::atomic<bool> flowing{false};  // the reader has the stream open
@@ -93,8 +98,20 @@ bool openStream(std::string url, std::unique_ptr<WiFiClient>& client, std::strin
       client.reset(new WiFiClient());
     }
     client->setTimeout(kTimeoutMs / 1000);
+    IPAddress ip;
+    if (!WiFi.hostByName(u.host.c_str(), ip)) {
+      error = "can't find " + u.host;
+      return false;
+    }
     if (!client->connect(u.host.c_str(), u.port, kTimeoutMs)) {
-      error = "can't connect";
+      error = "can't connect to " + u.host + ":" + std::to_string(u.port);
+      if (u.tls) {
+        char why[96] = "";
+        int code = static_cast<WiFiClientSecure*>(client.get())->lastError(why, sizeof(why));
+        error += " (TLS " + std::to_string(code) + ": " + why + ")";
+      }
+      LOGF("stream: %s; free heap %u, largest block %u\n", error.c_str(), (unsigned)ESP.getFreeHeap(),
+           (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
       return false;
     }
     client->printf(
@@ -136,17 +153,20 @@ bool openStream(std::string url, std::unique_ptr<WiFiClient>& client, std::strin
   return false;
 }
 
+bool current(uint32_t gen) { return wanted && generation.load() == gen; }
+
 // One connection: reads until it drops or the user stops it. Returns why it ended ("" when stopped).
-std::string readOnce() {
+std::string readOnce(uint32_t gen) {
   std::unique_ptr<WiFiClient> client;
   std::string error;
   publish(StreamState::Connecting);
   if (!openStream(streamUrl, client, error)) return error;
+  if (!current(gen)) return "";
 
   // The player drops what it has of the last connection first.
   uint32_t mine = epoch.fetch_add(1) + 1;
   for (uint32_t waited = 0; acked.load() != mine; waited += 5) {
-    if (waited > 2000 || !wanted) return wanted ? "decoder not answering" : "";
+    if (waited > 2000 || !current(gen)) return current(gen) ? "decoder not answering" : "";
     delay(5);
   }
   flowing = true;
@@ -154,7 +174,7 @@ std::string readOnce() {
 
   std::unique_ptr<uint8_t[]> chunk(new uint8_t[kNetChunk]);
   uint32_t lastData = millis();
-  while (wanted) {
+  while (current(gen)) {
     if (ring->space() < kNetChunk) {
       delay(20);  // the decoder is behind: let TCP's window do the waiting
       continue;
@@ -177,28 +197,24 @@ std::string readOnce() {
     ring->write(chunk.get(), n);
     lastData = millis();
   }
-  flowing = false;
+  if (generation.load() == gen) flowing = false;
   return "";
 }
 
-void readerTask(void*) {
-  for (;;) {
-    if (!wanted) {
-      publish(StreamState::Off);
-      delay(100);
-      continue;
-    }
-    std::string why;
-    if (WiFi.status() != WL_CONNECTED) {
-      why = "no Wi-Fi";
-    } else {
-      why = readOnce();
-    }
-    if (!wanted) continue;
+void readerTask(void* arg) {
+  uint32_t gen = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(arg));
+  while (current(gen)) {
+    std::string why = WiFi.status() != WL_CONNECTED ? "no Wi-Fi" : readOnce(gen);
+    if (!current(gen)) break;
     LOGF("stream: %s; trying again\n", why.c_str());
     publish(StreamState::Retrying, why.c_str());
-    for (uint32_t waited = 0; wanted && waited < kRetryMs; waited += 100) delay(100);
+    for (uint32_t waited = 0; current(gen) && waited < kRetryMs; waited += 100) delay(100);
   }
+  if (generation.load() == gen) {
+    flowing = false;
+    publish(StreamState::Off);
+  }
+  vTaskDelete(nullptr);
 }
 
 // ---- the player: the ring to the speaker --------------------------------------------------------------------------
@@ -214,6 +230,7 @@ struct Player {
   uint32_t prebufferSince = 0;
   uint32_t lastPublish = 0;
   uint32_t seen = 0;
+  uint32_t gen = 0;
 };
 
 void restart(Player& p) {
@@ -232,7 +249,7 @@ void play(Player& p, int samples, int channels, int rate) {
     publishBuffer(rate);
   }
   size_t frames = p.resampler.process(p.pcm, (size_t)samples * channels, p.out, kOutFrames);
-  for (size_t done = 0; done < frames && wanted && epoch.load() == p.seen;) {
+  for (size_t done = 0; done < frames && current(p.gen) && epoch.load() == p.seen;) {
     size_t n = audio_write(p.out + 2 * done, frames - done, 100);  // blocks: the speaker sets the pace
     done += n;
   }
@@ -244,25 +261,45 @@ bool readyToPlay(const Player& p) {
   return have >= kPrebufferMinBytes && millis() - p.prebufferSince >= kPrebufferMs;
 }
 
-void playerTask(void*) {
-  Player* p = new Player();
-  p->input = static_cast<uint8_t*>(heap_caps_malloc(kDecodeBytes, MALLOC_CAP_INTERNAL));
-  p->out = static_cast<int16_t*>(heap_caps_malloc(kOutFrames * 2 * sizeof(int16_t), MALLOC_CAP_SPIRAM));
-  if (!p->input || !p->out) {
-    LOGF("stream: out of memory for the decoder\n");
-    vTaskDelete(nullptr);
-  }
-  p->resampler.setVolume(kVolume);
-  restart(*p);
+void playerLoop(Player* p);
 
-  for (;;) {
+void playerTask(void* arg) {
+  // All of it in PSRAM: internal RAM is for the stacks and TLS.
+  void* mem = heap_caps_malloc(sizeof(Player), MALLOC_CAP_SPIRAM);
+  Player* p = mem ? new (mem) Player() : nullptr;
+  if (p) {
+    p->gen = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(arg));
+    p->seen = epoch.load();
+    p->input = static_cast<uint8_t*>(heap_caps_malloc(kDecodeBytes, MALLOC_CAP_SPIRAM));
+    p->out = static_cast<int16_t*>(heap_caps_malloc(kOutFrames * 2 * sizeof(int16_t), MALLOC_CAP_SPIRAM));
+  }
+  if (!p || !p->input || !p->out) {
+    LOGF("stream: out of memory for the decoder\n");
+    publish(StreamState::Retrying, "out of memory");
+  } else {
+    p->resampler.setVolume(kVolume);
+    restart(*p);
+    playerLoop(p);
+  }
+  if (p) {
+    heap_caps_free(p->input);
+    heap_caps_free(p->out);
+    p->~Player();
+  }
+  heap_caps_free(mem);
+  players--;
+  vTaskDelete(nullptr);
+}
+
+void playerLoop(Player* p) {
+  while (current(p->gen)) {
     uint32_t e = epoch.load();
     if (e != p->seen) {  // a new connection: forget the last one's data
       restart(*p);
       p->seen = e;
       acked = e;
     }
-    if (!wanted || !flowing) {
+    if (!flowing) {
       delay(20);
       continue;
     }
@@ -328,19 +365,48 @@ void stream_begin(const std::string& url) {
   streamUrl = url;
   ring = new ByteRing(storage, kRingBytes);
   mutex = xSemaphoreCreateMutex();
-  // Core 0, beside Wi-Fi, as the map client and the updater; LVGL runs in the Arduino loop on core 1. The player is
-  // above them (priority 2): it spends nearly all its time waiting on the speaker.
-  xTaskCreatePinnedToCore(readerTask, "stream_net", kReaderStack, nullptr, 1, nullptr, 0);
-  xTaskCreatePinnedToCore(playerTask, "stream_play", kPlayerStack, nullptr, 2, nullptr, 0);
-  LOGF("stream: ready (%s)\n", url.c_str());
+  LOGF("stream: ready (%s); free internal heap %u\n", url.c_str(),
+       (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 }
 
 bool stream_available() { return ring != nullptr; }
 
 void stream_set_playing(bool on) {
-  if (!ring) return;
-  if (on && !wanted) publish(StreamState::Connecting);
-  wanted = on;
+  if (!ring || on == wanted) return;
+  if (!on) {
+    wanted = false;  // the tasks see it and stop, giving back their memory
+    publish(StreamState::Off);
+    return;
+  }
+  // A player from the last Play may still be finishing a write to the speaker (up to 100 ms); two would share the
+  // buffer. An old reader can take longer (a connection timing out), but it stops without touching anything.
+  for (int waited = 0; players.load() > 0 && waited < 500; waited += 10) delay(10);
+  if (players.load() > 0) {
+    LOGF("stream: the last player hasn't stopped; not starting\n");
+    return;
+  }
+  uint32_t gen = generation.fetch_add(1) + 1;
+  wanted = true;
+  flowing = false;
+  publish(StreamState::Connecting);
+  LOGF("stream: play; free internal heap %u, largest block %u\n",
+       (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+       (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+  // Core 0, beside Wi-Fi, as the map client and the updater; LVGL runs in the Arduino loop on core 1. The player is
+  // above them (priority 2): it spends nearly all its time waiting on the speaker.
+  players++;
+  if (xTaskCreatePinnedToCore(playerTask, "stream_play", kPlayerStack,
+                              reinterpret_cast<void*>(static_cast<uintptr_t>(gen)), 2, nullptr, 0) != pdPASS) {
+    players--;
+    wanted = false;
+    publish(StreamState::Retrying, "no memory for the player");
+    return;
+  }
+  if (xTaskCreatePinnedToCore(readerTask, "stream_net", kReaderStack,
+                              reinterpret_cast<void*>(static_cast<uintptr_t>(gen)), 1, nullptr, 0) != pdPASS) {
+    wanted = false;
+    publish(StreamState::Retrying, "no memory for the reader");
+  }
 }
 
 bool stream_get(StreamState& out, uint32_t& rev) {

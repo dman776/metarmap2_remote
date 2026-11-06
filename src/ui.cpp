@@ -628,10 +628,10 @@ void showRadio() {
       snprintf(text, sizeof(text), "buffering %d%%", radio.bufferPct);
       break;
     case StreamState::Playing:
-      snprintf(text, sizeof(text), "playing · %.1f kHz · buffer %d%%", radio.rate / 1000.0, radio.bufferPct);
+      snprintf(text, sizeof(text), "playing - %.1f kHz - buffer %d%%", radio.rate / 1000.0, radio.bufferPct);
       break;
     case StreamState::Retrying:
-      snprintf(text, sizeof(text), "%s · trying again", radio.message.c_str());
+      snprintf(text, sizeof(text), "%s - trying again", radio.message.c_str());
       break;
     default:
       break;
