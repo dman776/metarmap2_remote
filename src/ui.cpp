@@ -10,6 +10,7 @@
 
 #include "firmware_version.h"
 #include "legend.h"
+#include "log.h"
 #include "lvgl_port.h"
 #include "map_client.h"
 #include "updater.h"
@@ -49,6 +50,7 @@ constexpr uint32_t kWifiTimeoutMs = 15000;  // then the splash names the network
 constexpr uint32_t kTouchHoldMs = 5000;     // touching this long shows the splash again
 constexpr uint32_t kSplashShowMs = 5000;    // for this long
 constexpr uint32_t kUpdateHoldMs = 10000;   // touching this long shows the update screen
+constexpr uint32_t kLostMs = 5000;          // the map unreachable this long: back to the splash screen
 constexpr uint32_t kStar = 0xffd400;        // the update star
 constexpr const char* kRepo = "github.com/dman776/metarmap2";
 
@@ -603,10 +605,16 @@ void buildLocatorPanel(lv_obj_t* p) {
 //
 // The logo, the name, the repo and the version, with the Wi-Fi and the map
 // connecting; once both are OK it stays a moment, then the remote fades in.
-// A 5 s touch shows it again for 5 s (the version, the connection).
+// A 5 s touch shows it again for 5 s (the version, the connection). If the
+// map is lost, it comes back, retrying, until the map answers again.
 
+enum class SplashMode {
+  Startup,    // until Wi-Fi and the map are OK, then 2 s more
+  OnDemand,   // a long touch: 5 s
+  Reconnect,  // the map was lost: like Startup
+};
 lv_obj_t* splash = nullptr;
-bool splashOnDemand = false;  // shown by a long touch, not at startup
+SplashMode splashMode = SplashMode::Startup;
 lv_obj_t* remoteScreen = nullptr;
 lv_obj_t *wifiStep, *wifiState, *mapState, *mapVersion;
 uint32_t splashStart = 0;
@@ -634,9 +642,9 @@ void setStep(lv_obj_t* state, const char* text, uint32_t color) {
   lv_obj_set_style_text_color(state, hex(color), 0);
 }
 
-void showSplash(lv_obj_t* remote, bool onDemand) {
+void showSplash(lv_obj_t* remote, SplashMode mode) {
   remoteScreen = remote;
-  splashOnDemand = onDemand;
+  splashMode = mode;
   splash = lv_obj_create(nullptr);
   lv_obj_remove_style_all(splash);
   lv_obj_set_style_bg_color(splash, hex(kBg), 0);
@@ -654,11 +662,12 @@ void showSplash(lv_obj_t* remote, bool onDemand) {
   mapVersion = label(splash, "Map ...", &lv_font_montserrat_12, kMuted);  // once the map answers
   lv_obj_set_style_margin_bottom(mapVersion, 10, 0);
   wifiState = splashStep(splash, "Connecting to Wi-Fi...", &wifiStep);
-  mapState = splashStep(splash, "Connecting to the map...");
+  mapState =
+      splashStep(splash, mode == SplashMode::Reconnect ? "Reconnecting to the map..." : "Connecting to the map...");
 
-  if (onDemand) {
-    // The touch that's still down began on the remote: forget it, so lifting
-    // the finger doesn't tap whatever it was on.
+  if (mode != SplashMode::Startup) {
+    // A touch that's down began on the remote: forget it, so lifting the
+    // finger doesn't tap whatever it was on.
     lv_indev_reset(nullptr, nullptr);
     lv_screen_load_anim(splash, LV_SCR_LOAD_ANIM_FADE_IN, 300, 0, false);
   } else {
@@ -705,7 +714,7 @@ void tickSplash() {
     setStep(mapState, "", kAccent);
   }
 
-  if (splashOnDemand) {
+  if (splashMode == SplashMode::OnDemand) {
     if (millis() - splashStart >= kSplashShowMs) hideSplash();
     return;
   }
@@ -941,7 +950,25 @@ void checkLongTouch() {
     showUpdate();
   } else if (held >= kTouchHoldMs && opened < 1 && !splash && !updScr) {
     opened = 1;
-    showSplash(remoteScreen, true);
+    showSplash(remoteScreen, SplashMode::OnDemand);
+  }
+}
+
+// The map unreachable (or Wi-Fi gone) for 5 s: the splash screen, retrying,
+// until it's back. Not over the update screen, which doesn't need the map.
+void checkMapLost() {
+  static bool everOnline = false;
+  static uint32_t lostSince = 0;
+  if (conn.online) {
+    everOnline = true;
+    lostSince = 0;
+    return;
+  }
+  if (!everOnline) return;  // still starting up: the startup splash is on it
+  if (!lostSince) lostSince = millis() | 1;
+  if (millis() - lostSince >= kLostMs && !splash && !updScr) {
+    LOGF("ui: the map is unreachable; reconnecting\n");
+    showSplash(remoteScreen, SplashMode::Reconnect);
   }
 }
 
@@ -966,7 +993,7 @@ void ui_init(MapClient& c, Updater& u) {
   panels[1] = panel(scr);
   buildLocatorPanel(panels[1]);
   showTab(0);
-  showSplash(scr, false);
+  showSplash(scr, SplashMode::Startup);
 }
 
 void ui_show_tab(int tab) { showTab(tab == 1 ? 1 : 0); }
@@ -976,12 +1003,13 @@ void ui_show_update() {
 }
 
 void ui_show_splash() {
-  if (!splash) showSplash(remoteScreen, true);
+  if (!splash) showSplash(remoteScreen, SplashMode::OnDemand);
 }
 
 void ui_tick() {
   if (client->getConnection(conn, connRev)) showConnection();
   checkLongTouch();
+  checkMapLost();
   tickSplash();
   if (updater->get(upd, updRev)) {
     showHidden(starIcon, upd.available);
