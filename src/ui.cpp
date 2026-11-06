@@ -657,7 +657,7 @@ void showSplash(lv_obj_t* remote, SplashMode mode) {
 
   lv_obj_t* img = lv_image_create(splash);
   lv_image_set_src(img, &logo);
-  label(splash, "MetarMap", &lv_font_montserrat_28, kText);
+  label(splash, "MetarMap2", &lv_font_montserrat_28, kText);
   label(splash, kRepo, &lv_font_montserrat_12, kMuted);
   std::string version = std::string("Remote ") + FIRMWARE_VERSION;
   label(splash, version.c_str(), &lv_font_montserrat_12, kMuted);

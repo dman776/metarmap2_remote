@@ -1,4 +1,4 @@
-// Talks to the METARMap2 HTTP API from a background FreeRTOS task, so a slow
+// Talks to the MetarMap2 HTTP API from a background FreeRTOS task, so a slow
 // request never stalls the touch screen.
 //
 // The UI sends control paths with command() and copies the latest state out
