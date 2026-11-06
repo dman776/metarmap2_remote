@@ -63,10 +63,8 @@ void markStation(const std::vector<LegendItem>& legend, const Station& s, std::v
 
 bool fromMap(const MapStatus& status, const MapLive& live) {
   if (!live.hasLegendInUse || status.legend.empty()) return false;
-  for (const LegendItem& item : status.legend) {
-    if (item.key.empty()) return false;
-  }
-  return true;
+  return std::all_of(status.legend.begin(), status.legend.end(),
+                     [](const LegendItem& item) { return !item.key.empty(); });
 }
 
 bool isGradient(const LegendItem& item) {
