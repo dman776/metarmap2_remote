@@ -1,6 +1,7 @@
 #include "map_parse.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <cstring>
 
@@ -42,6 +43,11 @@ void liveFilter(JsonDocument& filter) {
 void statusFilter(JsonDocument& filter) {
   filter.clear();
   filter["version"] = true;
+  JsonObject build = filter["build"].to<JsonObject>();
+  build["describe"] = true;
+  build["ahead"] = true;
+  build["commit"] = true;
+  build["modified"] = true;
   filter["ip"] = true;
   JsonObject v = filter["visualizer"].to<JsonObject>();
   v["active"] = true;
@@ -95,10 +101,27 @@ MapLive parseLive(JsonVariantConst doc) {
   return live;
 }
 
+// As the remote shows its own version (tools/version.py): v26.11.04 at a
+// release, v26.11.04+16 f86daa4 after one, "... modified" with local changes.
+// A map without build (not a git checkout, or older) gives just its version.
+std::string versionText(JsonVariantConst doc) {
+  JsonVariantConst build = doc["build"];
+  std::string text = build["describe"] | "";
+  if (text.empty()) {
+    std::string version = doc["version"] | "";
+    return !version.empty() && isdigit((unsigned char)version[0]) ? "v" + version : version;
+  }
+  std::string commit = build["commit"] | "";
+  if ((build["ahead"] | 0) > 0 && !commit.empty()) text += " " + commit;
+  if (build["modified"] | false) text += " modified";
+  return text;
+}
+
 MapStatus parseStatus(JsonVariantConst doc) {
   MapStatus status;
   status.valid = true;
   status.version = doc["version"] | "";
+  status.versionText = versionText(doc);
   status.ip = doc["ip"] | "";
   status.activeIndex = doc["visualizer"]["active"] | -1;
   for (JsonVariantConst item : doc["visualizer"]["legend"].as<JsonArrayConst>()) {

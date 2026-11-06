@@ -686,9 +686,8 @@ void hideSplash() {
 
 void tickSplash() {
   if (!splash) return;
-  if (status.valid && !status.version.empty()) {
-    // metarmap2 gives 26.11.04; it shows its releases as v26.11.04.
-    std::string text = "Map " + std::string(isdigit((unsigned char)status.version[0]) ? "v" : "") + status.version;
+  if (status.valid && !status.versionText.empty()) {
+    std::string text = "Map " + status.versionText;
     if (text != lv_label_get_text(mapVersion)) lv_label_set_text(mapVersion, text.c_str());
   }
   wl_status_t ws = WiFi.status();

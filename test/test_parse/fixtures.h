@@ -208,6 +208,10 @@ static const char* kLiveJson = R"json({
 
 static const char* kStatusJson = R"json({
  "version": "26.11.04",
+ "build": {"tag": "v26.11.04", "ahead": 16, "commit": "f86daa4", "sha": "f86daa4c06f36489e21a8f5bacf2648bdba086b8",
+  "modified": false, "release": false, "untagged": false, "describe": "v26.11.04+16",
+  "chip": "v26.11.04 +16 \u00b7 f86daa4", "pill": "Unreleased: 16 commits after v26.11.04",
+  "url": "https://github.com/dman776/metarmap2/commit/f86daa4c06f36489e21a8f5bacf2648bdba086b8"},
  "ip": "192.168.10.76",
  "brightness": 0.51,
  "visualizer": {
