@@ -10,6 +10,7 @@
 #include "lvgl_port.h"
 #include "map_client.h"
 #include "settings.h"
+#include "stream.h"
 #include "ui.h"
 #include "updater.h"
 
@@ -26,7 +27,8 @@ void setup() {
 
   settings = settings_load();  // Wi-Fi and map: from secrets.h, else as saved
   neopixelWrite(RGB_LED, 0, 0, 0);
-  audio_begin();  // before lcd.init(): it borrows the touch I2C pins
+  audio_begin();                     // before lcd.init(): it borrows the touch I2C pins
+  stream_begin(settings.streamUrl);  // the Radio button's stream, if there's a URL and a speaker
 
   lcd.init();
   lcd.setRotation(3);  // landscape, USB-C on the right

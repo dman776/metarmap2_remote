@@ -32,6 +32,9 @@ Settings settings_load() {
   putString(p, "map_host", MAP_HOST);
   if (p.getUShort("map_port", 0) != MAP_PORT) p.putUShort("map_port", MAP_PORT);
 #endif
+#ifdef STREAM_URL
+  putString(p, "stream_url", STREAM_URL);
+#endif
   Settings s;
   s.wifiName = getString(p, "wifi_name", "");
   s.wifiPassword = getString(p, "wifi_pass", "");
@@ -39,6 +42,7 @@ Settings settings_load() {
   s.mapPort = p.getUShort("map_port", 80);
   s.updateChannel = getString(p, "upd_channel", s.updateChannel);
   s.updateBranch = getString(p, "upd_branch", s.updateBranch);
+  s.streamUrl = getString(p, "stream_url", "");
   p.end();
   if (s.wifiName.empty()) LOGF("settings: no Wi-Fi network saved; flash a build with include/secrets.h\n");
   return s;

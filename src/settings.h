@@ -15,6 +15,7 @@ struct Settings {
   uint16_t mapPort = 80;
   std::string updateChannel = "releases";  // releases, latest, branch (update_check.h)
   std::string updateBranch;                // "" until one is picked
+  std::string streamUrl;                   // the MP3 stream the Locator tab's Radio plays; "" for none
 };
 
 // The saved settings, after saving secrets.h's if this build has them.

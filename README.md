@@ -59,6 +59,27 @@ drives LEDs itself.
   the installed one), **Latest commit** (the newest commit of `main`) and
   **Branch** (the newest commit of the branch you pick). The choice is saved.
 
+**Radio (a prototype)**
+
+- With a `STREAM_URL` in `secrets.h`, the Locator tab has a **Radio** button
+  that plays that MP3 stream through the speaker (an airport tower's feed, an
+  internet radio station), with what it's doing beside it: connecting,
+  buffering, playing (the stream's sample rate and how full the buffer is), or
+  why it's trying again. Tap it again to stop. Without a `STREAM_URL` there's
+  no button.
+- The stream must be `http://` or `https://` and **MP3** (not AAC or Ogg). It
+  follows up to three redirects. `https://` works without checking the
+  certificate: the audio isn't secret and the remote sends nothing but the
+  request. If the connection drops it tries again every few seconds.
+- The speaker is a single small one, so this suits voice better than music.
+  The codec is set up for 16 kHz only, so the stream is decoded
+  ([minimp3](https://github.com/lieff/minimp3), public domain, in
+  `src/third_party/`) and resampled to that, mixed down to mono.
+- Two tasks on core 0: one reads the network into a 192 KB buffer in PSRAM,
+  the other decodes and writes to I2S. Playing starts once 16 KB (or, for a
+  slow stream, 4 s of what it has) is buffered, and the speaker is quiet while
+  it refills after a dropout. The touch tick isn't played while audio is on.
+
 **Everywhere**
 
 - A short tick from the speaker on each touch.
@@ -106,6 +127,7 @@ You need [PlatformIO](https://platformio.org/) (the VS Code extension or
    `web_server.port`). `secrets.h` is git-ignored. The remote saves these in
    its flash when it starts, so they stay through firmware updates, which
    don't have them; flash again with a changed `secrets.h` to change them.
+   A `STREAM_URL` for the Radio button is optional (see above).
 2. Connect the board by USB-C. It shows up as a serial port
    (`/dev/cu.usbmodem*` on macOS); no driver is needed.
 3. Build and flash:
@@ -174,7 +196,10 @@ for the endpoints.
 | `src/legend.cpp` | Which legend entries the map is showing |
 | `src/map_state.h` | The map's state as the remote knows it |
 | `src/lvgl_port.cpp` | Display and touch for LVGL, screenshots |
-| `src/audio.cpp` | The codec and the touch tick |
+| `src/audio.cpp` | The codec, the touch tick and the I2S output |
+| `src/stream.cpp` | The Radio: reading an MP3 stream and playing it, on two tasks |
+| `src/stream_dsp.cpp` | The stream's ring buffer, resampler and URL parsing |
+| `src/third_party/minimp3.h` | The MP3 decoder (public domain), as its author wrote it |
 | `src/updater.cpp` | Checking GitHub and installing firmware, on its own task |
 | `src/update_check.cpp` | GitHub's release JSON, versions, what's an update |
 | `src/settings.cpp` | Wi-Fi, map and update settings, in flash |
@@ -191,7 +216,7 @@ The firmware uses the Arduino framework with [LVGL](https://lvgl.io/) 9,
 
 ### Tests and lint
 
-The parsing, legend and update-check code is plain C++ with unit tests that
+The parsing, legend, update-check and audio-stream (buffer, resampler, URL) code is plain C++ with unit tests that
 run on your computer (PlatformIO's Unity framework). The JSON fixtures in
 `test/test_parse` are real, trimmed answers from a map.
 

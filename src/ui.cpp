@@ -13,6 +13,7 @@
 #include "log.h"
 #include "lvgl_port.h"
 #include "map_client.h"
+#include "stream.h"
 #include "updater.h"
 
 extern "C" const lv_image_dsc_t logo;       // logo.c, from assets/logo.svg
@@ -74,6 +75,9 @@ lv_obj_t *chipRow, *legendBox;
 lv_obj_t *rotateSw, *clockBox, *clockArc, *clockLabel;
 lv_obj_t *brtSlider, *brtLabel;
 lv_obj_t *pausedBanner, *grid;
+lv_obj_t *radioBtn, *radioText, *radioStatus;
+StreamState radio;
+uint32_t radioRev = 0;
 
 std::vector<lv_obj_t*> chips;  // by visualizer index
 struct Tile {
@@ -586,6 +590,55 @@ void buildVisualizerPanel(lv_obj_t* p) {
   lv_obj_set_style_text_align(brtLabel, LV_TEXT_ALIGN_RIGHT, 0);
 }
 
+// The prototype Radio: a button that plays the stream from secrets.h's STREAM_URL, and what it's doing.
+void onRadio(lv_event_t*) { stream_set_playing(lv_obj_has_state(radioBtn, LV_STATE_CHECKED)); }
+
+void buildRadioRow(lv_obj_t* p) {
+  lv_obj_t* row = box(p, LV_FLEX_FLOW_ROW);
+  lv_obj_set_size(row, LV_PCT(100), 32);
+  lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_column(row, 8, 0);
+  radioBtn = button(row, &stChip);
+  lv_obj_add_style(radioBtn, &stChipOn, LV_STATE_CHECKED);
+  lv_obj_add_flag(radioBtn, LV_OBJ_FLAG_CHECKABLE);
+  lv_obj_set_size(radioBtn, 96, 30);
+  radioText = lv_label_create(radioBtn);
+  lv_label_set_text(radioText, LV_SYMBOL_PLAY "  Radio");
+  lv_obj_center(radioText);
+  lv_obj_add_event_cb(radioBtn, onRadio, LV_EVENT_CLICKED, nullptr);
+  radioStatus = label(row, "", &lv_font_montserrat_12, kMuted);
+  lv_obj_set_flex_grow(radioStatus, 1);
+  lv_label_set_long_mode(radioStatus, LV_LABEL_LONG_DOT);
+}
+
+void showRadio() {
+  bool on = radio.phase != StreamState::Off;
+  if (on) {
+    lv_obj_add_state(radioBtn, LV_STATE_CHECKED);
+  } else {
+    lv_obj_remove_state(radioBtn, LV_STATE_CHECKED);
+  }
+  lv_label_set_text(radioText, on ? LV_SYMBOL_STOP "  Radio" : LV_SYMBOL_PLAY "  Radio");
+  char text[64] = "";
+  switch (radio.phase) {
+    case StreamState::Connecting:
+      snprintf(text, sizeof(text), "connecting...");
+      break;
+    case StreamState::Buffering:
+      snprintf(text, sizeof(text), "buffering %d%%", radio.bufferPct);
+      break;
+    case StreamState::Playing:
+      snprintf(text, sizeof(text), "playing · %.1f kHz · buffer %d%%", radio.rate / 1000.0, radio.bufferPct);
+      break;
+    case StreamState::Retrying:
+      snprintf(text, sizeof(text), "%s · trying again", radio.message.c_str());
+      break;
+    default:
+      break;
+  }
+  lv_label_set_text(radioStatus, text);
+}
+
 void buildLocatorPanel(lv_obj_t* p) {
   pausedBanner = label(p, "", &lv_font_montserrat_12, kAccent);
   lv_obj_set_style_bg_color(pausedBanner, hex(kAccentSoft), 0);
@@ -594,6 +647,8 @@ void buildLocatorPanel(lv_obj_t* p) {
   lv_obj_set_style_pad_hor(pausedBanner, 8, 0);
   lv_obj_set_style_pad_ver(pausedBanner, 4, 0);
   lv_obj_add_flag(pausedBanner, LV_OBJ_FLAG_HIDDEN);
+
+  if (stream_available()) buildRadioRow(p);
 
   grid = box(p, LV_FLEX_FLOW_ROW_WRAP);
   lv_obj_set_width(grid, LV_PCT(100));
@@ -1016,6 +1071,7 @@ void ui_tick() {
     showHidden(starIcon, upd.available);
     refreshUpdate();
   }
+  if (stream_get(radio, radioRev)) showRadio();
 
   if (client->getStatus(status, statusRev)) {
     if (!sameVisualizers(status.visualizers)) buildChips();
