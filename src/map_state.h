@@ -29,6 +29,9 @@ struct LegendItem {
 struct MapStatus {
   bool valid = false;
   std::string version;
+  // What the splash shows: the release ("v26.11.04"), or a build after one
+  // ("v26.11.04+16 f86daa4"), from /api/status's build; else the version.
+  std::string versionText;
   std::string ip;
   int activeIndex = -1;  // the visualizer the legend is for
   std::vector<LegendItem> legend;

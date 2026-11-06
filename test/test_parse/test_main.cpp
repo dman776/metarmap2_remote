@@ -137,6 +137,7 @@ void test_status() {
   MapStatus status = parseStatus(filtered(kStatusJson, statusFilter).as<JsonVariantConst>());
   TEST_ASSERT_TRUE(status.valid);
   TEST_ASSERT_EQUAL_STRING("26.11.04", status.version.c_str());
+  TEST_ASSERT_EQUAL_STRING("v26.11.04+16 f86daa4", status.versionText.c_str());
   TEST_ASSERT_EQUAL_STRING("192.168.10.76", status.ip.c_str());
   TEST_ASSERT_EQUAL_INT(10, status.activeIndex);
 
@@ -145,6 +146,34 @@ void test_status() {
   TEST_ASSERT_EQUAL_STRING("Flight Category", status.visualizers[0].name.c_str());
   TEST_ASSERT_FALSE(status.visualizers[0].exclusive);
   TEST_ASSERT_TRUE(status.visualizers[14].exclusive);  // Chase
+}
+
+static std::string versionOf(const char* json) {
+  JsonDocument doc = filtered(json, statusFilter);
+  return versionText(doc.as<JsonVariantConst>());
+}
+
+void test_version_text() {
+  // at a release: just the tag
+  TEST_ASSERT_EQUAL_STRING(
+      "v26.11.06",
+      versionOf(R"({"version": "26.11.06", "build": {"describe": "v26.11.06", "ahead": 0, "commit": "aa81431"}})")
+          .c_str());
+  // after one, and changed on the map
+  TEST_ASSERT_EQUAL_STRING(
+      "v26.11.04+2 abc1234 modified",
+      versionOf(R"({"version": "26.11.04", "build": {"describe": "v26.11.04+2", "ahead": 2, "commit": "abc1234",
+                    "modified": true}})")
+          .c_str());
+  // no release tag: describe is the commit
+  TEST_ASSERT_EQUAL_STRING(
+      "abc1234",
+      versionOf(R"({"version": "26.11.04", "build": {"describe": "abc1234", "ahead": 0, "commit": "abc1234"}})")
+          .c_str());
+  // no build (not a git checkout, or an older map): the version, as a release
+  TEST_ASSERT_EQUAL_STRING("v26.11.04", versionOf(R"({"version": "26.11.04", "build": null})").c_str());
+  TEST_ASSERT_EQUAL_STRING("v2.9.2", versionOf(R"({"version": "2.9.2"})").c_str());
+  TEST_ASSERT_EQUAL_STRING("", versionOf(R"({})").c_str());
 }
 
 void test_status_legend() {
@@ -200,6 +229,7 @@ int main() {
   RUN_TEST(test_live_without_legend_in_use);
   RUN_TEST(test_live_filter_drops_the_rest);
   RUN_TEST(test_status);
+  RUN_TEST(test_version_text);
   RUN_TEST(test_status_legend);
   RUN_TEST(test_status_legend_keys);
   RUN_TEST(test_status_filter_drops_the_rest);

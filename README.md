@@ -36,7 +36,8 @@ drives LEDs itself.
 **Splash screen**
 
 - At startup: the MetarMap2 logo, the metarmap2 repo, the remote's firmware
-  version and the map's (once it answers), and
+  version and the map's (once it answers: v26.11.04, or v26.11.04+16 f86daa4
+  when the map runs commits after a release), and
   "Connecting to Wi-Fi..." and "Connecting to the map..." turning OK. Two
   seconds after both are OK, the remote fades in.
 - If Wi-Fi hasn't joined after 15 s, it names the network: "Can't find

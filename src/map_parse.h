@@ -15,5 +15,8 @@ void statusFilter(JsonDocument& filter);
 MapLive parseLive(JsonVariantConst doc);
 MapStatus parseStatus(JsonVariantConst doc);
 
+// The map's version as the splash shows it, from /api/status (see MapStatus).
+std::string versionText(JsonVariantConst doc);
+
 // "#rrggbb" as 0xRRGGBB; 0 for anything else.
 uint32_t parseColor(const char* css);
