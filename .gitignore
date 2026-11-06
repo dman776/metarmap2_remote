@@ -6,3 +6,4 @@
 include/secrets.h
 include/firmware_version.h
 .DS_Store
+__pycache__/

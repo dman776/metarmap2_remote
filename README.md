@@ -42,6 +42,9 @@ drives LEDs itself.
 - If Wi-Fi hasn't joined after 15 s, it names the network: "Can't find
   *network*" (out of range, or 5 GHz only) or "Can't join *network*", and keeps
   trying. The map's line says "retrying" while the map doesn't answer.
+- If the map stops answering (or Wi-Fi drops) for 5 s, the remote goes back to it:
+  "Reconnecting to the map... retrying" until the map answers, then the remote fades
+  back in. Not while the update screen is open.
 - Touch and hold the screen for 5 s to see it again for 5 s.
 
 **Firmware updates**
