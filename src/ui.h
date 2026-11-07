@@ -1,5 +1,5 @@
 // The remote's screens: a small version of the map's /remote page, with its
-// Visualizer and Locator tabs.
+// Visualizer and Info tabs.
 #pragma once
 
 class MapClient;
@@ -7,7 +7,7 @@ class Updater;
 
 void ui_init(MapClient& client, Updater& updater);
 
-// 0: Visualizer, 1: Locator.
+// 0: Visualizer, 1: Info.
 void ui_show_tab(int tab);
 
 // The splash screen for 5 s, as a 5 s touch shows it.

@@ -10,10 +10,16 @@
 // ~18 KB and /api/status ~25 KB, most of it METAR text and config.
 void liveFilter(JsonDocument& filter);
 void statusFilter(JsonDocument& filter);
+void atisFilter(JsonDocument& filter);
 
 // The JSON's fields; rxMillis is left for the caller.
 MapLive parseLive(JsonVariantConst doc);
 MapStatus parseStatus(JsonVariantConst doc);
+AtisTranscript parseAtis(JsonVariantConst doc);
+
+// The line being said `playedMs` into `totalMs` of an ATIS read aloud, worked out from how long each line's words
+// are (the voice doesn't say when it reaches one): -1 before it's known (totalMs 0) or with no lines.
+int atisLineAt(const std::vector<AtisLine>& lines, uint32_t playedMs, uint32_t totalMs);
 
 // The map's version as the splash shows it, from /api/status (see MapStatus).
 std::string versionText(JsonVariantConst doc);

@@ -15,7 +15,7 @@ struct Settings {
   uint16_t mapPort = 80;
   std::string updateChannel = "releases";  // releases, latest, branch (update_check.h)
   std::string updateBranch;                // "" until one is picked
-  std::string streamUrl;                   // the MP3 stream the Locator tab's Radio plays; "" for none
+  std::string streamUrl;                   // the MP3 stream the Radio plays; "" for none
   int volume = 63;                         // the speaker's, 0-100 (%): the volume slider while audio plays
 };
 

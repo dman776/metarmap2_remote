@@ -34,6 +34,9 @@ struct WavInfo {
 // -1: not one this can play (another kind of file, or a WAV that isn't 16-bit PCM, mono or stereo).
 int parseWavHeader(const uint8_t* data, size_t len, WavInfo& out);
 
+// How long `bytes` of 16-bit PCM at `rate` with `channels` last, in ms (0 for a rate or channels of 0).
+uint32_t pcmMs(uint64_t bytes, int rate, int channels);
+
 // A single-producer, single-consumer ring of bytes over a buffer the caller
 // owns (in PSRAM on the board): one task writes, another reads, no lock.
 class ByteRing {

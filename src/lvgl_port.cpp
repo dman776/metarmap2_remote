@@ -69,7 +69,6 @@ void lvgl_port_init(LGFX& lcd) {
   lv_indev_t* indev = lv_indev_create();
   lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
   lv_indev_set_read_cb(indev, readTouch);
-  lv_indev_set_long_press_time(indev, 1000);  // holding a Locator tile this long reads its METAR aloud
 }
 
 void lvgl_port_screenshot() {

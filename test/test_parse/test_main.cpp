@@ -127,6 +127,44 @@ void test_live_speech() {
   TEST_ASSERT_FALSE(parseLive(filtered(R"({"speech": false, "leds": []})", liveFilter).as<JsonVariantConst>()).speech);
 }
 
+void test_live_atis() {
+  // leds[].atis: the airports with an ATIS to hear (the Info tab's ATIS mode); an older map doesn't say
+  const char* json =
+      R"({"leds": [{"code": "KHOU", "pixel": 0, "atis": true}, {"code": "KDWH", "pixel": 1, "atis": false},
+      {"code": "KIAH", "pixel": 2}]})";
+  MapLive live = parseLive(filtered(json, liveFilter).as<JsonVariantConst>());
+  TEST_ASSERT_EQUAL_UINT(3, live.stations.size());
+  TEST_ASSERT_TRUE(live.stations[0].atis);
+  TEST_ASSERT_FALSE(live.stations[1].atis);
+  TEST_ASSERT_FALSE(live.stations[2].atis);
+}
+
+void test_atis_lines() {
+  const char* json = R"({"code": "KHOU", "entries": [{"type": "combined", "code": "Q"}], "lines": [
+      {"raw": "HOU ATIS INFO Q 1753Z.", "said": "Hobby information Quebec, one seven five tree Zulu."},
+      {"raw": "LNDG AND DEPG RWY 13R.", "said": "Landing and departing runway one tree right."}]})";
+  AtisTranscript t = parseAtis(filtered(json, atisFilter).as<JsonVariantConst>());
+  TEST_ASSERT_TRUE(t.valid);
+  TEST_ASSERT_EQUAL_STRING("KHOU", t.code.c_str());
+  TEST_ASSERT_EQUAL_UINT(2, t.lines.size());
+  TEST_ASSERT_EQUAL_STRING("LNDG AND DEPG RWY 13R.", t.lines[1].raw.c_str());
+  TEST_ASSERT_EQUAL_STRING("Landing and departing runway one tree right.", t.lines[1].said.c_str());
+  TEST_ASSERT_FALSE(parseAtis(filtered(R"({"error": "x"})", atisFilter).as<JsonVariantConst>()).valid);
+}
+
+void test_atis_line_at() {
+  // each line's share: its words + 12 (a pause): 30+12, 90+12, 30+12 of 186 -> line 0 to 22.6%, 1 to 77.4%, then 2
+  std::vector<AtisLine> lines = {{"a", std::string(30, 'a')}, {"b", std::string(90, 'b')}, {"c", std::string(30, 'c')}};
+  TEST_ASSERT_EQUAL_INT(-1, atisLineAt(lines, 5000, 0));  // the length isn't known yet
+  TEST_ASSERT_EQUAL_INT(-1, atisLineAt({}, 5000, 10000));
+  TEST_ASSERT_EQUAL_INT(0, atisLineAt(lines, 0, 100000));
+  TEST_ASSERT_EQUAL_INT(0, atisLineAt(lines, 22000, 100000));
+  TEST_ASSERT_EQUAL_INT(1, atisLineAt(lines, 23000, 100000));
+  TEST_ASSERT_EQUAL_INT(1, atisLineAt(lines, 77000, 100000));
+  TEST_ASSERT_EQUAL_INT(2, atisLineAt(lines, 78000, 100000));
+  TEST_ASSERT_EQUAL_INT(2, atisLineAt(lines, 150000, 100000));  // past the end: the last line
+}
+
 void test_live_filter_drops_the_rest() {
   // The METAR text, positions and names are most of /api/live; the remote
   // doesn't keep them.
@@ -233,6 +271,9 @@ int main() {
   RUN_TEST(test_live_stations);
   RUN_TEST(test_live_nulls);
   RUN_TEST(test_live_speech);
+  RUN_TEST(test_live_atis);
+  RUN_TEST(test_atis_lines);
+  RUN_TEST(test_atis_line_at);
   RUN_TEST(test_live_legend_in_use);
   RUN_TEST(test_live_without_legend_in_use);
   RUN_TEST(test_live_filter_drops_the_rest);

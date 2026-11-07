@@ -53,7 +53,7 @@ void loop() {
   ui_tick();
 
   // Serial console: "S" sends a screenshot (tools/screenshot.py); "1" and
-  // "2" open the Visualizer and Locator tabs; "3" shows the splash screen
+  // "2" open the Visualizer and Info tabs; "3" shows the splash screen
   // and "4" the update screen.
   if (Serial.available()) {
     int c = Serial.read();
