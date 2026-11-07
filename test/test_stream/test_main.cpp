@@ -61,6 +61,80 @@ void test_ring_clear() {
   TEST_ASSERT_EQUAL_UINT(4, ring.space());
 }
 
+// ---- WAV ----
+
+static std::vector<uint8_t> wav(int rate, int channels, int bits, int format = 1, bool extraChunk = false) {
+  std::vector<uint8_t> h;
+  auto u32 = [&](uint32_t v) {
+    for (int i = 0; i < 4; i++) h.push_back((v >> (8 * i)) & 0xff);
+  };
+  auto u16 = [&](uint16_t v) {
+    h.push_back(v & 0xff);
+    h.push_back(v >> 8);
+  };
+  auto id = [&](const char* s) { h.insert(h.end(), s, s + 4); };
+  id("RIFF");
+  u32(0);
+  id("WAVE");
+  id("fmt ");
+  u32(16);
+  u16(format);
+  u16(channels);
+  u32(rate);
+  u32(rate * channels * bits / 8);
+  u16(channels * bits / 8);
+  u16(bits);
+  if (extraChunk) {  // e.g. a LIST chunk of tags, odd length: padded
+    id("LIST");
+    u32(5);
+    h.insert(h.end(), {'a', 'b', 'c', 'd', 'e', 0});
+  }
+  id("data");
+  u32(1000);
+  h.push_back(0x34);  // the first sample
+  h.push_back(0x12);
+  return h;
+}
+
+void test_wav_header() {
+  std::vector<uint8_t> h = wav(16000, 1, 16);
+  WavInfo info;
+  TEST_ASSERT_EQUAL_INT(1, parseWavHeader(h.data(), h.size(), info));
+  TEST_ASSERT_EQUAL_INT(16000, info.rate);
+  TEST_ASSERT_EQUAL_INT(1, info.channels);
+  TEST_ASSERT_EQUAL_UINT(44, info.dataOffset);  // Piper's: the standard 44-byte header
+  TEST_ASSERT_EQUAL_HEX8(0x34, h[info.dataOffset]);
+}
+
+void test_wav_header_with_another_chunk() {
+  std::vector<uint8_t> h = wav(22050, 2, 16, 1, true);
+  WavInfo info;
+  TEST_ASSERT_EQUAL_INT(1, parseWavHeader(h.data(), h.size(), info));
+  TEST_ASSERT_EQUAL_INT(22050, info.rate);
+  TEST_ASSERT_EQUAL_INT(2, info.channels);
+  TEST_ASSERT_EQUAL_HEX8(0x34, h[info.dataOffset]);
+}
+
+void test_wav_header_needs_more() {
+  std::vector<uint8_t> h = wav(16000, 1, 16);
+  WavInfo info;
+  for (size_t n : {0, 3, 11, 20, 40, 43}) TEST_ASSERT_EQUAL_INT_MESSAGE(0, parseWavHeader(h.data(), n, info), "short");
+}
+
+void test_not_a_wav_we_play() {
+  WavInfo info;
+  const uint8_t mp3[16] = {0xff, 0xf3, 0x44, 0xc4};
+  TEST_ASSERT_EQUAL_INT(-1, parseWavHeader(mp3, sizeof(mp3), info));
+  const uint8_t id3[16] = {'I', 'D', '3', 4};
+  TEST_ASSERT_EQUAL_INT(-1, parseWavHeader(id3, sizeof(id3), info));
+  std::vector<uint8_t> h = wav(16000, 1, 8);
+  TEST_ASSERT_EQUAL_INT(-1, parseWavHeader(h.data(), h.size(), info));  // 8-bit
+  h = wav(16000, 1, 32, 3);
+  TEST_ASSERT_EQUAL_INT(-1, parseWavHeader(h.data(), h.size(), info));  // float
+  h = wav(16000, 6, 16);
+  TEST_ASSERT_EQUAL_INT(-1, parseWavHeader(h.data(), h.size(), info));  // 5.1
+}
+
 // ---- StreamUrl ----
 
 void test_url_parts() {
@@ -218,6 +292,10 @@ int main() {
   RUN_TEST(test_ring_wraps_around);
   RUN_TEST(test_ring_full_and_empty_differ);
   RUN_TEST(test_ring_clear);
+  RUN_TEST(test_wav_header);
+  RUN_TEST(test_wav_header_with_another_chunk);
+  RUN_TEST(test_wav_header_needs_more);
+  RUN_TEST(test_not_a_wav_we_play);
   RUN_TEST(test_url_parts);
   RUN_TEST(test_url_defaults);
   RUN_TEST(test_url_rejects_the_unusable);

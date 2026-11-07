@@ -86,6 +86,24 @@ drives LEDs itself.
   slow stream, 4 s of what it has) is buffered, and the speaker is quiet while
   it refills after a dropout. The touch tick isn't played while audio is on.
 
+**Spoken weather**
+
+- Hold an airport on the Locator tab for a second to hear its METAR through
+  the speaker, read ATIS style; a tap still locates it. It stops the Radio and
+  plays once, with "getting" and then "speaking" and the airport beside the
+  Radio button.
+- The words come from the map: metarmap2 26.11.07 or later, with **Enable
+  speech** on in its **Config > System > Spoken weather** and a speech server
+  set there (Piper in Home Assistant, or Kokoro). The remote plays the map's
+  `/api/speak/<code>.audio`, a WAV, as it is (no decoding), resampled to
+  16 kHz. The map makes the clip before answering, so the first time can take
+  a few seconds; it keeps it until the next METAR.
+- If the map can't, the remote shows why, in the map's words (e.g. spoken
+  weather is off, or the speech server can't be reached).
+- On the web page (`http://metarmap-remote.local/`): **Speech server** takes
+  another map's address (empty: this remote's map). For scripts:
+  `/speak?code=KDWH`, `/speak/server?url=...`.
+
 **Everywhere**
 
 - A short tick from the speaker on each touch.

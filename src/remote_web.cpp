@@ -111,7 +111,8 @@ void onPage() {
       html(status) + (s.speaking.empty() ? "" : " (speaking " + html(s.speaking) + ")") +
       "</p><p>The URL is saved on the remote. Saving a new one stops the one playing.</p>"
       "<h1>Spoken weather</h1><p>Hold an airport on the Locator tab for a second to hear its METAR, from the map's "
-      "/api/speak (or another server running metarmap2).</p>"
+      "/api/speak (or another map running metarmap2). Turn it on in the map's Config &gt; System &gt; Spoken "
+      "weather.</p>"
       "<form action=/speak/server method=get><label for=s>Speech server (empty: the map)</label>"
       "<input id=s name=url value=\"" +
       html(stream_speech_server()) +

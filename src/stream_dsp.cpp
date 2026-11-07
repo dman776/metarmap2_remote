@@ -104,3 +104,40 @@ std::string resolveLocation(const StreamUrl& from, const std::string& location) 
   if (!standard) base += ":" + std::to_string(from.port);
   return base + (location.empty() || location[0] != '/' ? "/" : "") + location;
 }
+
+namespace {
+
+uint32_t le32(const uint8_t* p) { return p[0] | (p[1] << 8) | (p[2] << 16) | ((uint32_t)p[3] << 24); }
+uint16_t le16(const uint8_t* p) { return p[0] | (p[1] << 8); }
+
+}  // namespace
+
+int parseWavHeader(const uint8_t* data, size_t len, WavInfo& out) {
+  if (len < 12) return len >= 4 && memcmp(data, "RIFF", 4) != 0 ? -1 : 0;
+  if (memcmp(data, "RIFF", 4) != 0 || memcmp(data + 8, "WAVE", 4) != 0) return -1;
+  WavInfo info;
+  bool haveFormat = false;
+  size_t at = 12;
+  while (at + 8 <= len) {  // chunks: an id, a length, the body (padded to an even length)
+    uint32_t size = le32(data + at + 4);
+    const uint8_t* body = data + at + 8;
+    if (memcmp(data + at, "fmt ", 4) == 0) {
+      if (at + 8 + 16 > len) return 0;
+      uint16_t format = le16(body), channels = le16(body + 2), bits = le16(body + 14);
+      // 1: PCM; 0xFFFE: WAVE_FORMAT_EXTENSIBLE, which some tools write for plain PCM too
+      if ((format != 1 && format != 0xFFFE) || bits != 16 || channels < 1 || channels > 2) return -1;
+      info.rate = (int)le32(body + 4);
+      info.channels = channels;
+      if (info.rate < 4000 || info.rate > 96000) return -1;
+      haveFormat = true;
+    } else if (memcmp(data + at, "data", 4) == 0) {
+      if (!haveFormat) return -1;
+      info.dataOffset = at + 8;
+      out = info;
+      return 1;
+    }
+    at += 8 + size + (size & 1);
+    if (at > 4096) return -1;  // a header this long isn't one Piper wrote
+  }
+  return 0;
+}

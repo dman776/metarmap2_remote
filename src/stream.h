@@ -1,7 +1,8 @@
 // A prototype internet radio: plays an MP3 stream (a URL from secrets.h, e.g.
 // an airport tower's feed) through the speaker, on two background tasks. One
 // reads the network into a buffer in PSRAM, the other decodes it (minimp3),
-// resamples to the codec's 16 kHz (stream_dsp.h) and writes it to I2S.
+// resamples to the codec's 16 kHz (stream_dsp.h) and writes it to I2S. It also
+// plays an airport's METAR read aloud by the map: a WAV (16-bit PCM), once.
 //
 // The UI starts and stops it with stream_set_playing() and copies the state
 // out with stream_get().
@@ -33,8 +34,9 @@ std::string stream_url();
 
 void stream_set_playing(bool on);
 
-// Reads an airport's METAR aloud: plays <speech server>/api/speak/<code>.mp3 once, stopping the Radio. The server is
-// the map (http://MAP_HOST:MAP_PORT) unless set otherwise. Failed, with why, if it can't (e.g. the map has no key).
+// Reads an airport's METAR aloud: plays <speech server>/api/speak/<code>.audio (a WAV, made by the map's speech
+// server: Piper in Home Assistant, or Kokoro) once, stopping the Radio. The server is the map
+// (http://MAP_HOST:MAP_PORT) unless set otherwise. Failed, with the map's why, if it can't (e.g. speech is off).
 void stream_speak(const std::string& code);
 
 // The speech server, e.g. "http://192.168.10.76" ("" for the map's). False if it isn't an http(s):// URL.

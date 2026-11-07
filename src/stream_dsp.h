@@ -23,6 +23,17 @@ bool parseStreamUrl(const std::string& url, StreamUrl& out);
 // A redirect's Location (absolute, or a path on the same server) as a full URL.
 std::string resolveLocation(const StreamUrl& from, const std::string& location);
 
+// A WAV file's format, from its header: 16-bit PCM only (what Piper writes).
+struct WavInfo {
+  int rate = 0;
+  int channels = 0;
+  size_t dataOffset = 0;  // where the samples start
+};
+
+// 1: `data` (the first `len` bytes) is a 16-bit PCM WAV header, read into `out`; 0: more bytes are needed to tell;
+// -1: not one this can play (another kind of file, or a WAV that isn't 16-bit PCM, mono or stereo).
+int parseWavHeader(const uint8_t* data, size_t len, WavInfo& out);
+
 // A single-producer, single-consumer ring of bytes over a buffer the caller
 // owns (in PSRAM on the board): one task writes, another reads, no lock.
 class ByteRing {

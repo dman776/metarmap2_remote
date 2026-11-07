@@ -7,6 +7,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
+#include <algorithm>
 #include <atomic>
 #include <memory>
 #include <new>
@@ -34,6 +35,7 @@ constexpr size_t kNetChunk = 2048;
 constexpr size_t kDecodeBytes = 16 * 1024;  // minimp3 wants a few frames of lookahead to find its footing
 constexpr size_t kOutFrames = 4096;         // after resampling: a 8 kHz stream's frame doubles to 1152
 constexpr uint32_t kTimeoutMs = 10 * 1000;
+constexpr uint32_t kSpeakTimeoutMs = 60 * 1000;  // the map answers once its speech server has read the whole report
 constexpr uint32_t kRetryMs = 4000;
 constexpr int kMaxRedirects = 3;
 constexpr int kVolume = 160;  // of 256: the little speaker distorts near full scale
@@ -118,7 +120,7 @@ bool openStream(std::string url, std::unique_ptr<WiFiClient>& client, std::strin
     } else {
       client.reset(new WiFiClient());
     }
-    client->setTimeout(kTimeoutMs / 1000);
+    client->setTimeout((oneShot ? kSpeakTimeoutMs : kTimeoutMs) / 1000);
     IPAddress ip;
     if (!WiFi.hostByName(u.host.c_str(), ip)) {
       error = "can't find " + u.host;
@@ -161,10 +163,10 @@ bool openStream(std::string url, std::unique_ptr<WiFiClient>& client, std::strin
     }
     if (code != 200) {
       error = code ? "server said " + std::to_string(code) : "no answer";
-      // the map says why in a line of text (e.g. "No ElevenLabs API key..."): show that instead
+      // the map says why in a line of text (e.g. "Spoken weather is off: ..."): show that instead
       String why = client->readStringUntil('\n');
       why.trim();
-      if (code && why.length() > 0 && why.length() < 120 && why.indexOf('<') < 0) error = why.c_str();
+      if (code && why.length() > 0 && why.length() <= 200 && why.indexOf('<') < 0) error = why.c_str();
       return false;
     }
     type.toLowerCase();
@@ -266,9 +268,13 @@ void readerTask(void* arg) {
 // ---- the player: the ring to the speaker --------------------------------------------------------------------------
 
 struct Player {
+  // What's coming, from its first bytes: a WAV (a spoken METAR from the map: 16-bit PCM, played as it is) or MP3
+  enum Format { Unknown, Mp3, Wav };
+  Format format = Unknown;
+  WavInfo wav;
   mp3dec_t decoder;
   mp3d_sample_t pcm[MINIMP3_MAX_SAMPLES_PER_FRAME];
-  uint8_t* input = nullptr;  // up to kDecodeBytes of MP3, from `start`
+  uint8_t* input = nullptr;  // up to kDecodeBytes of audio, from `start`
   size_t start = 0, length = 0;
   int16_t* out = nullptr;  // kOutFrames stereo frames
   Resampler resampler{kAudioRate};
@@ -282,6 +288,7 @@ struct Player {
 void restart(Player& p) {
   ring->clear();
   mp3dec_init(&p.decoder);
+  p.format = Player::Unknown;
   p.start = p.length = 0;
   p.resampler.configure(0, 1);
   p.prebuffering = true;
@@ -370,7 +377,51 @@ void playerLoop(Player* p) {
     }
     p->length += ring->read(p->input + p->length, kDecodeBytes - p->length);
     size_t have = p->length - p->start;
-    if (ended && ring->available() == 0 && have < 1024) {
+    bool last = ended && ring->available() == 0;  // a spoken METAR's last bytes are in `input`
+
+    if (p->format == Player::Unknown) {
+      int wav = parseWavHeader(p->input + p->start, have, p->wav);
+      if (wav == 0 && !last) {  // more is coming to tell
+        delay(5);
+        continue;
+      }
+      if (wav == 1) {
+        p->format = Player::Wav;
+        p->start += p->wav.dataOffset;
+        have = p->length - p->start;
+        LOGF("stream: WAV\n");
+      } else {
+        p->format = Player::Mp3;
+      }
+    }
+
+    if (p->format == Player::Wav) {
+      size_t frame = 2 * p->wav.channels;
+      // a block that fits the resampler's output too (a WAV below 16 kHz gives more frames than it takes)
+      size_t fits = (size_t)kOutFrames * p->wav.rate / kAudioRate * frame;
+      size_t bytes = std::min({have, sizeof(p->pcm), fits});
+      bytes -= bytes % frame;
+      if (last && bytes == 0) {  // all played
+        p->start = p->length;
+        drained = true;
+        delay(20);
+        continue;
+      }
+      if (!last && have < 1024) {  // underrun: wait for more, silently
+        p->prebuffering = true;
+        p->prebufferSince = millis();
+        publish(StreamState::Buffering);
+        delay(20);
+        continue;
+      }
+      memcpy(p->pcm, p->input + p->start, bytes);  // to the aligned buffer: samples are 16-bit little-endian
+      p->start += bytes;
+      publish(StreamState::Playing);
+      play(*p, (int)(bytes / frame), p->wav.channels, p->wav.rate);
+      continue;
+    }
+
+    if (last && have < 1024) {
       // a spoken METAR's last bytes: decode them as they are (part of a frame is dropped), then say it's done
       mp3dec_frame_info_t info;
       int samples = have ? mp3dec_decode_frame(&p->decoder, p->input + p->start, (int)have, p->pcm, &info) : 0;
@@ -553,7 +604,7 @@ void stream_speak(const std::string& code) {
   std::string server = stream_speech_server();
   if (server.empty()) server = mapServer;
   LOGF("stream: speaking %s\n", code.c_str());
-  start(server + "/api/speak/" + code + ".mp3", true, code);
+  start(server + "/api/speak/" + code + ".audio", true, code);
 }
 
 bool stream_get(StreamState& out, uint32_t& rev) {
