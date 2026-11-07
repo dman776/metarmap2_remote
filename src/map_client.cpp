@@ -30,6 +30,23 @@ void MapClient::command(const std::string& path) {
   if (xQueueSend(queue_, &cmd, 0) != pdTRUE) LOGF("map: command queue full, dropped %s\n", cmd.path);
 }
 
+void MapClient::requestAtis(const std::string& code) {
+  Cmd cmd{};
+  strlcpy(cmd.atis, code.c_str(), sizeof(cmd.atis));
+  if (xQueueSend(queue_, &cmd, 0) != pdTRUE) LOGF("map: command queue full, dropped %s's ATIS\n", cmd.atis);
+}
+
+bool MapClient::getAtis(AtisTranscript& out, uint32_t& rev) {
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  bool changed = rev != atisRev_;
+  if (changed) {
+    out = atis_;
+    rev = atisRev_;
+  }
+  xSemaphoreGive(mutex_);
+  return changed;
+}
+
 bool MapClient::getStatus(MapStatus& out, uint32_t& rev) {
   xSemaphoreTake(mutex_, portMAX_DELAY);
   bool changed = rev != statusRev_;
@@ -76,11 +93,15 @@ void MapClient::run() {
       continue;
     }
 
-    Cmd cmd;
+    Cmd cmd{};
     if (xQueueReceive(queue_, &cmd, pdMS_TO_TICKS(50)) == pdTRUE) {
-      int code = get(cmd.path, kTimeoutMs, nullptr, nullptr);
-      LOGF("map: %s -> %d\n", cmd.path, code);
-      lastLive = 0;  // show the result now
+      if (cmd.atis[0]) {
+        fetchAtis(cmd.atis);
+      } else {
+        int code = get(cmd.path, kTimeoutMs, nullptr, nullptr);
+        LOGF("map: %s -> %d\n", cmd.path, code);
+        lastLive = 0;  // show the result now
+      }
     }
 
     uint32_t now = millis();
@@ -142,6 +163,27 @@ void MapClient::pollLive() {
   liveRev_++;
   xSemaphoreGive(mutex_);
   setConnection(true, true, 0);
+}
+
+void MapClient::fetchAtis(const char* code) {
+  static JsonDocument filter(spiram());
+  if (filter.isNull()) atisFilter(filter);
+
+  JsonDocument doc(spiram());
+  std::string path = std::string("/api/atis/") + code + "/lines";
+  // the map may ask atis.info first (a few seconds at most): longer than a poll
+  int status = get(path.c_str(), 15000, &doc, &filter);
+  AtisTranscript t;
+  if (status == HTTP_CODE_OK)
+    t = parseAtis(doc.as<JsonVariantConst>());
+  else
+    LOGF("map: %s -> %d\n", path.c_str(), status);
+  t.code = code;
+
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  atis_ = std::move(t);
+  atisRev_++;
+  xSemaphoreGive(mutex_);
 }
 
 void MapClient::pollStatus() {

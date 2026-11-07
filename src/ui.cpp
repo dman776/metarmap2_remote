@@ -14,6 +14,7 @@
 #include "log.h"
 #include "lvgl_port.h"
 #include "map_client.h"
+#include "map_parse.h"
 #include "stream.h"
 #include "updater.h"
 
@@ -47,7 +48,7 @@ constexpr int kChipH = 44;  // the visualizer chips' height; the tabs in the bar
 // the bar: 4 px above the tabs, which are kChipH inside their 2 px padding and 1 px border
 constexpr int kBarH = 4 + kChipH + 2 * (2 + 1);
 constexpr int kPad = 6;
-constexpr int kCols = 4;                    // Locator tiles per row
+constexpr int kCols = 4;                    // Info tiles per row
 constexpr uint32_t kHoldMs = 3000;          // a touched control keeps its value while the map catches up
 constexpr uint32_t kSplashHoldMs = 2000;    // the splash stays this long after connecting
 constexpr uint32_t kWifiTimeoutMs = 15000;  // then the splash names the network it can't join
@@ -76,6 +77,20 @@ lv_obj_t *chipRow, *legendBox;
 lv_obj_t *rotateSw, *clockBox, *clockArc, *clockLabel;
 lv_obj_t *brtSlider, *brtLabel;
 lv_obj_t *pausedBanner, *grid;
+// The Info tab: what a tap on an airport does. Locate pulses its LED; AWOS reads its METAR aloud; ATIS its real
+// ATIS, which then shows line by line (the transcript) in place of the airports as it's read.
+enum class Mode { Locate, Awos, Atis };
+Mode mode = Mode::Locate;
+lv_obj_t* modeRow = nullptr;
+lv_obj_t* modeChips[3];
+lv_obj_t* noAtis = nullptr;      // "no airport here has an ATIS", in ATIS mode
+lv_obj_t* transcript = nullptr;  // the ATIS being read: each line the FAA's text, then how it's said
+std::vector<lv_obj_t*> txRows;
+int txLit = -1;       // the line being said
+bool txOpen = false;  // the transcript is on screen (it stays after the end, to read; a tap closes it)
+AtisTranscript atis;  // the lines, from the map
+uint32_t atisRev = 0;
+std::string atisFor;                      // the airport whose ATIS was last tapped
 lv_obj_t* radioStatus;                    // what the speaker is doing: a spoken METAR, or the Radio
 lv_obj_t *volBox, *volSlider, *volLabel;  // the volume popup, while the speaker plays
 StreamState radio;
@@ -89,6 +104,7 @@ struct Tile {
   int pixel;
   std::string category;
   std::string code;
+  bool atis;  // it has an ATIS to hear (the map's leds[].atis)
 };
 std::vector<Tile> tiles;
 std::string tileKey;  // the station codes and pixels the tiles were built for
@@ -347,23 +363,38 @@ void showBrightness() {
   showBrightnessLabel(pct);
 }
 
-// ---- the locator -------------------------------------------------------------------------------------------
+// ---- the Info tab: the airports, and what a tap does ------------------------------------------------------------
 
-// A tap locates the airport (its LED pulses); held for a second, its METAR is read aloud.
-void onTile(lv_event_t* e) {
-  int pixel = (int)(intptr_t)lv_event_get_user_data(e);
-  client->command("/locate/" + std::to_string(pixel));
+void closeTranscript();
+void showModes();
+void showInfo();
+void showRadio();
+bool speakingNow() {
+  return !radio.speaking.empty() && radio.phase != StreamState::Off && radio.phase != StreamState::Failed;
 }
 
-void onTileHeld(lv_event_t* e) {
-  if (!live.speech) return;  // the map can't speak: speech off, or no server
+void onTile(lv_event_t* e) {
   int pixel = (int)(intptr_t)lv_event_get_user_data(e);
+  const Tile* tile = nullptr;
   for (const Tile& t : tiles) {
-    if (t.pixel == pixel) {
-      audio_click();
-      stream_speak(t.code);
-      return;
-    }
+    if (t.pixel == pixel) tile = &t;
+  }
+  if (!tile) return;
+  if (mode == Mode::Locate) {
+    client->command("/locate/" + std::to_string(pixel));
+    return;
+  }
+  bool wantAtis = mode == Mode::Atis;
+  if (speakingNow() && radio.speaking == tile->code && radio.atis == wantAtis) {  // the one being read: stop
+    stream_set_playing(false);
+    return;
+  }
+  audio_click();
+  closeTranscript();
+  stream_speak(tile->code, wantAtis);
+  if (wantAtis) {
+    atisFor = tile->code;
+    client->requestAtis(tile->code);  // its lines, ready for when the sound starts
   }
 }
 
@@ -402,10 +433,8 @@ void buildTiles() {
     }
     lv_obj_t* d = dot(b, 8, categoryColor(s.category));
     lv_obj_t* l = label(b, s.code.c_str(), &lv_font_montserrat_14, kText);
-    // SHORT_CLICKED: CLICKED comes after a long press too
-    lv_obj_add_event_cb(b, onTile, LV_EVENT_SHORT_CLICKED, (void*)(intptr_t)s.pixel);
-    if (stream_available()) lv_obj_add_event_cb(b, onTileHeld, LV_EVENT_LONG_PRESSED, (void*)(intptr_t)s.pixel);
-    tiles.push_back({b, d, l, s.pixel, s.category, s.code});
+    lv_obj_add_event_cb(b, onTile, LV_EVENT_CLICKED, (void*)(intptr_t)s.pixel);
+    tiles.push_back({b, d, l, s.pixel, s.category, s.code, s.atis});
   }
 }
 
@@ -422,15 +451,10 @@ void showStations() {
       tiles[i].category = cat;
       lv_obj_set_style_bg_color(tiles[i].dot, hex(categoryColor(cat)), 0);
     }
+    tiles[i].atis = live.stations[i].atis;
   }
-
-  if (live.exclusive) {
-    lv_label_set_text_fmt(pausedBanner, "Locate is paused by %s", live.activeName.c_str());
-    lv_obj_remove_flag(pausedBanner, LV_OBJ_FLAG_HIDDEN);
-  } else {
-    lv_obj_add_flag(pausedBanner, LV_OBJ_FLAG_HIDDEN);
-  }
-  lv_obj_set_style_opa(grid, live.exclusive ? LV_OPA_50 : LV_OPA_COVER, 0);
+  showModes();
+  showInfo();
 
   if (!std::isnan(live.locateAt) && live.locateAt != lastLocateAt) {
     // Not one from before the remote started.
@@ -492,7 +516,7 @@ void buildBar(lv_obj_t* scr) {
   lv_obj_set_style_radius(tabs, 10, 0);
   lv_obj_set_style_pad_all(tabs, 2, 0);
   lv_obj_set_style_pad_column(tabs, 2, 0);
-  const char* names[2] = {"Visualizer", "Locator"};
+  const char* names[2] = {"Visualizer", "Info"};
   for (int i = 0; i < 2; i++) {
     lv_obj_t* t = button(tabs, &stTab);
     lv_obj_add_style(t, &stTabOn, LV_STATE_CHECKED);
@@ -608,8 +632,8 @@ void buildVisualizerPanel(lv_obj_t* p) {
   lv_obj_set_style_text_align(brtLabel, LV_TEXT_ALIGN_RIGHT, 0);
 }
 
-// A line above the tiles for the speaker: "hold an airport to hear its weather" while the map can speak, then
-// getting/speaking or why not; the Radio's state while it plays. Hidden otherwise.
+// A line above the tiles for the speaker: what a tap does in AWOS or ATIS mode, then getting/speaking or why not;
+// the Radio's state while it plays. Hidden when there's nothing to say.
 void buildRadioRow(lv_obj_t* p) {
   radioStatus = label(p, "", &lv_font_montserrat_12, kMuted);
   lv_obj_set_width(radioStatus, LV_PCT(100));
@@ -617,15 +641,14 @@ void buildRadioRow(lv_obj_t* p) {
   lv_obj_add_flag(radioStatus, LV_OBJ_FLAG_HIDDEN);
 }
 
-bool shownSpeech = false;  // live.speech as showRadio last saw it
 void showHidden(lv_obj_t* obj, bool shown);
 
 void showRadio() {
   if (!radioStatus) return;
-  shownSpeech = live.speech;
-  char text[64] = "";
+  char text[80] = "";
   bool speaking = !radio.speaking.empty();
   const char* who = radio.speaking.c_str();
+  const char* what = radio.atis ? "'s ATIS" : "";
   switch (speaking && radio.phase != StreamState::Failed ? StreamState::Playing : radio.phase) {
     case StreamState::Connecting:
       snprintf(text, sizeof(text), "connecting...");
@@ -634,8 +657,12 @@ void showRadio() {
       snprintf(text, sizeof(text), "buffering %d%%", radio.bufferPct);
       break;
     case StreamState::Playing:
-      if (speaking) {
-        snprintf(text, sizeof(text), "%s %s", radio.phase == StreamState::Playing ? "speaking" : "getting", who);
+      if (speaking && radio.phase != StreamState::Playing) {
+        snprintf(text, sizeof(text), "getting %s%s...", who, what);
+      } else if (speaking && radio.atis) {
+        snprintf(text, sizeof(text), "%s ATIS - tap %s to stop", who, txOpen ? "the text" : "it again");
+      } else if (speaking) {
+        snprintf(text, sizeof(text), "speaking %s - tap it again to stop", who);
       } else {
         snprintf(text, sizeof(text), "playing - %.1f kHz - buffer %d%%", radio.rate / 1000.0, radio.bufferPct);
       }
@@ -647,11 +674,154 @@ void showRadio() {
       snprintf(text, sizeof(text), "%s%s%s", speaking ? who : "", speaking ? ": " : "", radio.message.c_str());
       break;
     default:
-      if (live.speech) snprintf(text, sizeof(text), "hold an airport to hear its weather");
+      if (txOpen)
+        snprintf(text, sizeof(text), "%s ATIS - tap the text to go back", atisFor.c_str());
+      else if (mode == Mode::Awos)
+        snprintf(text, sizeof(text), "tap an airport to hear its weather");
+      else if (mode == Mode::Atis)
+        snprintf(text, sizeof(text), "tap an airport to hear its ATIS");
       break;
   }
   lv_label_set_text(radioStatus, text);
   showHidden(radioStatus, text[0] != '\0');
+}
+
+// ---- the modes ----------------------------------------------------------------------------------------------
+
+bool awosAvailable() { return stream_available() && live.speech; }
+
+bool atisAvailable() {
+  if (!awosAvailable()) return false;
+  for (const Station& st : live.stations) {
+    if (st.atis) return true;
+  }
+  return false;
+}
+
+void setMode(Mode next) {
+  if (next == Mode::Awos && !awosAvailable()) next = Mode::Locate;
+  if (next == Mode::Atis && !atisAvailable()) next = Mode::Locate;
+  if (next != mode) {
+    if (speakingNow()) stream_set_playing(false);
+    mode = next;
+    closeTranscript();
+  }
+  for (int i = 0; i < 3; i++) {
+    if (!modeChips[i]) continue;
+    if (i == (int)mode) {
+      lv_obj_add_state(modeChips[i], LV_STATE_CHECKED);
+    } else {
+      lv_obj_remove_state(modeChips[i], LV_STATE_CHECKED);
+    }
+  }
+  showInfo();
+  showRadio();
+}
+
+void onMode(lv_event_t* e) { setMode((Mode)(intptr_t)lv_event_get_user_data(e)); }
+
+// Which modes there are: AWOS while the map can speak, ATIS while an airport has one too. One that goes away
+// (speech turned off at the map) leaves Locate.
+void showModes() {
+  if (!modeRow) return;
+  bool awos = awosAvailable(), withAtis = atisAvailable();
+  showHidden(modeRow, awos);
+  showHidden(modeChips[(int)Mode::Atis], withAtis);
+  if ((mode == Mode::Awos && !awos) || (mode == Mode::Atis && !withAtis)) setMode(Mode::Locate);
+}
+
+// What the panel shows for the mode: the airports (in ATIS mode only those with one), or the transcript.
+void showInfo() {
+  bool any = false;
+  for (const Tile& t : tiles) {
+    bool shown = mode != Mode::Atis || t.atis;
+    showHidden(t.btn, shown);
+    any = any || shown;
+  }
+  showHidden(grid, !txOpen);
+  if (transcript) showHidden(transcript, txOpen);
+  if (noAtis) showHidden(noAtis, mode == Mode::Atis && !any && !txOpen);
+  bool paused = mode == Mode::Locate && live.exclusive;
+  if (paused) lv_label_set_text_fmt(pausedBanner, "Locate is paused by %s", live.activeName.c_str());
+  showHidden(pausedBanner, paused);
+  lv_obj_set_style_opa(grid, paused ? LV_OPA_50 : LV_OPA_COVER, 0);
+}
+
+// ---- the transcript: an ATIS line by line as it's read, the line being said lit and kept in view ----------------
+
+void lightLine(int i) {
+  if (i == txLit) return;
+  if (txLit >= 0 && txLit < (int)txRows.size()) {
+    lv_obj_set_style_bg_opa(txRows[txLit], LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_color(txRows[txLit], hex(kBg), 0);
+    lv_obj_set_style_text_color(lv_obj_get_child(txRows[txLit], 1), hex(kMuted), 0);
+  }
+  txLit = i;
+  if (i >= 0 && i < (int)txRows.size()) {
+    lv_obj_set_style_bg_opa(txRows[i], LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(txRows[i], hex(kAccent), 0);
+    lv_obj_set_style_text_color(lv_obj_get_child(txRows[i], 1), hex(kText), 0);
+    lv_obj_scroll_to_view(txRows[i], LV_ANIM_ON);
+  }
+}
+
+void openTranscript() {
+  lv_obj_clean(transcript);
+  txRows.clear();
+  txLit = -1;
+  for (const AtisLine& line : atis.lines) {
+    lv_obj_t* row = box(transcript, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_size(row, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_all(row, 5, 0);
+    lv_obj_set_style_pad_row(row, 2, 0);
+    lv_obj_set_style_radius(row, 6, 0);
+    lv_obj_set_style_bg_color(row, hex(kAccentSoft), 0);
+    lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_side(row, LV_BORDER_SIDE_LEFT, 0);
+    lv_obj_set_style_border_width(row, 3, 0);
+    lv_obj_set_style_border_color(row, hex(kBg), 0);
+    lv_obj_add_flag(row, LV_OBJ_FLAG_EVENT_BUBBLE);  // a tap on a line is a tap on the transcript
+    lv_obj_t* raw = label(row, line.raw.c_str(), &lv_font_montserrat_12, kText);
+    lv_obj_t* said = label(row, line.said.c_str(), &lv_font_montserrat_12, kMuted);
+    for (lv_obj_t* l : {raw, said}) {
+      lv_obj_set_width(l, LV_PCT(100));
+      lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
+      lv_obj_add_flag(l, LV_OBJ_FLAG_EVENT_BUBBLE);
+    }
+    if (line.raw.empty()) lv_obj_add_flag(raw, LV_OBJ_FLAG_HIDDEN);
+    txRows.push_back(row);
+  }
+  lv_obj_scroll_to_y(transcript, 0, LV_ANIM_OFF);
+  txOpen = true;
+  showInfo();
+}
+
+void closeTranscript() {
+  if (!txOpen) return;
+  txOpen = false;
+  if (transcript) lv_obj_clean(transcript);
+  txRows.clear();
+  txLit = -1;
+  showInfo();
+}
+
+// While it plays: the lines show once the sound starts (the words wait for it, as on the web pages), and the line
+// being said follows it. After the end the text stays, to read, until a tap.
+void followTranscript() {
+  if (!transcript || mode != Mode::Atis) return;
+  bool mine = radio.atis && radio.speaking == atisFor && atis.valid && atis.code == atisFor;
+  bool sounding = radio.phase == StreamState::Playing && radio.playedMs > 0;
+  if (!txOpen && mine && sounding && !atis.lines.empty()) openTranscript();
+  if (txOpen) lightLine(speakingNow() ? atisLineAt(atis.lines, radio.playedMs, radio.totalMs) : -1);
+}
+
+void onTranscript(lv_event_t*) {
+  if (speakingNow()) {
+    stream_set_playing(false);  // tap to stop; the text stays
+  } else {
+    closeTranscript();  // and again: back to the airports
+  }
+  showRadio();
 }
 
 // ---- the volume popup: a vertical slider at the right edge while the speaker plays (a spoken METAR, the Radio) ----
@@ -699,7 +869,26 @@ void showVolume() {
   showHidden(volBox, playing);
 }
 
-void buildLocatorPanel(lv_obj_t* p) {
+void buildInfoPanel(lv_obj_t* p) {
+  if (stream_available()) {  // Locate | AWOS | ATIS, while the map can speak (showModes)
+    modeRow = box(p, LV_FLEX_FLOW_ROW);
+    lv_obj_set_size(modeRow, LV_PCT(100), 30);
+    lv_obj_set_style_pad_column(modeRow, 6, 0);
+    const char* names[3] = {"Locate", "AWOS", "ATIS"};
+    for (int i = 0; i < 3; i++) {
+      lv_obj_t* c = button(modeRow, &stChip);
+      lv_obj_add_style(c, &stChipOn, LV_STATE_CHECKED);
+      lv_obj_set_size(c, 72, 30);
+      lv_obj_t* l = lv_label_create(c);
+      lv_label_set_text(l, names[i]);
+      lv_obj_center(l);
+      lv_obj_add_event_cb(c, onMode, LV_EVENT_CLICKED, (void*)(intptr_t)i);
+      modeChips[i] = c;
+    }
+    lv_obj_add_state(modeChips[0], LV_STATE_CHECKED);
+    lv_obj_add_flag(modeRow, LV_OBJ_FLAG_HIDDEN);
+  }
+
   pausedBanner = label(p, "", &lv_font_montserrat_12, kAccent);
   lv_obj_set_style_bg_color(pausedBanner, hex(kAccentSoft), 0);
   lv_obj_set_style_bg_opa(pausedBanner, LV_OPA_COVER, 0);
@@ -716,6 +905,25 @@ void buildLocatorPanel(lv_obj_t* p) {
   lv_obj_set_style_pad_gap(grid, 6, 0);
   lv_obj_add_flag(grid, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_set_scroll_dir(grid, LV_DIR_VER);
+
+  if (stream_available()) {
+    noAtis = label(p, "No airport on this map has a digital ATIS: only about 75 large US airports publish one.",
+                   &lv_font_montserrat_12, kMuted);
+    lv_obj_set_width(noAtis, LV_PCT(100));
+    lv_label_set_long_mode(noAtis, LV_LABEL_LONG_WRAP);
+    lv_obj_add_flag(noAtis, LV_OBJ_FLAG_HIDDEN);
+
+    transcript = box(p, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_width(transcript, LV_PCT(100));
+    lv_obj_set_flex_grow(transcript, 1);
+    lv_obj_set_style_pad_row(transcript, 2, 0);
+    lv_obj_set_style_pad_right(transcript, 52 + 2 * kPad, 0);  // clear of the volume popup at the right edge
+    lv_obj_add_flag(transcript, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(transcript, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_scroll_dir(transcript, LV_DIR_VER);
+    lv_obj_add_event_cb(transcript, onTranscript, LV_EVENT_CLICKED, nullptr);
+    lv_obj_add_flag(transcript, LV_OBJ_FLAG_HIDDEN);
+  }
 }
 
 // ---- the splash screen -------------------------------------------------------------------------------------
@@ -1107,7 +1315,7 @@ void ui_init(MapClient& c, Updater& u) {
   panels[0] = panel(scr);
   buildVisualizerPanel(panels[0]);
   panels[1] = panel(scr);
-  buildLocatorPanel(panels[1]);
+  buildInfoPanel(panels[1]);
   if (stream_available()) buildVolume(scr);  // over both tabs; under the splash
   showTab(0);
   showSplash(scr, SplashMode::Startup);
@@ -1133,9 +1341,11 @@ void ui_tick() {
     refreshUpdate();
   }
   if (stream_get(radio, radioRev)) {
+    followTranscript();
     showRadio();
     showVolume();
   }
+  if (client->getAtis(atis, atisRev)) followTranscript();
 
   if (client->getStatus(status, statusRev)) {
     if (!sameVisualizers(status.visualizers)) buildChips();
@@ -1150,7 +1360,7 @@ void ui_tick() {
     showBrightness();
     showStations();
     if (legendInUse() != legendUsed) showLegend();
-    if (live.speech != shownSpeech) showRadio();  // speech turned on or off at the map
+    showRadio();  // speech turned on or off at the map
   }
 
   static uint32_t lastTick = 0;

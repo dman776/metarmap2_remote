@@ -34,6 +34,7 @@ void liveFilter(JsonDocument& filter) {
   led["virtual"] = true;
   led["flightCategory"] = true;
   led["lightning"] = true;
+  led["atis"] = true;
   led["look"]["effect"] = true;
   led["look"]["colors"] = true;
   filter["locate"] = true;
@@ -89,6 +90,7 @@ MapLive parseLive(JsonVariantConst doc) {
     s.isVirtual = led["virtual"] | false;
     s.category = led["flightCategory"] | "";
     s.lightning = led["lightning"] | false;
+    s.atis = led["atis"] | false;
     s.effect = led["look"]["effect"] | "off";
     for (JsonVariantConst c : led["look"]["colors"].as<JsonArrayConst>()) {
       uint32_t color = parseColor(c | "");  // a cycle repeats its colors
@@ -143,4 +145,39 @@ MapStatus parseStatus(JsonVariantConst doc) {
     status.visualizers.push_back(v);
   }
   return status;
+}
+
+void atisFilter(JsonDocument& filter) {
+  filter.clear();
+  filter["code"] = true;
+  JsonObject line = filter["lines"].add<JsonObject>();
+  line["raw"] = true;
+  line["said"] = true;
+}
+
+AtisTranscript parseAtis(JsonVariantConst doc) {
+  AtisTranscript t;
+  t.code = doc["code"] | "";
+  t.valid = doc["lines"].is<JsonArrayConst>();
+  for (JsonVariantConst line : doc["lines"].as<JsonArrayConst>()) {
+    AtisLine l;
+    l.raw = line["raw"] | "";
+    l.said = line["said"] | "";
+    t.lines.push_back(l);
+  }
+  return t;
+}
+
+int atisLineAt(const std::vector<AtisLine>& lines, uint32_t playedMs, uint32_t totalMs) {
+  if (!totalMs || lines.empty()) return -1;
+  // each line's share of the time: its words, and a pause after it (as the web page reckons it)
+  uint64_t total = 0;
+  for (const AtisLine& l : lines) total += l.said.size() + 12;
+  uint64_t at = (uint64_t)std::min(playedMs, totalMs) * total / totalMs;
+  uint64_t sum = 0;
+  for (size_t i = 0; i < lines.size(); i++) {
+    sum += lines[i].said.size() + 12;
+    if (at < sum) return (int)i;
+  }
+  return (int)lines.size() - 1;
 }

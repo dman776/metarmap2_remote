@@ -18,7 +18,10 @@ struct StreamState {
   int rate = 0;          // the stream's own sample rate, once it's decoding
   std::string message;   // why it's retrying
   bool hasUrl = false;   // a stream to play is set
-  std::string speaking;  // the airport whose METAR is being read aloud; "" for the Radio
+  std::string speaking;  // the airport whose METAR (or ATIS) is being read aloud; "" for the Radio
+  bool atis = false;     // it's the airport's ATIS (stream_speak's), not its METAR
+  // how far into what's read aloud, once it plays (from the map's WAV and its length); 0 while it isn't known
+  uint32_t playedMs = 0, totalMs = 0;
 };
 
 // Sets up the Radio if the speaker works, with `url` ("" for none yet). Call after audio_begin().
@@ -40,9 +43,9 @@ void stream_set_volume(int volume, bool save);
 int stream_volume();
 
 // Reads an airport's METAR aloud: plays the map's /api/speak/<code>.audio (a WAV, made by the map's speech server:
-// Piper in Home Assistant, or Kokoro) once, stopping the Radio. Failed, with the map's why, if it can't (e.g. speech
-// is off).
-void stream_speak(const std::string& code);
+// Piper in Home Assistant, or Kokoro) once, stopping the Radio; with atis, its real ATIS (/api/atis/<code>.audio).
+// Failed, with the map's why, if it can't (e.g. speech is off, or the airport has no ATIS).
+void stream_speak(const std::string& code, bool atis = false);
 
 // The state, if it changed since `rev` (as MapClient::getStatus).
 bool stream_get(StreamState& out, uint32_t& rev);

@@ -48,6 +48,18 @@ struct Station {
   std::string effect;
   std::vector<uint32_t> colors;
   bool lightning = false;
+  bool atis = false;  // its real ATIS can be read aloud (/api/atis/<code>.audio): the Info tab's ATIS mode shows it
+};
+
+// GET /api/atis/<code>/lines: an airport's ATIS line by line, to read along as it's spoken
+struct AtisLine {
+  std::string raw;   // the FAA's text, e.g. "LNDG AND DEPG RWY 13R."
+  std::string said;  // how it's said: "Landing and departing runway one tree right."
+};
+struct AtisTranscript {
+  std::string code;  // the airport asked for
+  bool valid = false;
+  std::vector<AtisLine> lines;
 };
 
 // GET /api/live

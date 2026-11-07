@@ -141,3 +141,8 @@ int parseWavHeader(const uint8_t* data, size_t len, WavInfo& out) {
   }
   return 0;
 }
+
+uint32_t pcmMs(uint64_t bytes, int rate, int channels) {
+  if (rate <= 0 || channels <= 0) return 0;
+  return (uint32_t)(bytes * 1000 / ((uint64_t)rate * channels * 2));
+}

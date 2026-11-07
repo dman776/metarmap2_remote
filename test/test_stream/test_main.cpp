@@ -135,6 +135,14 @@ void test_not_a_wav_we_play() {
   TEST_ASSERT_EQUAL_INT(-1, parseWavHeader(h.data(), h.size(), info));  // 5.1
 }
 
+void test_pcm_ms() {
+  TEST_ASSERT_EQUAL_UINT32(1000, pcmMs(48000, 24000, 1));     // Kokoro: 24 kHz mono, 48000 bytes a second
+  TEST_ASSERT_EQUAL_UINT32(73300, pcmMs(3518400, 24000, 1));  // KHOU's ATIS: 73.3 s
+  TEST_ASSERT_EQUAL_UINT32(500, pcmMs(32000, 16000, 2));
+  TEST_ASSERT_EQUAL_UINT32(0, pcmMs(1000, 0, 1));
+  TEST_ASSERT_EQUAL_UINT32(0, pcmMs(1000, 16000, 0));
+}
+
 // ---- StreamUrl ----
 
 void test_url_parts() {
@@ -293,6 +301,7 @@ int main() {
   RUN_TEST(test_ring_full_and_empty_differ);
   RUN_TEST(test_ring_clear);
   RUN_TEST(test_wav_header);
+  RUN_TEST(test_pcm_ms);
   RUN_TEST(test_wav_header_with_another_chunk);
   RUN_TEST(test_wav_header_needs_more);
   RUN_TEST(test_not_a_wav_we_play);

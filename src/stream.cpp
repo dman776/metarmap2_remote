@@ -35,7 +35,8 @@ constexpr size_t kNetChunk = 2048;
 constexpr size_t kDecodeBytes = 16 * 1024;  // minimp3 wants a few frames of lookahead to find its footing
 constexpr size_t kOutFrames = 4096;         // after resampling: a 8 kHz stream's frame doubles to 1152
 constexpr uint32_t kTimeoutMs = 10 * 1000;
-constexpr uint32_t kSpeakTimeoutMs = 60 * 1000;  // the map answers once its speech server has read the whole report
+// the map answers once its speech server has read the whole text: half a minute for an ATIS, or more on a slow server
+constexpr uint32_t kSpeakTimeoutMs = 120 * 1000;
 constexpr uint32_t kRetryMs = 4000;
 constexpr int kMaxRedirects = 3;
 constexpr uint32_t kReaderStack = 12 * 1024;
@@ -64,6 +65,7 @@ std::atomic<int> volume{63};       // 0-100 (%): the player reads it for each bl
 std::atomic<bool> oneShot{false};
 std::atomic<bool> ended{false};
 std::atomic<bool> drained{false};
+std::atomic<uint32_t> contentLength{0};  // the answer's Content-Length (a WAV's whole size), 0 when it doesn't say
 
 std::string currentUrl() {
   xSemaphoreTake(mutex, portMAX_DELAY);
@@ -78,8 +80,19 @@ void publish(StreamState::Phase phase, const char* message = "") {
   state.phase = phase;
   state.message = message;
   if (phase == StreamState::Off) state.speaking.clear();
-  if (phase == StreamState::Off || phase == StreamState::Connecting) state.rate = 0;
+  if (phase == StreamState::Off || phase == StreamState::Connecting) state.rate = state.playedMs = state.totalMs = 0;
   if (changed) stateRev++;
+  xSemaphoreGive(mutex);
+}
+
+// How far into a WAV: for an ATIS read along on the screen (the line being said is lit).
+void publishProgress(uint32_t playedMs, uint32_t totalMs) {
+  xSemaphoreTake(mutex, portMAX_DELAY);
+  if (state.playedMs != playedMs || state.totalMs != totalMs) {
+    state.playedMs = playedMs;
+    state.totalMs = totalMs;
+    stateRev++;
+  }
   xSemaphoreGive(mutex);
 }
 
@@ -147,6 +160,7 @@ bool openStream(std::string url, std::unique_ptr<WiFiClient>& client, std::strin
     if (status.startsWith("HTTP/")) code = status.substring(9, 12).toInt();
     if (status.startsWith("ICY ")) code = status.substring(4, 7).toInt();  // Shoutcast
     String location, type;
+    contentLength = 0;
     for (int i = 0; i < 40; i++) {  // the headers, up to the blank line
       String line = client->readStringUntil('\n');
       line.trim();
@@ -155,6 +169,7 @@ bool openStream(std::string url, std::unique_ptr<WiFiClient>& client, std::strin
       name.toLowerCase();
       if (name == "location") location = headerValue(line);
       if (name == "content-type") type = headerValue(line);
+      if (name == "content-length") contentLength = (uint32_t)headerValue(line).toInt();
     }
     if (code >= 301 && code <= 308 && location.length() > 0) {
       url = resolveLocation(u, location.c_str());
@@ -271,6 +286,7 @@ struct Player {
   enum Format { Unknown, Mp3, Wav };
   Format format = Unknown;
   WavInfo wav;
+  uint64_t wavBytes = 0, wavPlayed = 0;  // a WAV's samples: all of them (0: not known), and those played
   mp3dec_t decoder;
   mp3d_sample_t pcm[MINIMP3_MAX_SAMPLES_PER_FRAME];
   uint8_t* input = nullptr;  // up to kDecodeBytes of audio, from `start`
@@ -386,6 +402,9 @@ void playerLoop(Player* p) {
       }
       if (wav == 1) {
         p->format = Player::Wav;
+        uint32_t whole = contentLength.load();
+        p->wavBytes = whole > p->wav.dataOffset ? whole - p->wav.dataOffset : 0;
+        p->wavPlayed = 0;
         p->start += p->wav.dataOffset;
         have = p->length - p->start;
         LOGF("stream: WAV\n");
@@ -417,6 +436,12 @@ void playerLoop(Player* p) {
       p->start += bytes;
       publish(StreamState::Playing);
       play(*p, (int)(bytes / frame), p->wav.channels, p->wav.rate);
+      p->wavPlayed += bytes;
+      if (p->wavBytes && (millis() - p->lastPublish >= kPublishMs || last)) {
+        p->lastPublish = millis();
+        publishProgress(pcmMs(p->wavPlayed, p->wav.rate, p->wav.channels),
+                        pcmMs(p->wavBytes, p->wav.rate, p->wav.channels));
+      }
       continue;
     }
 
@@ -522,7 +547,7 @@ bool stream_set_url(const std::string& url) {
 namespace {
 
 // Starts playing `url`: the Radio's stream, or (oneShot) a spoken METAR, once. Stops what's playing first.
-void start(const std::string& url, bool once, const std::string& speaking) {
+void start(const std::string& url, bool once, const std::string& speaking, bool atis = false) {
   if (wanted) {
     wanted = false;  // the old tasks stop
     publish(StreamState::Off);
@@ -538,6 +563,7 @@ void start(const std::string& url, bool once, const std::string& speaking) {
   xSemaphoreTake(mutex, portMAX_DELAY);
   playUrl = url;
   state.speaking = speaking;
+  state.atis = atis;
   xSemaphoreGive(mutex);
   oneShot = once;
   ended = false;
@@ -584,10 +610,10 @@ void stream_set_playing(bool on) {
   start(url, false, "");
 }
 
-void stream_speak(const std::string& code) {
+void stream_speak(const std::string& code, bool atis) {
   if (!ring || code.empty()) return;
-  LOGF("stream: speaking %s\n", code.c_str());
-  start(mapServer + "/api/speak/" + code + ".audio", true, code);
+  LOGF("stream: speaking %s%s\n", code.c_str(), atis ? "'s ATIS" : "");
+  start(mapServer + (atis ? "/api/atis/" : "/api/speak/") + code + ".audio", true, code, atis);
 }
 
 bool stream_get(StreamState& out, uint32_t& rev) {

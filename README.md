@@ -10,9 +10,9 @@ The map stays in charge. The remote reads the map's state over its HTTP API and
 sends it the same controls the `/remote` page does; it never fetches weather or
 drives LEDs itself.
 
-| Visualizer | Locator | Splash | Update |
+| Visualizer | Info | Splash | Update |
 |---|---|---|---|
-| ![The Visualizer tab, with the update star](docs/visualizer.png) | ![The Locator tab](docs/locator.png) | ![The splash screen](docs/splash.png) | ![The firmware update screen](docs/update.png) |
+| ![The Visualizer tab, with the update star](docs/visualizer.png) | ![The Info tab (an older picture: the Locator tab)](docs/locator.png) | ![The splash screen](docs/splash.png) | ![The firmware update screen](docs/update.png) |
 
 ## What it does
 
@@ -27,10 +27,16 @@ drives LEDs itself.
 - Along the bottom: **Auto** (auto-rotate on or off, with a ring counting down
   to the next visualizer) and **LED** brightness.
 
-**Locator tab**
+**Info tab**
 
-- A tile for every airport, with its flight category's color. Tap one to pulse
-  its LED white; a tile also flashes when the map pulses it from anywhere.
+- A tile for every airport, with its flight category's color. What a tap does
+  is picked at the top, as on the map's `/remote` page: **Locate** pulses its
+  LED white (a tile also flashes when the map pulses it from anywhere),
+  **AWOS** reads its METAR aloud, **ATIS** its real ATIS. Tap the airport being
+  read again to stop it.
+- AWOS and ATIS are there while the map can speak (see *Spoken weather*); ATIS
+  shows only the airports with a digital ATIS. Without speech, Info is just
+  Locate.
 - While Rainbow or Chase runs, a banner says locating is paused.
 
 **Splash screen**
@@ -65,7 +71,7 @@ drives LEDs itself.
   feed, an internet radio station) from `STREAM_URL` in `secrets.h`. **For now
   nothing starts it**: its controls were on a web page on the remote, which is
   gone until it comes back for settings. The spoken METARs use the same player.
-  While it plays, the Locator tab says what it's doing above the airports:
+  While it plays, the Info tab says what it's doing above the airports:
   connecting, buffering, playing (the stream's sample rate and how full the
   buffer is), or why it's trying again.
 - The stream must be `http://` or `https://` and **MP3** (not AAC or Ogg). It
@@ -89,14 +95,12 @@ drives LEDs itself.
 
 **Spoken weather**
 
-- Hold an airport on the Locator tab for a second to hear its METAR through
-  the speaker, read ATIS style; a tap still locates it. It stops the Radio and
-  plays once, with "getting" and then "speaking" and the airport above the
-  airports.
-- Only while the map can speak (`/api/live`'s `speech`): "hold an airport to
-  hear its weather" above the airports says so. With speech off at the map, or
-  no server set, a hold does nothing; it follows the map within a couple of
-  seconds of the switch.
+- In the Info tab's **AWOS** mode, tap an airport to hear its METAR through the
+  speaker, as an AWOS reads it. It stops the Radio and plays once, with
+  "getting" and then "speaking" and the airport above the airports.
+- The AWOS and ATIS modes are there only while the map can speak (`/api/live`'s
+  `speech`); with speech off at the map, or no server set, Info is just Locate.
+  They follow the map within a couple of seconds of the switch.
 - The words come from the map: metarmap2 newer than 26.11.07, with **Enable
   speech** on in its **Config > System > Spoken weather** and a speech server
   set there (Piper in Home Assistant, or Kokoro). The remote plays the map's
@@ -106,6 +110,25 @@ drives LEDs itself.
 - If the map can't, the remote shows why, in the map's words (e.g. spoken
   weather is off, or the speech server can't be reached).
 - Always from the remote's map (`MAP_HOST`).
+
+**Spoken ATIS**
+
+- With **Spoken ATIS** on at the map (Config > System > Spoken weather), the
+  Info tab has an **ATIS** mode: the airports that publish a digital ATIS
+  (about 75 large US airports), and a tap reads it aloud: the information
+  letter, the runways and approaches in use, the NOTAMs.
+- **Read along**: once the sound starts, the airports give way to the ATIS
+  line by line, the FAA's text over how it's said, with the line being said
+  lit and kept in view. The map sends the lines (`/api/atis/<code>/lines`); the
+  remote knows how far into the audio it is from the WAV's length, so the
+  highlight follows the voice closely. Tap the text to stop; after the end it
+  stays to read, and a tap goes back to the airports. The volume slider is at
+  the right edge as usual.
+- The map makes the whole ATIS before answering, about half a minute on a
+  Kokoro server, so "getting KHOU's ATIS" shows until it starts; the remote
+  waits up to 2 minutes. After that it's kept until the ATIS changes.
+- Needs metarmap2 with spoken ATIS (after 26.11.07). How a word is said is set
+  on the map's Pronunciation page.
 
 **Everywhere**
 
@@ -290,13 +313,13 @@ checks or build firmware. Tag pushes always do.
 
 At 115200 baud the console logs the version, the connection and each control
 sent, and the update checks. It also takes one-letter commands: `1` and `2`
-open the Visualizer and Locator tabs, `3` shows the splash screen, `4` the
+open the Visualizer and Info tabs, `3` shows the splash screen, `4` the
 update screen, and `S` sends a screenshot, which
 `tools/screenshot.py` saves as a PNG (it needs pyserial):
 
 ```sh
 python3 tools/screenshot.py /dev/cu.usbmodem* screen.png      # as it is
-python3 tools/screenshot.py /dev/cu.usbmodem* locator.png 2   # Locator tab first
+python3 tools/screenshot.py /dev/cu.usbmodem* locator.png 2   # Info tab first
 ```
 
 ### Generated files
