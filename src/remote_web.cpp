@@ -4,6 +4,7 @@
 #include <WebServer.h>
 #include <WiFi.h>
 
+#include <algorithm>
 #include <string>
 
 #include "log.h"
@@ -24,6 +25,8 @@ const char* phaseName(StreamState::Phase phase) {
       return "playing";
     case StreamState::Retrying:
       return "retrying";
+    case StreamState::Failed:
+      return "failed";
     default:
       return "off";
   }
@@ -71,7 +74,9 @@ StreamState current() {
 
 void sendStatus() {
   StreamState s = current();
-  std::string body = "{\"url\":" + jsonString(stream_url()) + ",\"phase\":\"" + phaseName(s.phase) +
+  std::string body = "{\"url\":" + jsonString(stream_url()) +
+                     ",\"speechServer\":" + jsonString(stream_speech_server()) +
+                     ",\"speaking\":" + jsonString(s.speaking) + ",\"phase\":\"" + phaseName(s.phase) +
                      "\",\"message\":" + jsonString(s.message) + ",\"rate\":" + std::to_string(s.rate) +
                      ",\"buffer\":" + std::to_string(s.bufferPct) + "}";
   server.send(200, "application/json", body.c_str());
@@ -103,7 +108,15 @@ void onPage() {
       "<form action=/radio/stop method=get style=display:inline><input type=hidden name=page value=1>"
       "<button>Stop</button></form>"
       "<p>Now: " +
-      html(status) + "</p><p>The URL is saved on the remote. Saving a new one stops the one playing.</p></body></html>";
+      html(status) + (s.speaking.empty() ? "" : " (speaking " + html(s.speaking) + ")") +
+      "</p><p>The URL is saved on the remote. Saving a new one stops the one playing.</p>"
+      "<h1>Spoken weather</h1><p>Hold an airport on the Locator tab for a second to hear its METAR, from the map's "
+      "/api/speak (or another server running metarmap2).</p>"
+      "<form action=/speak/server method=get><label for=s>Speech server (empty: the map)</label>"
+      "<input id=s name=url value=\"" +
+      html(stream_speech_server()) +
+      "\" placeholder='http://192.168.10.76'><input type=hidden name=page value=1>"
+      "<button class=primary>Save</button></form></body></html>";
   server.send(200, "text/html", page.c_str());
 }
 
@@ -132,6 +145,29 @@ void onUrl() {
   reply();
 }
 
+void onSpeechServer() {
+  std::string url = server.hasArg("url") ? server.arg("url").c_str() : "";
+  while (!url.empty() && isspace((unsigned char)url.back())) url.pop_back();
+  while (!url.empty() && isspace((unsigned char)url.front())) url.erase(0, 1);
+  if (!stream_set_speech_server(url)) {
+    server.send(400, "text/plain", "not an http:// or https:// URL");
+    return;
+  }
+  reply();
+}
+
+void onSpeak() {
+  std::string code = server.hasArg("code") ? server.arg("code").c_str() : "";
+  std::transform(code.begin(), code.end(), code.begin(), [](unsigned char c) { return (char)toupper(c); });
+  if (code.empty() || code.size() > 8 ||
+      code.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") != std::string::npos) {
+    server.send(400, "text/plain", "code: an airport like KDWH");
+    return;
+  }
+  stream_speak(code);
+  reply();
+}
+
 void onPlay() {
   stream_set_playing(true);
   reply();
@@ -151,6 +187,8 @@ void remote_web_begin() {
   server.on("/radio/url", HTTP_GET, onUrl);
   server.on("/radio/play", HTTP_GET, onPlay);
   server.on("/radio/stop", HTTP_GET, onStop);
+  server.on("/speak", HTTP_GET, onSpeak);
+  server.on("/speak/server", HTTP_GET, onSpeechServer);
   server.onNotFound([]() { server.send(404, "text/plain", "not found"); });
   server.begin();
   if (MDNS.begin("metarmap-remote")) MDNS.addService("http", "tcp", 80);

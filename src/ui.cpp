@@ -8,6 +8,7 @@
 #include <cctype>
 #include <string>
 
+#include "audio.h"
 #include "firmware_version.h"
 #include "legend.h"
 #include "log.h"
@@ -86,6 +87,7 @@ struct Tile {
   lv_obj_t* label;
   int pixel;
   std::string category;
+  std::string code;
 };
 std::vector<Tile> tiles;
 std::string tileKey;  // the station codes and pixels the tiles were built for
@@ -346,9 +348,21 @@ void showBrightness() {
 
 // ---- the locator -------------------------------------------------------------------------------------------
 
+// A tap locates the airport (its LED pulses); held for a second, its METAR is read aloud.
 void onTile(lv_event_t* e) {
   int pixel = (int)(intptr_t)lv_event_get_user_data(e);
   client->command("/locate/" + std::to_string(pixel));
+}
+
+void onTileHeld(lv_event_t* e) {
+  int pixel = (int)(intptr_t)lv_event_get_user_data(e);
+  for (const Tile& t : tiles) {
+    if (t.pixel == pixel) {
+      audio_click();
+      stream_speak(t.code);
+      return;
+    }
+  }
 }
 
 void unflash(lv_timer_t* t) {
@@ -386,8 +400,10 @@ void buildTiles() {
     }
     lv_obj_t* d = dot(b, 8, categoryColor(s.category));
     lv_obj_t* l = label(b, s.code.c_str(), &lv_font_montserrat_14, kText);
-    lv_obj_add_event_cb(b, onTile, LV_EVENT_CLICKED, (void*)(intptr_t)s.pixel);
-    tiles.push_back({b, d, l, s.pixel, s.category});
+    // SHORT_CLICKED: CLICKED comes after a long press too
+    lv_obj_add_event_cb(b, onTile, LV_EVENT_SHORT_CLICKED, (void*)(intptr_t)s.pixel);
+    if (stream_available()) lv_obj_add_event_cb(b, onTileHeld, LV_EVENT_LONG_PRESSED, (void*)(intptr_t)s.pixel);
+    tiles.push_back({b, d, l, s.pixel, s.category, s.code});
   }
 }
 
@@ -612,7 +628,7 @@ void buildRadioRow(lv_obj_t* p) {
 }
 
 void showRadio() {
-  bool on = radio.phase != StreamState::Off;
+  bool on = radio.phase != StreamState::Off && radio.phase != StreamState::Failed && radio.speaking.empty();
   if (on) {
     lv_obj_add_state(radioBtn, LV_STATE_CHECKED);
   } else {
@@ -620,7 +636,9 @@ void showRadio() {
   }
   lv_label_set_text(radioText, on ? LV_SYMBOL_STOP "  Radio" : LV_SYMBOL_PLAY "  Radio");
   char text[64] = "";
-  switch (radio.phase) {
+  bool speaking = !radio.speaking.empty();
+  const char* who = radio.speaking.c_str();
+  switch (speaking && radio.phase != StreamState::Failed ? StreamState::Playing : radio.phase) {
     case StreamState::Connecting:
       snprintf(text, sizeof(text), "connecting...");
       break;
@@ -628,13 +646,21 @@ void showRadio() {
       snprintf(text, sizeof(text), "buffering %d%%", radio.bufferPct);
       break;
     case StreamState::Playing:
-      snprintf(text, sizeof(text), "playing - %.1f kHz - buffer %d%%", radio.rate / 1000.0, radio.bufferPct);
+      if (speaking) {
+        snprintf(text, sizeof(text), "%s %s", radio.phase == StreamState::Playing ? "speaking" : "getting", who);
+      } else {
+        snprintf(text, sizeof(text), "playing - %.1f kHz - buffer %d%%", radio.rate / 1000.0, radio.bufferPct);
+      }
       break;
     case StreamState::Retrying:
       snprintf(text, sizeof(text), "%s - trying again", radio.message.c_str());
       break;
+    case StreamState::Failed:
+      snprintf(text, sizeof(text), "%s%s%s", speaking ? who : "", speaking ? ": " : "", radio.message.c_str());
+      break;
     default:
-      if (!radio.hasUrl) snprintf(text, sizeof(text), "set a stream at metarmap-remote.local");
+      snprintf(text, sizeof(text), "%s",
+               radio.hasUrl ? "hold an airport to hear its weather" : "set a stream at metarmap-remote.local");
       break;
   }
   lv_label_set_text(radioStatus, text);

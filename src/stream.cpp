@@ -42,6 +42,9 @@ constexpr uint32_t kPlayerStack = 8 * 1024;  // minimp3's scratch is in PSRAM (g
 constexpr uint32_t kPublishMs = 250;
 
 std::string streamUrl;
+std::string mapServer;     // http://MAP_HOST:MAP_PORT
+std::string speechServer;  // "" for mapServer
+std::string playUrl;       // what this Play is playing: the Radio's stream, or a spoken METAR
 ByteRing* ring = nullptr;
 SemaphoreHandle_t mutex = nullptr;
 StreamState state;
@@ -55,12 +58,25 @@ std::atomic<int> players{0};       // player tasks still running (one, or for a 
 std::atomic<uint32_t> epoch{0};    // the reader bumps it for each connection...
 std::atomic<uint32_t> acked{0};    // ...and the player says it has dropped what it had (and may read the ring)
 std::atomic<bool> flowing{false};  // the reader has the stream open
+// A spoken METAR is played once, to its end: the reader says it has it all (ended); the player plays what's left,
+// below the usual underrun mark too, and says when it's done (drained).
+std::atomic<bool> oneShot{false};
+std::atomic<bool> ended{false};
+std::atomic<bool> drained{false};
+
+std::string currentUrl() {
+  xSemaphoreTake(mutex, portMAX_DELAY);
+  std::string url = playUrl;
+  xSemaphoreGive(mutex);
+  return url;
+}
 
 void publish(StreamState::Phase phase, const char* message = "") {
   xSemaphoreTake(mutex, portMAX_DELAY);
   bool changed = state.phase != phase || state.message != message;
   state.phase = phase;
   state.message = message;
+  if (phase == StreamState::Off) state.speaking.clear();
   if (phase == StreamState::Off || phase == StreamState::Connecting) state.rate = 0;
   if (changed) stateRev++;
   xSemaphoreGive(mutex);
@@ -145,6 +161,10 @@ bool openStream(std::string url, std::unique_ptr<WiFiClient>& client, std::strin
     }
     if (code != 200) {
       error = code ? "server said " + std::to_string(code) : "no answer";
+      // the map says why in a line of text (e.g. "No ElevenLabs API key..."): show that instead
+      String why = client->readStringUntil('\n');
+      why.trim();
+      if (code && why.length() > 0 && why.length() < 120 && why.indexOf('<') < 0) error = why.c_str();
       return false;
     }
     type.toLowerCase();
@@ -165,7 +185,7 @@ std::string readOnce(uint32_t gen) {
   std::unique_ptr<WiFiClient> client;
   std::string error;
   publish(StreamState::Connecting);
-  if (!openStream(stream_url(), client, error)) return error;
+  if (!openStream(currentUrl(), client, error)) return error;
   if (!current(gen)) return "";
 
   // The player drops what it has of the last connection first.
@@ -187,6 +207,10 @@ std::string readOnce(uint32_t gen) {
     int available = client->available();
     if (available <= 0) {
       if (!client->connected()) {
+        if (oneShot) {  // all of it: the player plays out what's left
+          ended = true;
+          return "done";
+        }
         flowing = false;
         return "stream ended";
       }
@@ -211,6 +235,23 @@ void readerTask(void* arg) {
   while (current(gen)) {
     std::string why = WiFi.status() != WL_CONNECTED ? "no Wi-Fi" : readOnce(gen);
     if (!current(gen)) break;
+    if (oneShot) {  // a spoken METAR: once, no retrying
+      if (why == "done") {
+        while (current(gen) && !drained) delay(20);
+        delay(300);  // the last of it is still in the I2S queue
+        if (generation.load() == gen) {
+          wanted = false;
+          flowing = false;
+          publish(StreamState::Off);
+        }
+      } else if (generation.load() == gen) {
+        LOGF("stream: speaking failed: %s\n", why.c_str());
+        wanted = false;
+        flowing = false;
+        publish(StreamState::Failed, why.c_str());
+      }
+      vTaskDelete(nullptr);
+    }
     LOGF("stream: %s; trying again\n", why.c_str());
     publish(StreamState::Retrying, why.c_str());
     for (uint32_t waited = 0; current(gen) && waited < kRetryMs; waited += 100) delay(100);
@@ -313,7 +354,7 @@ void playerLoop(Player* p) {
       publishBuffer();
     }
 
-    if (p->prebuffering) {
+    if (p->prebuffering && !ended) {
       if (!readyToPlay(*p)) {
         delay(20);
         continue;
@@ -329,6 +370,20 @@ void playerLoop(Player* p) {
     }
     p->length += ring->read(p->input + p->length, kDecodeBytes - p->length);
     size_t have = p->length - p->start;
+    if (ended && ring->available() == 0 && have < 1024) {
+      // a spoken METAR's last bytes: decode them as they are (part of a frame is dropped), then say it's done
+      mp3dec_frame_info_t info;
+      int samples = have ? mp3dec_decode_frame(&p->decoder, p->input + p->start, (int)have, p->pcm, &info) : 0;
+      if (samples > 0 && info.channels > 0) play(*p, samples, info.channels, info.hz);
+      if (have && info.frame_bytes > 0) {
+        p->start += info.frame_bytes;
+        continue;
+      }
+      p->start = p->length;
+      drained = true;
+      delay(20);
+      continue;
+    }
     if (have < 1024) {  // underrun: wait for more, silently
       p->prebuffering = true;
       p->prebufferSince = millis();
@@ -355,7 +410,7 @@ void playerLoop(Player* p) {
 
 }  // namespace
 
-void stream_begin(const std::string& url) {
+void stream_begin(const std::string& url, const std::string& map, const std::string& speech) {
   if (!audio_ready()) return;
   uint8_t* storage = static_cast<uint8_t*>(heap_caps_malloc(kRingBytes, MALLOC_CAP_SPIRAM));
   if (!storage) {
@@ -371,6 +426,8 @@ void stream_begin(const std::string& url) {
   ring = new ByteRing(storage, kRingBytes);
   mutex = xSemaphoreCreateMutex();
   StreamUrl check;
+  mapServer = map;
+  speechServer = speech.empty() || parseStreamUrl(speech, check) ? speech : "";
   streamUrl = parseStreamUrl(url, check) ? url : "";
   if (!url.empty() && streamUrl.empty()) LOGF("stream: %s isn't an http:// or https:// URL\n", url.c_str());
   state.hasUrl = !streamUrl.empty();
@@ -404,16 +461,13 @@ bool stream_set_url(const std::string& url) {
   return true;
 }
 
-void stream_set_playing(bool on) {
-  if (!ring || on == wanted) return;
-  if (on && stream_url().empty()) {
-    publish(StreamState::Retrying, "no stream URL: set one at http://metarmap-remote.local/");
-    return;
-  }
-  if (!on) {
-    wanted = false;  // the tasks see it and stop, giving back their memory
+namespace {
+
+// Starts playing `url`: the Radio's stream, or (oneShot) a spoken METAR, once. Stops what's playing first.
+void start(const std::string& url, bool once, const std::string& speaking) {
+  if (wanted) {
+    wanted = false;  // the old tasks stop
     publish(StreamState::Off);
-    return;
   }
   // A player from the last Play may still be finishing a write to the speaker (up to 100 ms); two would share the
   // buffer. An old reader can take longer (a connection timing out), but it stops without touching anything.
@@ -423,6 +477,13 @@ void stream_set_playing(bool on) {
     return;
   }
   uint32_t gen = generation.fetch_add(1) + 1;
+  xSemaphoreTake(mutex, portMAX_DELAY);
+  playUrl = url;
+  state.speaking = speaking;
+  xSemaphoreGive(mutex);
+  oneShot = once;
+  ended = false;
+  drained = false;
   wanted = true;
   flowing = false;
   publish(StreamState::Connecting);
@@ -436,14 +497,63 @@ void stream_set_playing(bool on) {
                               reinterpret_cast<void*>(static_cast<uintptr_t>(gen)), 2, nullptr, 0) != pdPASS) {
     players--;
     wanted = false;
-    publish(StreamState::Retrying, "no memory for the player");
+    publish(StreamState::Failed, "no memory for the player; try again");
     return;
   }
   if (xTaskCreatePinnedToCore(readerTask, "stream_net", kReaderStack,
                               reinterpret_cast<void*>(static_cast<uintptr_t>(gen)), 1, nullptr, 0) != pdPASS) {
     wanted = false;
-    publish(StreamState::Retrying, "no memory for the reader");
+    publish(StreamState::Failed, "no memory for the reader; try again");
   }
+}
+
+}  // namespace
+
+void stream_set_playing(bool on) {
+  if (!ring) return;
+  if (!on) {
+    if (!wanted) return;
+    wanted = false;  // the tasks see it and stop, giving back their memory
+    publish(StreamState::Off);
+    return;
+  }
+  if (wanted && !oneShot) return;  // already playing the Radio
+  std::string url = stream_url();
+  if (url.empty()) {
+    publish(StreamState::Failed, "no stream URL: set one at http://metarmap-remote.local/");
+    return;
+  }
+  start(url, false, "");
+}
+
+std::string stream_speech_server() {
+  if (!ring) return "";
+  xSemaphoreTake(mutex, portMAX_DELAY);
+  std::string server = speechServer;
+  xSemaphoreGive(mutex);
+  return server;
+}
+
+bool stream_set_speech_server(const std::string& url) {
+  if (!ring) return false;
+  StreamUrl check;
+  if (!url.empty() && !parseStreamUrl(url, check)) return false;
+  std::string server = url;
+  while (!server.empty() && server.back() == '/') server.pop_back();
+  xSemaphoreTake(mutex, portMAX_DELAY);
+  speechServer = server;
+  xSemaphoreGive(mutex);
+  settings_save_speech_server(server);
+  LOGF("stream: speech server %s\n", server.empty() ? "is the map's" : server.c_str());
+  return true;
+}
+
+void stream_speak(const std::string& code) {
+  if (!ring || code.empty()) return;
+  std::string server = stream_speech_server();
+  if (server.empty()) server = mapServer;
+  LOGF("stream: speaking %s\n", code.c_str());
+  start(server + "/api/speak/" + code + ".mp3", true, code);
 }
 
 bool stream_get(StreamState& out, uint32_t& rev) {

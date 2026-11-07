@@ -47,6 +47,7 @@ Settings settings_load() {
   s.updateChannel = getString(p, "upd_channel", s.updateChannel);
   s.updateBranch = getString(p, "upd_branch", s.updateBranch);
   s.streamUrl = getString(p, "stream_url", "");
+  s.speechServer = getString(p, "speech_server", "");
   p.end();
   if (s.wifiName.empty()) LOGF("settings: no Wi-Fi network saved; flash a build with include/secrets.h\n");
   return s;
@@ -56,6 +57,13 @@ void settings_save_stream(const std::string& url) {
   Preferences p;
   p.begin(kNamespace, false);
   putString(p, "stream_url", url);
+  p.end();
+}
+
+void settings_save_speech_server(const std::string& url) {
+  Preferences p;
+  p.begin(kNamespace, false);
+  putString(p, "speech_server", url);
   p.end();
 }
 

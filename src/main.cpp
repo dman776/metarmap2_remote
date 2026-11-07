@@ -28,8 +28,10 @@ void setup() {
 
   settings = settings_load();  // Wi-Fi and map: from secrets.h, else as saved
   neopixelWrite(RGB_LED, 0, 0, 0);
-  audio_begin();                     // before lcd.init(): it borrows the touch I2C pins
-  stream_begin(settings.streamUrl);  // the Radio button's stream, if there's a URL and a speaker
+  audio_begin();  // before lcd.init(): it borrows the touch I2C pins
+  // the Radio's stream, and spoken METARs from the map (or another speech server)
+  stream_begin(settings.streamUrl, "http://" + settings.mapHost + ":" + std::to_string(settings.mapPort),
+               settings.speechServer);
 
   lcd.init();
   lcd.setRotation(3);  // landscape, USB-C on the right
