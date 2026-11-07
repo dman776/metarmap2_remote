@@ -32,6 +32,13 @@ Settings settings_load() {
   putString(p, "map_host", MAP_HOST);
   if (p.getUShort("map_port", 0) != MAP_PORT) p.putUShort("map_port", MAP_PORT);
 #endif
+#ifdef STREAM_URL
+  // Only when this build's URL is new: one sent over the network (stream_url) otherwise stays through restarts.
+  if (getString(p, "stream_seed", "\x01") != STREAM_URL) {
+    putString(p, "stream_seed", STREAM_URL);
+    putString(p, "stream_url", STREAM_URL);
+  }
+#endif
   Settings s;
   s.wifiName = getString(p, "wifi_name", "");
   s.wifiPassword = getString(p, "wifi_pass", "");
@@ -39,9 +46,26 @@ Settings settings_load() {
   s.mapPort = p.getUShort("map_port", 80);
   s.updateChannel = getString(p, "upd_channel", s.updateChannel);
   s.updateBranch = getString(p, "upd_branch", s.updateBranch);
+  s.streamUrl = getString(p, "stream_url", "");
+  s.volume = p.getUChar("volume", s.volume);
+  p.remove("speech_server");  // a prototype's own speech server: spoken METARs come from the map now
   p.end();
   if (s.wifiName.empty()) LOGF("settings: no Wi-Fi network saved; flash a build with include/secrets.h\n");
   return s;
+}
+
+void settings_save_stream(const std::string& url) {
+  Preferences p;
+  p.begin(kNamespace, false);
+  putString(p, "stream_url", url);
+  p.end();
+}
+
+void settings_save_volume(int volume) {
+  Preferences p;
+  p.begin(kNamespace, false);
+  if (p.getUChar("volume", 255) != volume) p.putUChar("volume", (uint8_t)volume);  // flash wears: changes only
+  p.end();
 }
 
 void settings_save_update(const Settings& s) {

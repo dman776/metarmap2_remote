@@ -8,11 +8,13 @@
 #include <cctype>
 #include <string>
 
+#include "audio.h"
 #include "firmware_version.h"
 #include "legend.h"
 #include "log.h"
 #include "lvgl_port.h"
 #include "map_client.h"
+#include "stream.h"
 #include "updater.h"
 
 extern "C" const lv_image_dsc_t logo;       // logo.c, from assets/logo.svg
@@ -74,6 +76,10 @@ lv_obj_t *chipRow, *legendBox;
 lv_obj_t *rotateSw, *clockBox, *clockArc, *clockLabel;
 lv_obj_t *brtSlider, *brtLabel;
 lv_obj_t *pausedBanner, *grid;
+lv_obj_t* radioStatus;                    // what the speaker is doing: a spoken METAR, or the Radio
+lv_obj_t *volBox, *volSlider, *volLabel;  // the volume popup, while the speaker plays
+StreamState radio;
+uint32_t radioRev = 0;
 
 std::vector<lv_obj_t*> chips;  // by visualizer index
 struct Tile {
@@ -82,6 +88,7 @@ struct Tile {
   lv_obj_t* label;
   int pixel;
   std::string category;
+  std::string code;
 };
 std::vector<Tile> tiles;
 std::string tileKey;  // the station codes and pixels the tiles were built for
@@ -342,9 +349,22 @@ void showBrightness() {
 
 // ---- the locator -------------------------------------------------------------------------------------------
 
+// A tap locates the airport (its LED pulses); held for a second, its METAR is read aloud.
 void onTile(lv_event_t* e) {
   int pixel = (int)(intptr_t)lv_event_get_user_data(e);
   client->command("/locate/" + std::to_string(pixel));
+}
+
+void onTileHeld(lv_event_t* e) {
+  if (!live.speech) return;  // the map can't speak: speech off, or no server
+  int pixel = (int)(intptr_t)lv_event_get_user_data(e);
+  for (const Tile& t : tiles) {
+    if (t.pixel == pixel) {
+      audio_click();
+      stream_speak(t.code);
+      return;
+    }
+  }
 }
 
 void unflash(lv_timer_t* t) {
@@ -382,8 +402,10 @@ void buildTiles() {
     }
     lv_obj_t* d = dot(b, 8, categoryColor(s.category));
     lv_obj_t* l = label(b, s.code.c_str(), &lv_font_montserrat_14, kText);
-    lv_obj_add_event_cb(b, onTile, LV_EVENT_CLICKED, (void*)(intptr_t)s.pixel);
-    tiles.push_back({b, d, l, s.pixel, s.category});
+    // SHORT_CLICKED: CLICKED comes after a long press too
+    lv_obj_add_event_cb(b, onTile, LV_EVENT_SHORT_CLICKED, (void*)(intptr_t)s.pixel);
+    if (stream_available()) lv_obj_add_event_cb(b, onTileHeld, LV_EVENT_LONG_PRESSED, (void*)(intptr_t)s.pixel);
+    tiles.push_back({b, d, l, s.pixel, s.category, s.code});
   }
 }
 
@@ -586,6 +608,97 @@ void buildVisualizerPanel(lv_obj_t* p) {
   lv_obj_set_style_text_align(brtLabel, LV_TEXT_ALIGN_RIGHT, 0);
 }
 
+// A line above the tiles for the speaker: "hold an airport to hear its weather" while the map can speak, then
+// getting/speaking or why not; the Radio's state while it plays. Hidden otherwise.
+void buildRadioRow(lv_obj_t* p) {
+  radioStatus = label(p, "", &lv_font_montserrat_12, kMuted);
+  lv_obj_set_width(radioStatus, LV_PCT(100));
+  lv_label_set_long_mode(radioStatus, LV_LABEL_LONG_DOT);
+  lv_obj_add_flag(radioStatus, LV_OBJ_FLAG_HIDDEN);
+}
+
+bool shownSpeech = false;  // live.speech as showRadio last saw it
+void showHidden(lv_obj_t* obj, bool shown);
+
+void showRadio() {
+  if (!radioStatus) return;
+  shownSpeech = live.speech;
+  char text[64] = "";
+  bool speaking = !radio.speaking.empty();
+  const char* who = radio.speaking.c_str();
+  switch (speaking && radio.phase != StreamState::Failed ? StreamState::Playing : radio.phase) {
+    case StreamState::Connecting:
+      snprintf(text, sizeof(text), "connecting...");
+      break;
+    case StreamState::Buffering:
+      snprintf(text, sizeof(text), "buffering %d%%", radio.bufferPct);
+      break;
+    case StreamState::Playing:
+      if (speaking) {
+        snprintf(text, sizeof(text), "%s %s", radio.phase == StreamState::Playing ? "speaking" : "getting", who);
+      } else {
+        snprintf(text, sizeof(text), "playing - %.1f kHz - buffer %d%%", radio.rate / 1000.0, radio.bufferPct);
+      }
+      break;
+    case StreamState::Retrying:
+      snprintf(text, sizeof(text), "%s - trying again", radio.message.c_str());
+      break;
+    case StreamState::Failed:
+      snprintf(text, sizeof(text), "%s%s%s", speaking ? who : "", speaking ? ": " : "", radio.message.c_str());
+      break;
+    default:
+      if (live.speech) snprintf(text, sizeof(text), "hold an airport to hear its weather");
+      break;
+  }
+  lv_label_set_text(radioStatus, text);
+  showHidden(radioStatus, text[0] != '\0');
+}
+
+// ---- the volume popup: a vertical slider at the right edge while the speaker plays (a spoken METAR, the Radio) ----
+
+void onVolume(lv_event_t* e) {
+  int pct = lv_slider_get_value(volSlider);
+  lv_label_set_text_fmt(volLabel, "%d%%", pct);
+  stream_set_volume(pct, lv_event_get_code(e) == LV_EVENT_RELEASED);  // heard at once; saved on release
+}
+
+void buildVolume(lv_obj_t* scr) {
+  volBox = box(scr, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_size(volBox, 52, 164);
+  lv_obj_align(volBox, LV_ALIGN_RIGHT_MID, -kPad, kBarH / 2);
+  lv_obj_set_flex_align(volBox, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_bg_color(volBox, hex(kSurface2), 0);
+  lv_obj_set_style_bg_opa(volBox, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_color(volBox, hex(kControl), 0);
+  lv_obj_set_style_border_width(volBox, 1, 0);
+  lv_obj_set_style_radius(volBox, 12, 0);
+  lv_obj_set_style_pad_ver(volBox, 10, 0);
+  lv_obj_set_style_shadow_width(volBox, 16, 0);
+  lv_obj_set_style_shadow_opa(volBox, LV_OPA_50, 0);
+  lv_obj_add_flag(volBox, LV_OBJ_FLAG_CLICKABLE);  // a touch beside the slider doesn't reach the tile beneath
+
+  label(volBox, LV_SYMBOL_VOLUME_MAX, &lv_font_montserrat_14, kText2);
+  volSlider = lv_slider_create(volBox);  // taller than wide: vertical, 0 at the bottom
+  lv_obj_set_size(volSlider, 8, 96);
+  lv_slider_set_range(volSlider, 0, 100);
+  lv_slider_set_value(volSlider, stream_volume(), LV_ANIM_OFF);
+  lv_obj_set_style_bg_color(volSlider, hex(kControl), LV_PART_MAIN);
+  lv_obj_set_style_pad_all(volSlider, 5, LV_PART_KNOB);
+  lv_obj_set_ext_click_area(volSlider, 16);
+  lv_obj_add_event_cb(volSlider, onVolume, LV_EVENT_VALUE_CHANGED, nullptr);
+  lv_obj_add_event_cb(volSlider, onVolume, LV_EVENT_RELEASED, nullptr);
+  volLabel = label(volBox, "", &lv_font_montserrat_12, kMuted);
+  lv_label_set_text_fmt(volLabel, "%d%%", stream_volume());
+  lv_obj_add_flag(volBox, LV_OBJ_FLAG_HIDDEN);
+}
+
+void showVolume() {
+  if (!volBox) return;
+  bool playing = radio.phase == StreamState::Connecting || radio.phase == StreamState::Buffering ||
+                 radio.phase == StreamState::Playing || radio.phase == StreamState::Retrying;
+  showHidden(volBox, playing);
+}
+
 void buildLocatorPanel(lv_obj_t* p) {
   pausedBanner = label(p, "", &lv_font_montserrat_12, kAccent);
   lv_obj_set_style_bg_color(pausedBanner, hex(kAccentSoft), 0);
@@ -594,6 +707,8 @@ void buildLocatorPanel(lv_obj_t* p) {
   lv_obj_set_style_pad_hor(pausedBanner, 8, 0);
   lv_obj_set_style_pad_ver(pausedBanner, 4, 0);
   lv_obj_add_flag(pausedBanner, LV_OBJ_FLAG_HIDDEN);
+
+  if (stream_available()) buildRadioRow(p);
 
   grid = box(p, LV_FLEX_FLOW_ROW_WRAP);
   lv_obj_set_width(grid, LV_PCT(100));
@@ -993,6 +1108,7 @@ void ui_init(MapClient& c, Updater& u) {
   buildVisualizerPanel(panels[0]);
   panels[1] = panel(scr);
   buildLocatorPanel(panels[1]);
+  if (stream_available()) buildVolume(scr);  // over both tabs; under the splash
   showTab(0);
   showSplash(scr, SplashMode::Startup);
 }
@@ -1016,6 +1132,10 @@ void ui_tick() {
     showHidden(starIcon, upd.available);
     refreshUpdate();
   }
+  if (stream_get(radio, radioRev)) {
+    showRadio();
+    showVolume();
+  }
 
   if (client->getStatus(status, statusRev)) {
     if (!sameVisualizers(status.visualizers)) buildChips();
@@ -1030,6 +1150,7 @@ void ui_tick() {
     showBrightness();
     showStations();
     if (legendInUse() != legendUsed) showLegend();
+    if (live.speech != shownSpeech) showRadio();  // speech turned on or off at the map
   }
 
   static uint32_t lastTick = 0;

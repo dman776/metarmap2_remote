@@ -15,7 +15,7 @@ namespace {
 
 constexpr uint8_t kCodecAddr = 0x18;  // ES8311 with CE low
 constexpr i2s_port_t kPort = I2S_NUM_0;
-constexpr int kRate = 16000;  // MCLK = 256 x 16 kHz = 4.096 MHz
+constexpr int kRate = kAudioRate;  // MCLK = 256 x 16 kHz = 4.096 MHz
 
 // The tick: a 2.4 kHz tone dying away over a few ms, stereo 16-bit.
 constexpr int kClickFrames = kRate * 25 / 1000;
@@ -89,7 +89,7 @@ bool startI2s() {
   cfg.bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT;
   cfg.channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT;
   cfg.communication_format = I2S_COMM_FORMAT_STAND_I2S;
-  cfg.dma_buf_count = 4;
+  cfg.dma_buf_count = 8;  // 128 ms: a stream rides out the Wi-Fi task being busy that long
   cfg.dma_buf_len = 256;
   cfg.tx_desc_auto_clear = true;  // silence, not the last sound, when idle
   cfg.mclk_multiple = I2S_MCLK_MULTIPLE_256;
@@ -157,4 +157,13 @@ void audio_click() {
   if (!ready) return;
   size_t written;
   i2s_write(kPort, clickPcm, sizeof(clickPcm), &written, 0);
+}
+
+bool audio_ready() { return ready; }
+
+size_t audio_write(const int16_t* stereo, size_t frames, uint32_t waitMs) {
+  if (!ready) return 0;
+  size_t written = 0;
+  i2s_write(kPort, stereo, frames * 2 * sizeof(int16_t), &written, pdMS_TO_TICKS(waitMs));
+  return written / (2 * sizeof(int16_t));
 }

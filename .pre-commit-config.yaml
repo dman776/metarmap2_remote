@@ -1,5 +1,7 @@
 # pre-commit install       run these on every commit
 # pre-commit run -a        run them on everything now
+# the vendored minimp3 (public domain) stays as its author wrote it
+exclude: ^src/third_party/
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
