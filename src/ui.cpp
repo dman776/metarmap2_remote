@@ -76,7 +76,7 @@ lv_obj_t *chipRow, *legendBox;
 lv_obj_t *rotateSw, *clockBox, *clockArc, *clockLabel;
 lv_obj_t *brtSlider, *brtLabel;
 lv_obj_t *pausedBanner, *grid;
-lv_obj_t *radioBtn, *radioText, *radioStatus;
+lv_obj_t* radioStatus;  // what the speaker is doing: a spoken METAR, or the Radio (started from the web page)
 StreamState radio;
 uint32_t radioRev = 0;
 
@@ -355,6 +355,7 @@ void onTile(lv_event_t* e) {
 }
 
 void onTileHeld(lv_event_t* e) {
+  if (!live.speech) return;  // the map can't speak: speech off, or no server
   int pixel = (int)(intptr_t)lv_event_get_user_data(e);
   for (const Tile& t : tiles) {
     if (t.pixel == pixel) {
@@ -606,35 +607,21 @@ void buildVisualizerPanel(lv_obj_t* p) {
   lv_obj_set_style_text_align(brtLabel, LV_TEXT_ALIGN_RIGHT, 0);
 }
 
-// The prototype Radio: a button that plays the stream from secrets.h's STREAM_URL, and what it's doing.
-void onRadio(lv_event_t*) { stream_set_playing(lv_obj_has_state(radioBtn, LV_STATE_CHECKED)); }
-
+// A line above the tiles for the speaker: "hold an airport to hear its weather" while the map can speak, then
+// getting/speaking or why not; the Radio's state while it plays (it's started from the web page). Hidden otherwise.
 void buildRadioRow(lv_obj_t* p) {
-  lv_obj_t* row = box(p, LV_FLEX_FLOW_ROW);
-  lv_obj_set_size(row, LV_PCT(100), 32);
-  lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-  lv_obj_set_style_pad_column(row, 8, 0);
-  radioBtn = button(row, &stChip);
-  lv_obj_add_style(radioBtn, &stChipOn, LV_STATE_CHECKED);
-  lv_obj_add_flag(radioBtn, LV_OBJ_FLAG_CHECKABLE);
-  lv_obj_set_size(radioBtn, 96, 30);
-  radioText = lv_label_create(radioBtn);
-  lv_label_set_text(radioText, LV_SYMBOL_PLAY "  Radio");
-  lv_obj_center(radioText);
-  lv_obj_add_event_cb(radioBtn, onRadio, LV_EVENT_CLICKED, nullptr);
-  radioStatus = label(row, "", &lv_font_montserrat_12, kMuted);
-  lv_obj_set_flex_grow(radioStatus, 1);
+  radioStatus = label(p, "", &lv_font_montserrat_12, kMuted);
+  lv_obj_set_width(radioStatus, LV_PCT(100));
   lv_label_set_long_mode(radioStatus, LV_LABEL_LONG_DOT);
+  lv_obj_add_flag(radioStatus, LV_OBJ_FLAG_HIDDEN);
 }
 
+bool shownSpeech = false;  // live.speech as showRadio last saw it
+void showHidden(lv_obj_t* obj, bool shown);
+
 void showRadio() {
-  bool on = radio.phase != StreamState::Off && radio.phase != StreamState::Failed && radio.speaking.empty();
-  if (on) {
-    lv_obj_add_state(radioBtn, LV_STATE_CHECKED);
-  } else {
-    lv_obj_remove_state(radioBtn, LV_STATE_CHECKED);
-  }
-  lv_label_set_text(radioText, on ? LV_SYMBOL_STOP "  Radio" : LV_SYMBOL_PLAY "  Radio");
+  if (!radioStatus) return;
+  shownSpeech = live.speech;
   char text[64] = "";
   bool speaking = !radio.speaking.empty();
   const char* who = radio.speaking.c_str();
@@ -659,11 +646,11 @@ void showRadio() {
       snprintf(text, sizeof(text), "%s%s%s", speaking ? who : "", speaking ? ": " : "", radio.message.c_str());
       break;
     default:
-      snprintf(text, sizeof(text), "%s",
-               radio.hasUrl ? "hold an airport to hear its weather" : "set a stream at metarmap-remote.local");
+      if (live.speech) snprintf(text, sizeof(text), "hold an airport to hear its weather");
       break;
   }
   lv_label_set_text(radioStatus, text);
+  showHidden(radioStatus, text[0] != '\0');
 }
 
 void buildLocatorPanel(lv_obj_t* p) {
@@ -675,7 +662,7 @@ void buildLocatorPanel(lv_obj_t* p) {
   lv_obj_set_style_pad_ver(pausedBanner, 4, 0);
   lv_obj_add_flag(pausedBanner, LV_OBJ_FLAG_HIDDEN);
 
-  if (stream_available()) buildRadioRow(p);  // the URL can come later, from the web page
+  if (stream_available()) buildRadioRow(p);
 
   grid = box(p, LV_FLEX_FLOW_ROW_WRAP);
   lv_obj_set_width(grid, LV_PCT(100));
@@ -1113,6 +1100,7 @@ void ui_tick() {
     showBrightness();
     showStations();
     if (legendInUse() != legendUsed) showLegend();
+    if (live.speech != shownSpeech) showRadio();  // speech turned on or off at the map
   }
 
   static uint32_t lastTick = 0;

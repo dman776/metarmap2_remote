@@ -61,14 +61,13 @@ drives LEDs itself.
 
 **Radio (a prototype)**
 
-- With a `STREAM_URL` in `secrets.h`, the Locator tab has a **Radio** button
-  that plays that MP3 stream through the speaker (an airport tower's feed, an
-  internet radio station), with what it's doing beside it: connecting,
-  buffering, playing (the stream's sample rate and how full the buffer is), or
-  why it's trying again. Tap it again to stop.
-- **Changing the stream from another device:** open `http://metarmap-remote.local/`
-  (or the remote's IP) on your network: paste a stream URL, **Save**, then
-  **Play** or **Stop**. The remote keeps the URL through restarts; a flash with a
+- The remote plays an MP3 stream through the speaker (an airport tower's feed,
+  an internet radio station), started from its web page: open
+  `http://metarmap-remote.local/` (or the remote's IP) on your network, paste a
+  stream URL (or set `STREAM_URL` in `secrets.h`), **Save**, then **Play** or
+  **Stop**. While it plays, the Locator tab says what it's doing above the
+  airports: connecting, buffering, playing (the stream's sample rate and how
+  full the buffer is), or why it's trying again. The remote keeps the URL through restarts; a flash with a
   new `STREAM_URL` in `secrets.h` replaces it, an unchanged one doesn't. For
   scripts: `GET /radio` (status JSON), `/radio/url?url=...`, `/radio/play`,
   `/radio/stop`. There's no login: anyone on your network can change what the
@@ -90,9 +89,13 @@ drives LEDs itself.
 
 - Hold an airport on the Locator tab for a second to hear its METAR through
   the speaker, read ATIS style; a tap still locates it. It stops the Radio and
-  plays once, with "getting" and then "speaking" and the airport beside the
-  Radio button.
-- The words come from the map: metarmap2 26.11.07 or later, with **Enable
+  plays once, with "getting" and then "speaking" and the airport above the
+  airports.
+- Only while the map can speak (`/api/live`'s `speech`): "hold an airport to
+  hear its weather" above the airports says so. With speech off at the map, or
+  no server set, a hold does nothing; it follows the map within a couple of
+  seconds of the switch.
+- The words come from the map: metarmap2 newer than 26.11.07, with **Enable
   speech** on in its **Config > System > Spoken weather** and a speech server
   set there (Piper in Home Assistant, or Kokoro). The remote plays the map's
   `/api/speak/<code>.audio`, a WAV, as it is (no decoding), resampled to
@@ -151,7 +154,7 @@ You need [PlatformIO](https://platformio.org/) (the VS Code extension or
    `web_server.port`). `secrets.h` is git-ignored. The remote saves these in
    its flash when it starts, so they stay through firmware updates, which
    don't have them; flash again with a changed `secrets.h` to change them.
-   A `STREAM_URL` for the Radio button is optional (see above).
+   A `STREAM_URL` for the Radio is optional (see above).
 2. Connect the board by USB-C. It shows up as a serial port
    (`/dev/cu.usbmodem*` on macOS); no driver is needed.
 3. Build and flash:

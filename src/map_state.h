@@ -70,6 +70,7 @@ struct MapLive {
   std::vector<Station> stations;  // in LED order
   int locatePixel = -1;
   double locateAt = NAN;
+  bool speech = false;  // the map reads METARs aloud (/api/speak) now: on, with a server; false from an older map
 };
 
 struct Connection {

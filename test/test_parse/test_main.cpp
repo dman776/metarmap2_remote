@@ -120,6 +120,13 @@ void test_live_without_legend_in_use() {
   TEST_ASSERT_FALSE(parseLive(filtered(json, liveFilter).as<JsonVariantConst>()).hasLegendInUse);
 }
 
+void test_live_speech() {
+  // The map can read METARs aloud only with speech on and a server set; an older map doesn't say (no hold-to-hear).
+  TEST_ASSERT_FALSE(parseLive(filtered(kLiveJson, liveFilter).as<JsonVariantConst>()).speech);
+  TEST_ASSERT_TRUE(parseLive(filtered(R"({"speech": true, "leds": []})", liveFilter).as<JsonVariantConst>()).speech);
+  TEST_ASSERT_FALSE(parseLive(filtered(R"({"speech": false, "leds": []})", liveFilter).as<JsonVariantConst>()).speech);
+}
+
 void test_live_filter_drops_the_rest() {
   // The METAR text, positions and names are most of /api/live; the remote
   // doesn't keep them.
@@ -225,6 +232,7 @@ int main() {
   RUN_TEST(test_live_locate);
   RUN_TEST(test_live_stations);
   RUN_TEST(test_live_nulls);
+  RUN_TEST(test_live_speech);
   RUN_TEST(test_live_legend_in_use);
   RUN_TEST(test_live_without_legend_in_use);
   RUN_TEST(test_live_filter_drops_the_rest);
