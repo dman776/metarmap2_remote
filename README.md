@@ -103,9 +103,8 @@ drives LEDs itself.
   a few seconds; it keeps it until the next METAR.
 - If the map can't, the remote shows why, in the map's words (e.g. spoken
   weather is off, or the speech server can't be reached).
-- On the web page (`http://metarmap-remote.local/`): **Speech server** takes
-  another map's address (empty: this remote's map). For scripts:
-  `/speak?code=KDWH`, `/speak/server?url=...`.
+- Always from the remote's map (`MAP_HOST`). For scripts: `/speak?code=KDWH`
+  on the remote's web page reads one aloud.
 
 **Everywhere**
 

@@ -74,11 +74,9 @@ StreamState current() {
 
 void sendStatus() {
   StreamState s = current();
-  std::string body = "{\"url\":" + jsonString(stream_url()) +
-                     ",\"speechServer\":" + jsonString(stream_speech_server()) +
-                     ",\"speaking\":" + jsonString(s.speaking) + ",\"phase\":\"" + phaseName(s.phase) +
-                     "\",\"message\":" + jsonString(s.message) + ",\"rate\":" + std::to_string(s.rate) +
-                     ",\"buffer\":" + std::to_string(s.bufferPct) + "}";
+  std::string body = "{\"url\":" + jsonString(stream_url()) + ",\"speaking\":" + jsonString(s.speaking) +
+                     ",\"phase\":\"" + phaseName(s.phase) + "\",\"message\":" + jsonString(s.message) +
+                     ",\"rate\":" + std::to_string(s.rate) + ",\"buffer\":" + std::to_string(s.bufferPct) + "}";
   server.send(200, "application/json", body.c_str());
 }
 
@@ -110,14 +108,8 @@ void onPage() {
       "<p>Now: " +
       html(status) + (s.speaking.empty() ? "" : " (speaking " + html(s.speaking) + ")") +
       "</p><p>The URL is saved on the remote. Saving a new one stops the one playing.</p>"
-      "<h1>Spoken weather</h1><p>Hold an airport on the Locator tab for a second to hear its METAR, from the map's "
-      "/api/speak (or another map running metarmap2). Turn it on in the map's Config &gt; System &gt; Spoken "
-      "weather.</p>"
-      "<form action=/speak/server method=get><label for=s>Speech server (empty: the map)</label>"
-      "<input id=s name=url value=\"" +
-      html(stream_speech_server()) +
-      "\" placeholder='http://192.168.10.76'><input type=hidden name=page value=1>"
-      "<button class=primary>Save</button></form></body></html>";
+      "<h1>Spoken weather</h1><p>Hold an airport on the Locator tab for a second to hear its METAR, read aloud by "
+      "the map. Turn it on in the map's Config &gt; System &gt; Spoken weather.</p></body></html>";
   server.send(200, "text/html", page.c_str());
 }
 
@@ -140,17 +132,6 @@ void onUrl() {
   while (!url.empty() && isspace((unsigned char)url.back())) url.pop_back();
   while (!url.empty() && isspace((unsigned char)url.front())) url.erase(0, 1);
   if (!stream_set_url(url)) {
-    server.send(400, "text/plain", "not an http:// or https:// URL");
-    return;
-  }
-  reply();
-}
-
-void onSpeechServer() {
-  std::string url = server.hasArg("url") ? server.arg("url").c_str() : "";
-  while (!url.empty() && isspace((unsigned char)url.back())) url.pop_back();
-  while (!url.empty() && isspace((unsigned char)url.front())) url.erase(0, 1);
-  if (!stream_set_speech_server(url)) {
     server.send(400, "text/plain", "not an http:// or https:// URL");
     return;
   }
@@ -189,7 +170,6 @@ void remote_web_begin() {
   server.on("/radio/play", HTTP_GET, onPlay);
   server.on("/radio/stop", HTTP_GET, onStop);
   server.on("/speak", HTTP_GET, onSpeak);
-  server.on("/speak/server", HTTP_GET, onSpeechServer);
   server.onNotFound([]() { server.send(404, "text/plain", "not found"); });
   server.begin();
   if (MDNS.begin("metarmap-remote")) MDNS.addService("http", "tcp", 80);

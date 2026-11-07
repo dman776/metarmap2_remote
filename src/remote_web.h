@@ -5,7 +5,6 @@
 //   GET /radio/url?url=http://...       sets (and saves) the stream; "" forgets it
 //   GET /radio/play, GET /radio/stop
 //   GET /speak?code=KDWH                reads that airport's METAR aloud (as holding its Locator tile does)
-//   GET /speak/server?url=http://...    where spoken METARs come from ("" for the map)
 // No login: anyone on your network can change what the remote plays.
 #pragma once
 

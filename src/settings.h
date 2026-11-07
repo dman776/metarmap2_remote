@@ -16,7 +16,6 @@ struct Settings {
   std::string updateChannel = "releases";  // releases, latest, branch (update_check.h)
   std::string updateBranch;                // "" until one is picked
   std::string streamUrl;                   // the MP3 stream the Locator tab's Radio plays; "" for none
-  std::string speechServer;                // where spoken METARs come from; "" for the map
 };
 
 // The saved settings, after saving secrets.h's if this build has them.
@@ -24,9 +23,6 @@ Settings settings_load();
 
 // Saves the Radio's stream URL ("" for none), as sent from the remote's web page.
 void settings_save_stream(const std::string& url);
-
-// Saves the speech server ("" for the map), as set from the remote's web page.
-void settings_save_speech_server(const std::string& url);
 
 // Saves the update channel and branch.
 void settings_save_update(const Settings& settings);

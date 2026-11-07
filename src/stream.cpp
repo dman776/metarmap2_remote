@@ -44,9 +44,8 @@ constexpr uint32_t kPlayerStack = 8 * 1024;  // minimp3's scratch is in PSRAM (g
 constexpr uint32_t kPublishMs = 250;
 
 std::string streamUrl;
-std::string mapServer;     // http://MAP_HOST:MAP_PORT
-std::string speechServer;  // "" for mapServer
-std::string playUrl;       // what this Play is playing: the Radio's stream, or a spoken METAR
+std::string mapServer;  // http://MAP_HOST:MAP_PORT
+std::string playUrl;    // what this Play is playing: the Radio's stream, or a spoken METAR
 ByteRing* ring = nullptr;
 SemaphoreHandle_t mutex = nullptr;
 StreamState state;
@@ -461,7 +460,7 @@ void playerLoop(Player* p) {
 
 }  // namespace
 
-void stream_begin(const std::string& url, const std::string& map, const std::string& speech) {
+void stream_begin(const std::string& url, const std::string& map) {
   if (!audio_ready()) return;
   uint8_t* storage = static_cast<uint8_t*>(heap_caps_malloc(kRingBytes, MALLOC_CAP_SPIRAM));
   if (!storage) {
@@ -478,7 +477,6 @@ void stream_begin(const std::string& url, const std::string& map, const std::str
   mutex = xSemaphoreCreateMutex();
   StreamUrl check;
   mapServer = map;
-  speechServer = speech.empty() || parseStreamUrl(speech, check) ? speech : "";
   streamUrl = parseStreamUrl(url, check) ? url : "";
   if (!url.empty() && streamUrl.empty()) LOGF("stream: %s isn't an http:// or https:// URL\n", url.c_str());
   state.hasUrl = !streamUrl.empty();
@@ -577,34 +575,10 @@ void stream_set_playing(bool on) {
   start(url, false, "");
 }
 
-std::string stream_speech_server() {
-  if (!ring) return "";
-  xSemaphoreTake(mutex, portMAX_DELAY);
-  std::string server = speechServer;
-  xSemaphoreGive(mutex);
-  return server;
-}
-
-bool stream_set_speech_server(const std::string& url) {
-  if (!ring) return false;
-  StreamUrl check;
-  if (!url.empty() && !parseStreamUrl(url, check)) return false;
-  std::string server = url;
-  while (!server.empty() && server.back() == '/') server.pop_back();
-  xSemaphoreTake(mutex, portMAX_DELAY);
-  speechServer = server;
-  xSemaphoreGive(mutex);
-  settings_save_speech_server(server);
-  LOGF("stream: speech server %s\n", server.empty() ? "is the map's" : server.c_str());
-  return true;
-}
-
 void stream_speak(const std::string& code) {
   if (!ring || code.empty()) return;
-  std::string server = stream_speech_server();
-  if (server.empty()) server = mapServer;
   LOGF("stream: speaking %s\n", code.c_str());
-  start(server + "/api/speak/" + code + ".audio", true, code);
+  start(mapServer + "/api/speak/" + code + ".audio", true, code);
 }
 
 bool stream_get(StreamState& out, uint32_t& rev) {
