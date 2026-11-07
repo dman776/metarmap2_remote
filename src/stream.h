@@ -16,13 +16,19 @@ struct StreamState {
   int bufferPct = 0;    // how full the network buffer is
   int rate = 0;         // the stream's own sample rate, once it's decoding
   std::string message;  // why it's retrying
+  bool hasUrl = false;  // a stream to play is set
 };
 
-// Starts the tasks if `url` is set and the speaker works. Call after audio_begin().
+// Sets up the Radio if the speaker works, with `url` ("" for none yet). Call after audio_begin().
 void stream_begin(const std::string& url);
 
-// Whether there's a stream to play (stream_begin() started it).
+// Whether the Radio is set up (the speaker works).
 bool stream_available();
+
+// A new stream: stops the one playing, checks it (http:// or https://), saves it. "" forgets it. False if it isn't
+// a URL the Radio can use.
+bool stream_set_url(const std::string& url);
+std::string stream_url();
 
 void stream_set_playing(bool on);
 

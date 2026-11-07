@@ -21,5 +21,8 @@ struct Settings {
 // The saved settings, after saving secrets.h's if this build has them.
 Settings settings_load();
 
+// Saves the Radio's stream URL ("" for none), as sent from the remote's web page.
+void settings_save_stream(const std::string& url);
+
 // Saves the update channel and branch.
 void settings_save_update(const Settings& settings);

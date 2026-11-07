@@ -65,8 +65,14 @@ drives LEDs itself.
   that plays that MP3 stream through the speaker (an airport tower's feed, an
   internet radio station), with what it's doing beside it: connecting,
   buffering, playing (the stream's sample rate and how full the buffer is), or
-  why it's trying again. Tap it again to stop. Without a `STREAM_URL` there's
-  no button.
+  why it's trying again. Tap it again to stop.
+- **Changing the stream from another device:** open `http://metarmap-remote.local/`
+  (or the remote's IP) on your network: paste a stream URL, **Save**, then
+  **Play** or **Stop**. The remote keeps the URL through restarts; a flash with a
+  new `STREAM_URL` in `secrets.h` replaces it, an unchanged one doesn't. For
+  scripts: `GET /radio` (status JSON), `/radio/url?url=...`, `/radio/play`,
+  `/radio/stop`. There's no login: anyone on your network can change what the
+  remote plays.
 - The stream must be `http://` or `https://` and **MP3** (not AAC or Ogg). It
   follows up to three redirects. `https://` works without checking the
   certificate: the audio isn't secret and the remote sends nothing but the
@@ -198,6 +204,7 @@ for the endpoints.
 | `src/lvgl_port.cpp` | Display and touch for LVGL, screenshots |
 | `src/audio.cpp` | The codec, the touch tick and the I2S output |
 | `src/stream.cpp` | The Radio: reading an MP3 stream and playing it, on two tasks |
+| `src/remote_web.cpp` | The Radio's web page and its JSON (metarmap-remote.local) |
 | `src/stream_dsp.cpp` | The stream's ring buffer, resampler and URL parsing |
 | `src/third_party/minimp3.h` | The MP3 decoder (public domain); one marked change: its scratch can live in PSRAM |
 | `src/updater.cpp` | Checking GitHub and installing firmware, on its own task |

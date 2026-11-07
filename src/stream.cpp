@@ -13,6 +13,7 @@
 
 #include "audio.h"
 #include "log.h"
+#include "settings.h"
 #include "stream_dsp.h"
 
 // minimp3's ~16 KB of scratch lives in PSRAM (one decoder at a time), not on the player's stack: task stacks must be
@@ -164,7 +165,7 @@ std::string readOnce(uint32_t gen) {
   std::unique_ptr<WiFiClient> client;
   std::string error;
   publish(StreamState::Connecting);
-  if (!openStream(streamUrl, client, error)) return error;
+  if (!openStream(stream_url(), client, error)) return error;
   if (!current(gen)) return "";
 
   // The player drops what it has of the last connection first.
@@ -355,12 +356,7 @@ void playerLoop(Player* p) {
 }  // namespace
 
 void stream_begin(const std::string& url) {
-  if (url.empty() || !audio_ready()) return;
-  StreamUrl check;
-  if (!parseStreamUrl(url, check)) {
-    LOGF("stream: %s isn't an http:// or https:// URL\n", url.c_str());
-    return;
-  }
+  if (!audio_ready()) return;
   uint8_t* storage = static_cast<uint8_t*>(heap_caps_malloc(kRingBytes, MALLOC_CAP_SPIRAM));
   if (!storage) {
     LOGF("stream: no PSRAM for the buffer\n");
@@ -372,17 +368,48 @@ void stream_begin(const std::string& url) {
     LOGF("stream: no PSRAM for the decoder\n");
     return;
   }
-  streamUrl = url;
   ring = new ByteRing(storage, kRingBytes);
   mutex = xSemaphoreCreateMutex();
+  StreamUrl check;
+  streamUrl = parseStreamUrl(url, check) ? url : "";
+  if (!url.empty() && streamUrl.empty()) LOGF("stream: %s isn't an http:// or https:// URL\n", url.c_str());
+  state.hasUrl = !streamUrl.empty();
+  stateRev++;  // the screen shows it from the start
   LOGF("stream: ready (%s); free internal heap %u\n", url.c_str(),
        (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 }
 
 bool stream_available() { return ring != nullptr; }
 
+std::string stream_url() {
+  if (!ring) return "";
+  xSemaphoreTake(mutex, portMAX_DELAY);
+  std::string url = streamUrl;
+  xSemaphoreGive(mutex);
+  return url;
+}
+
+bool stream_set_url(const std::string& url) {
+  if (!ring) return false;
+  StreamUrl check;
+  if (!url.empty() && !parseStreamUrl(url, check)) return false;
+  stream_set_playing(false);
+  xSemaphoreTake(mutex, portMAX_DELAY);
+  streamUrl = url;
+  state.hasUrl = !url.empty();
+  stateRev++;
+  xSemaphoreGive(mutex);
+  settings_save_stream(url);
+  LOGF("stream: URL set to %s\n", url.empty() ? "(none)" : url.c_str());
+  return true;
+}
+
 void stream_set_playing(bool on) {
   if (!ring || on == wanted) return;
+  if (on && stream_url().empty()) {
+    publish(StreamState::Retrying, "no stream URL: set one at http://metarmap-remote.local/");
+    return;
+  }
   if (!on) {
     wanted = false;  // the tasks see it and stop, giving back their memory
     publish(StreamState::Off);

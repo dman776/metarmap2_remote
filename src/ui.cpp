@@ -634,6 +634,7 @@ void showRadio() {
       snprintf(text, sizeof(text), "%s - trying again", radio.message.c_str());
       break;
     default:
+      if (!radio.hasUrl) snprintf(text, sizeof(text), "set a stream at metarmap-remote.local");
       break;
   }
   lv_label_set_text(radioStatus, text);
@@ -648,7 +649,7 @@ void buildLocatorPanel(lv_obj_t* p) {
   lv_obj_set_style_pad_ver(pausedBanner, 4, 0);
   lv_obj_add_flag(pausedBanner, LV_OBJ_FLAG_HIDDEN);
 
-  if (stream_available()) buildRadioRow(p);
+  if (stream_available()) buildRadioRow(p);  // the URL can come later, from the web page
 
   grid = box(p, LV_FLEX_FLOW_ROW_WRAP);
   lv_obj_set_width(grid, LV_PCT(100));

@@ -33,7 +33,11 @@ Settings settings_load() {
   if (p.getUShort("map_port", 0) != MAP_PORT) p.putUShort("map_port", MAP_PORT);
 #endif
 #ifdef STREAM_URL
-  putString(p, "stream_url", STREAM_URL);
+  // Only when this build's URL is new: one sent over the network (stream_url) otherwise stays through restarts.
+  if (getString(p, "stream_seed", "\x01") != STREAM_URL) {
+    putString(p, "stream_seed", STREAM_URL);
+    putString(p, "stream_url", STREAM_URL);
+  }
 #endif
   Settings s;
   s.wifiName = getString(p, "wifi_name", "");
@@ -46,6 +50,13 @@ Settings settings_load() {
   p.end();
   if (s.wifiName.empty()) LOGF("settings: no Wi-Fi network saved; flash a build with include/secrets.h\n");
   return s;
+}
+
+void settings_save_stream(const std::string& url) {
+  Preferences p;
+  p.begin(kNamespace, false);
+  putString(p, "stream_url", url);
+  p.end();
 }
 
 void settings_save_update(const Settings& s) {
