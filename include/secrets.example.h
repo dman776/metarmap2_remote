@@ -8,7 +8,7 @@
 #define MAP_HOST "metarmap.local"
 #define MAP_PORT 80
 
-// Optional, a prototype: an MP3 stream the Radio plays (started from the
-// remote's web page, http://metarmap-remote.local/) through the speaker, e.g. an airport tower's feed. It must be
-// http:// or https:// (https isn't checked against a certificate) and MP3, not AAC or Ogg. Saved like the Wi-Fi
-// settings; "" forgets it. #define STREAM_URL "http://example.com:8000/tower.mp3"
+// Optional, a prototype: an MP3 stream for the Radio (an airport tower's feed),
+// http:// or https:// (https isn't checked against a certificate), MP3, not
+// AAC or Ogg. Saved like the Wi-Fi settings. Nothing starts the Radio for now.
+// #define STREAM_URL "http://example.com:8000/tower.mp3"

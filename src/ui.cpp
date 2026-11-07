@@ -76,7 +76,7 @@ lv_obj_t *chipRow, *legendBox;
 lv_obj_t *rotateSw, *clockBox, *clockArc, *clockLabel;
 lv_obj_t *brtSlider, *brtLabel;
 lv_obj_t *pausedBanner, *grid;
-lv_obj_t* radioStatus;  // what the speaker is doing: a spoken METAR, or the Radio (started from the web page)
+lv_obj_t* radioStatus;                    // what the speaker is doing: a spoken METAR, or the Radio
 lv_obj_t *volBox, *volSlider, *volLabel;  // the volume popup, while the speaker plays
 StreamState radio;
 uint32_t radioRev = 0;
@@ -609,7 +609,7 @@ void buildVisualizerPanel(lv_obj_t* p) {
 }
 
 // A line above the tiles for the speaker: "hold an airport to hear its weather" while the map can speak, then
-// getting/speaking or why not; the Radio's state while it plays (it's started from the web page). Hidden otherwise.
+// getting/speaking or why not; the Radio's state while it plays. Hidden otherwise.
 void buildRadioRow(lv_obj_t* p) {
   radioStatus = label(p, "", &lv_font_montserrat_12, kMuted);
   lv_obj_set_width(radioStatus, LV_PCT(100));

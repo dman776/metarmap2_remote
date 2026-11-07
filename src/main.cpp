@@ -9,7 +9,6 @@
 #include "log.h"
 #include "lvgl_port.h"
 #include "map_client.h"
-#include "remote_web.h"
 #include "settings.h"
 #include "stream.h"
 #include "ui.h"
@@ -52,7 +51,6 @@ void setup() {
 void loop() {
   lv_timer_handler();
   ui_tick();
-  remote_web_tick();  // the Radio's web page, once Wi-Fi is up
 
   // Serial console: "S" sends a screenshot (tools/screenshot.py); "1" and
   // "2" open the Visualizer and Locator tabs; "3" shows the splash screen

@@ -578,7 +578,7 @@ void stream_set_playing(bool on) {
   if (wanted && !oneShot) return;  // already playing the Radio
   std::string url = stream_url();
   if (url.empty()) {
-    publish(StreamState::Failed, "no stream URL: set one at http://metarmap-remote.local/");
+    publish(StreamState::Failed, "no stream URL: set STREAM_URL in secrets.h");
     return;
   }
   start(url, false, "");

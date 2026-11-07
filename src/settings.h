@@ -22,7 +22,7 @@ struct Settings {
 // The saved settings, after saving secrets.h's if this build has them.
 Settings settings_load();
 
-// Saves the Radio's stream URL ("" for none), as sent from the remote's web page.
+// Saves the Radio's stream URL ("" for none).
 void settings_save_stream(const std::string& url);
 
 // Saves the speaker's volume (0-100), as set on the volume slider. Writes only a change.
