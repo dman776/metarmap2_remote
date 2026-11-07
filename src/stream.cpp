@@ -38,7 +38,6 @@ constexpr uint32_t kTimeoutMs = 10 * 1000;
 constexpr uint32_t kSpeakTimeoutMs = 60 * 1000;  // the map answers once its speech server has read the whole report
 constexpr uint32_t kRetryMs = 4000;
 constexpr int kMaxRedirects = 3;
-constexpr int kVolume = 160;  // of 256: the little speaker distorts near full scale
 constexpr uint32_t kReaderStack = 12 * 1024;
 constexpr uint32_t kPlayerStack = 8 * 1024;  // minimp3's scratch is in PSRAM (g_mp3Scratch)
 constexpr uint32_t kPublishMs = 250;
@@ -59,6 +58,7 @@ std::atomic<int> players{0};       // player tasks still running (one, or for a 
 std::atomic<uint32_t> epoch{0};    // the reader bumps it for each connection...
 std::atomic<uint32_t> acked{0};    // ...and the player says it has dropped what it had (and may read the ring)
 std::atomic<bool> flowing{false};  // the reader has the stream open
+std::atomic<int> volume{63};       // 0-100 (%): the player reads it for each block, so the slider is heard at once
 // A spoken METAR is played once, to its end: the reader says it has it all (ended); the player plays what's left,
 // below the usual underrun mark too, and says when it's done (drained).
 std::atomic<bool> oneShot{false};
@@ -295,6 +295,7 @@ void restart(Player& p) {
 }
 
 void play(Player& p, int samples, int channels, int rate) {
+  p.resampler.setVolume(volume.load() * 256 / 100);
   if (rate != p.resampler.inRate() || channels != p.resampler.channels()) {
     p.resampler.configure(rate, channels);
     LOGF("stream: %d Hz, %d channel%s\n", rate, channels, channels == 1 ? "" : "s");
@@ -329,7 +330,6 @@ void playerTask(void* arg) {
     LOGF("stream: out of memory for the decoder\n");
     publish(StreamState::Retrying, "out of memory");
   } else {
-    p->resampler.setVolume(kVolume);
     restart(*p);
     playerLoop(p);
   }
@@ -460,7 +460,8 @@ void playerLoop(Player* p) {
 
 }  // namespace
 
-void stream_begin(const std::string& url, const std::string& map) {
+void stream_begin(const std::string& url, const std::string& map, int vol) {
+  volume = std::max(0, std::min(100, vol));
   if (!audio_ready()) return;
   uint8_t* storage = static_cast<uint8_t*>(heap_caps_malloc(kRingBytes, MALLOC_CAP_SPIRAM));
   if (!storage) {
@@ -486,6 +487,14 @@ void stream_begin(const std::string& url, const std::string& map) {
 }
 
 bool stream_available() { return ring != nullptr; }
+
+void stream_set_volume(int vol, bool save) {
+  vol = std::max(0, std::min(100, vol));
+  volume = vol;
+  if (save) settings_save_volume(vol);
+}
+
+int stream_volume() { return volume.load(); }
 
 std::string stream_url() {
   if (!ring) return "";

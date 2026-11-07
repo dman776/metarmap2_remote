@@ -47,6 +47,7 @@ Settings settings_load() {
   s.updateChannel = getString(p, "upd_channel", s.updateChannel);
   s.updateBranch = getString(p, "upd_branch", s.updateBranch);
   s.streamUrl = getString(p, "stream_url", "");
+  s.volume = p.getUChar("volume", s.volume);
   p.remove("speech_server");  // a prototype's own speech server: spoken METARs come from the map now
   p.end();
   if (s.wifiName.empty()) LOGF("settings: no Wi-Fi network saved; flash a build with include/secrets.h\n");
@@ -57,6 +58,13 @@ void settings_save_stream(const std::string& url) {
   Preferences p;
   p.begin(kNamespace, false);
   putString(p, "stream_url", url);
+  p.end();
+}
+
+void settings_save_volume(int volume) {
+  Preferences p;
+  p.begin(kNamespace, false);
+  if (p.getUChar("volume", 255) != volume) p.putUChar("volume", (uint8_t)volume);  // flash wears: changes only
   p.end();
 }
 

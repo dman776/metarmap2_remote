@@ -22,7 +22,7 @@ struct StreamState {
 };
 
 // Sets up the Radio if the speaker works, with `url` ("" for none yet). Call after audio_begin().
-void stream_begin(const std::string& url, const std::string& mapServer);
+void stream_begin(const std::string& url, const std::string& mapServer, int volume);
 
 // Whether the Radio is set up (the speaker works).
 bool stream_available();
@@ -33,6 +33,11 @@ bool stream_set_url(const std::string& url);
 std::string stream_url();
 
 void stream_set_playing(bool on);
+
+// The speaker's volume, 0-100 (%). Takes effect at once, while playing too; `save` keeps it through restarts (on
+// the slider's release, not each step).
+void stream_set_volume(int volume, bool save);
+int stream_volume();
 
 // Reads an airport's METAR aloud: plays the map's /api/speak/<code>.audio (a WAV, made by the map's speech server:
 // Piper in Home Assistant, or Kokoro) once, stopping the Radio. Failed, with the map's why, if it can't (e.g. speech

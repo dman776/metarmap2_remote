@@ -30,7 +30,8 @@ void setup() {
   neopixelWrite(RGB_LED, 0, 0, 0);
   audio_begin();  // before lcd.init(): it borrows the touch I2C pins
   // the Radio's stream, and spoken METARs from the map
-  stream_begin(settings.streamUrl, "http://" + settings.mapHost + ":" + std::to_string(settings.mapPort));
+  stream_begin(settings.streamUrl, "http://" + settings.mapHost + ":" + std::to_string(settings.mapPort),
+               settings.volume);
 
   lcd.init();
   lcd.setRotation(3);  // landscape, USB-C on the right

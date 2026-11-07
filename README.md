@@ -85,6 +85,12 @@ drives LEDs itself.
   slow stream, 4 s of what it has) is buffered, and the speaker is quiet while
   it refills after a dropout. The touch tick isn't played while audio is on.
 
+**Volume**
+
+- While the speaker plays (a spoken METAR, or the Radio), a volume slider pops
+  up at the right edge of the screen: drag it up or down, heard at once. The
+  remote keeps the setting through restarts. It hides when the audio stops.
+
 **Spoken weather**
 
 - Hold an airport on the Locator tab for a second to hear its METAR through

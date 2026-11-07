@@ -77,6 +77,7 @@ lv_obj_t *rotateSw, *clockBox, *clockArc, *clockLabel;
 lv_obj_t *brtSlider, *brtLabel;
 lv_obj_t *pausedBanner, *grid;
 lv_obj_t* radioStatus;  // what the speaker is doing: a spoken METAR, or the Radio (started from the web page)
+lv_obj_t *volBox, *volSlider, *volLabel;  // the volume popup, while the speaker plays
 StreamState radio;
 uint32_t radioRev = 0;
 
@@ -653,6 +654,51 @@ void showRadio() {
   showHidden(radioStatus, text[0] != '\0');
 }
 
+// ---- the volume popup: a vertical slider at the right edge while the speaker plays (a spoken METAR, the Radio) ----
+
+void onVolume(lv_event_t* e) {
+  int pct = lv_slider_get_value(volSlider);
+  lv_label_set_text_fmt(volLabel, "%d%%", pct);
+  stream_set_volume(pct, lv_event_get_code(e) == LV_EVENT_RELEASED);  // heard at once; saved on release
+}
+
+void buildVolume(lv_obj_t* scr) {
+  volBox = box(scr, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_size(volBox, 52, 164);
+  lv_obj_align(volBox, LV_ALIGN_RIGHT_MID, -kPad, kBarH / 2);
+  lv_obj_set_flex_align(volBox, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_bg_color(volBox, hex(kSurface2), 0);
+  lv_obj_set_style_bg_opa(volBox, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_color(volBox, hex(kControl), 0);
+  lv_obj_set_style_border_width(volBox, 1, 0);
+  lv_obj_set_style_radius(volBox, 12, 0);
+  lv_obj_set_style_pad_ver(volBox, 10, 0);
+  lv_obj_set_style_shadow_width(volBox, 16, 0);
+  lv_obj_set_style_shadow_opa(volBox, LV_OPA_50, 0);
+  lv_obj_add_flag(volBox, LV_OBJ_FLAG_CLICKABLE);  // a touch beside the slider doesn't reach the tile beneath
+
+  label(volBox, LV_SYMBOL_VOLUME_MAX, &lv_font_montserrat_14, kText2);
+  volSlider = lv_slider_create(volBox);  // taller than wide: vertical, 0 at the bottom
+  lv_obj_set_size(volSlider, 8, 96);
+  lv_slider_set_range(volSlider, 0, 100);
+  lv_slider_set_value(volSlider, stream_volume(), LV_ANIM_OFF);
+  lv_obj_set_style_bg_color(volSlider, hex(kControl), LV_PART_MAIN);
+  lv_obj_set_style_pad_all(volSlider, 5, LV_PART_KNOB);
+  lv_obj_set_ext_click_area(volSlider, 16);
+  lv_obj_add_event_cb(volSlider, onVolume, LV_EVENT_VALUE_CHANGED, nullptr);
+  lv_obj_add_event_cb(volSlider, onVolume, LV_EVENT_RELEASED, nullptr);
+  volLabel = label(volBox, "", &lv_font_montserrat_12, kMuted);
+  lv_label_set_text_fmt(volLabel, "%d%%", stream_volume());
+  lv_obj_add_flag(volBox, LV_OBJ_FLAG_HIDDEN);
+}
+
+void showVolume() {
+  if (!volBox) return;
+  bool playing = radio.phase == StreamState::Connecting || radio.phase == StreamState::Buffering ||
+                 radio.phase == StreamState::Playing || radio.phase == StreamState::Retrying;
+  showHidden(volBox, playing);
+}
+
 void buildLocatorPanel(lv_obj_t* p) {
   pausedBanner = label(p, "", &lv_font_montserrat_12, kAccent);
   lv_obj_set_style_bg_color(pausedBanner, hex(kAccentSoft), 0);
@@ -1062,6 +1108,7 @@ void ui_init(MapClient& c, Updater& u) {
   buildVisualizerPanel(panels[0]);
   panels[1] = panel(scr);
   buildLocatorPanel(panels[1]);
+  if (stream_available()) buildVolume(scr);  // over both tabs; under the splash
   showTab(0);
   showSplash(scr, SplashMode::Startup);
 }
@@ -1085,7 +1132,10 @@ void ui_tick() {
     showHidden(starIcon, upd.available);
     refreshUpdate();
   }
-  if (stream_get(radio, radioRev)) showRadio();
+  if (stream_get(radio, radioRev)) {
+    showRadio();
+    showVolume();
+  }
 
   if (client->getStatus(status, statusRev)) {
     if (!sameVisualizers(status.visualizers)) buildChips();
