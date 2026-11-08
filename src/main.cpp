@@ -53,8 +53,9 @@ void loop() {
   ui_tick();
 
   // Serial console: "S" sends a screenshot (tools/screenshot.py); "1" and
-  // "2" open the Visualizer and Info tabs; "3" shows the splash screen
-  // and "4" the update screen.
+  // "2" open the LEDs and Airports panels; "3" shows the splash screen,
+  // "4" the update screen, "5" the visualizer picker, "6" the brightness
+  // sheet and "7" an airport's card.
   if (Serial.available()) {
     int c = Serial.read();
     if (c == 'S') {
@@ -67,6 +68,8 @@ void loop() {
       ui_show_splash();
     } else if (c == '4') {
       ui_show_update();
+    } else if (c >= '5' && c <= '7') {
+      ui_open("pbc"[c - '5']);
     }
   }
   delay(5);

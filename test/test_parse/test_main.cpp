@@ -191,6 +191,21 @@ void test_status() {
   TEST_ASSERT_EQUAL_STRING("Flight Category", status.visualizers[0].name.c_str());
   TEST_ASSERT_FALSE(status.visualizers[0].exclusive);
   TEST_ASSERT_TRUE(status.visualizers[14].exclusive);  // Chase
+  // the short name and icon; a map without them (the others here): the name, no icon
+  TEST_ASSERT_EQUAL_STRING("Flight Cat", status.visualizers[0].shortName.c_str());
+  TEST_ASSERT_EQUAL_STRING("plane", status.visualizers[0].icon.c_str());
+  TEST_ASSERT_EQUAL_STRING("Wind Gusts", status.visualizers[2].shortName.c_str());
+  TEST_ASSERT_EQUAL_STRING("", status.visualizers[2].icon.c_str());
+}
+
+void test_status_airports() {
+  MapStatus status = parseStatus(filtered(kStatusJson, statusFilter).as<JsonVariantConst>());
+  TEST_ASSERT_TRUE(status.airports.size() >= 2);
+  TEST_ASSERT_EQUAL_STRING("KVCT", status.airports[0].code.c_str());
+  TEST_ASSERT_EQUAL_STRING("Victoria Rgnl", status.airports[0].name.c_str());
+  TEST_ASSERT_EQUAL_STRING("METAR KVCT 052051Z 12008KT 10SM FEW034 28/19 A2987 RMK AO2 SLP112 T02780189 56022",
+                           status.airports[0].raw.c_str());
+  TEST_ASSERT_EQUAL_STRING("Port Lavaca/Calhoun Cnty", status.airports[1].name.c_str());
 }
 
 static std::string versionOf(const char* json) {
@@ -258,7 +273,9 @@ void test_status_legend_keys() {
 
 void test_status_filter_drops_the_rest() {
   JsonDocument doc = filtered(kStatusJson, statusFilter);
-  TEST_ASSERT_TRUE(doc["airports"].isNull());
+  TEST_ASSERT_TRUE(doc["airports"][0]["windDir"].isNull());  // an airport's code, name and METAR only
+  TEST_ASSERT_TRUE(doc["airports"][0]["pixel"].isNull());
+  TEST_ASSERT_FALSE(doc["airports"][0]["raw"].isNull());
   TEST_ASSERT_TRUE(doc["config"].isNull());
   TEST_ASSERT_TRUE(doc["visualizer"]["description"].isNull());
 }
@@ -278,6 +295,7 @@ int main() {
   RUN_TEST(test_live_without_legend_in_use);
   RUN_TEST(test_live_filter_drops_the_rest);
   RUN_TEST(test_status);
+  RUN_TEST(test_status_airports);
   RUN_TEST(test_version_text);
   RUN_TEST(test_status_legend);
   RUN_TEST(test_status_legend_keys);

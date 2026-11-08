@@ -297,6 +297,8 @@ static const char* kStatusJson = R"json({
    "index": 0,
    "id": "flight_category",
    "name": "Flight Category",
+   "shortName": "Flight Cat",
+   "icon": "plane",
    "exclusive": false
   },
   {

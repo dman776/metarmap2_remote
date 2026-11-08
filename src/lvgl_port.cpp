@@ -25,9 +25,6 @@ static void flush(lv_display_t* disp, const lv_area_t* area, uint8_t* px) {
 static constexpr uint32_t kReleaseMs = 60;
 
 static bool touchDown = false;
-static uint32_t touchDownAt = 0;
-
-uint32_t lvgl_port_touch_held_ms() { return touchDown ? millis() - touchDownAt : 0; }
 
 static void readTouch(lv_indev_t*, lv_indev_data_t* data) {
   static uint32_t lastSeen = 0;
@@ -36,7 +33,6 @@ static void readTouch(lv_indev_t*, lv_indev_data_t* data) {
   if (g_lcd->getTouch(&x, &y)) {
     if (!touchDown) {
       audio_click();  // a tick as the finger lands
-      touchDownAt = millis();
     }
     touchDown = true;
     lastSeen = millis();
@@ -69,6 +65,8 @@ void lvgl_port_init(LGFX& lcd) {
   lv_indev_t* indev = lv_indev_create();
   lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
   lv_indev_set_read_cb(indev, readTouch);
+  // A finger drifts: a touch has to move 16 px (not 10) before it scrolls instead of tapping
+  lv_indev_set_scroll_limit(indev, 16);
 }
 
 void lvgl_port_screenshot() {
