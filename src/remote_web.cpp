@@ -106,6 +106,7 @@ void onState() {
   doc["mapPort"] = settings->mapPort;
   doc["uptime"] = millis() / 1000;
   doc["defaultPassword"] = settings->webPassword == kDefaultWebPassword;
+  doc["led"] = settings->ledBrightness;
   JsonObject u = doc["update"].to<JsonObject>();
   u["phase"] = phaseName(st.phase);
   u["channel"] = update::channelName(st.channel);
@@ -253,6 +254,21 @@ void onPassword() {
   server.send(200, "text/plain", "Saved. Log in as metar with the new password.");
 }
 
+// The status light's brightness, 0-100 (%): on at once (main.cpp reads it each loop), and saved
+void onLed() {
+  if (!allowed()) return;
+  std::string v = arg("brightness");
+  char* end = nullptr;
+  long pct = strtol(v.c_str(), &end, 10);
+  if (v.empty() || *end || pct < 0 || pct > 100) {
+    server.send(400, "text/plain", "The status light's brightness is 0 to 100 (%).");
+    return;
+  }
+  settings->ledBrightness = (int)pct;
+  settings_save_led((int)pct);
+  server.send(200, "text/plain", pct ? "Saved." : "Saved: the status light is off.");
+}
+
 void onScreen() {
   if (!allowed()) return;
   static std::vector<uint16_t> pixels;
@@ -295,6 +311,7 @@ void start() {
   server.on("/api/check", HTTP_POST, onCheck);
   server.on("/api/install", HTTP_POST, onInstall);
   server.on("/api/password", HTTP_POST, onPassword);
+  server.on("/api/led", HTTP_POST, onLed);
   server.on("/screen.png", HTTP_GET, onScreen);
   server.on("/log", HTTP_GET, onLog);
   server.on("/log.txt", HTTP_GET, onLogFile);

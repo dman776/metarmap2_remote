@@ -12,6 +12,7 @@
 #include "map_client.h"
 #include "remote_web.h"
 #include "settings.h"
+#include "status_led.h"
 #include "stream.h"
 #include "ui.h"
 #include "updater.h"
@@ -23,6 +24,28 @@ static LGFX lcd;
 static MapClient mapClient;
 static Updater updater;
 static Settings settings;  // read once at startup; the clients keep pointers into it
+static status_led::StatusLight statusLight;
+
+// The status light on the back: what the Copilot is doing (status_led.h), written only when its color changes
+static void tickStatusLight() {
+  static Connection conn;
+  static uint32_t connRev = 0;
+  static UpdateState upd;
+  static uint32_t updRev = 0;
+  static status_led::Rgb shown{1, 1, 1};  // not a real color: the first tick writes
+  mapClient.getConnection(conn, connRev);
+  updater.get(upd, updRev);
+  status_led::Inputs in;
+  in.wifi = conn.wifi;
+  in.online = conn.online;
+  in.setup = wifi_setup_active();
+  in.installing = upd.phase == UpdateState::Installing || upd.phase == UpdateState::Restarting;
+  status_led::Rgb c = statusLight.tick(in, millis(), settings.ledBrightness);
+  if (c != shown) {
+    shown = c;
+    neopixelWrite(RGB_LED, c.r, c.g, c.b);  // red, green, blue: it sends them in the WS2812's own order (G, R, B)
+  }
+}
 
 void setup() {
   Serial.begin(115200);
@@ -63,6 +86,7 @@ void loop() {
   ui_tick();
   wifi_setup_tick();
   remote_web_tick();
+  tickStatusLight();
 
   // Serial console: "S" sends a screenshot (tools/screenshot.py); "1" and
   // "2" open the LEDs and Airports panels; "3" shows the splash screen,

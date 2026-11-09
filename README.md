@@ -61,6 +61,20 @@ buttons: **Pixels**, **Airports**, and the **logo**.
   buttons: **Close**, and **Firmware** (**Update v...** when there's one), the
   firmware update screen. It closes on its own after 30 s.
 
+**Status light**
+
+- The board's RGB light on the back glows on the wall behind the Copilot, so you
+  can tell its state from across the room:
+  - **blue**, blinking while it joins the Wi-Fi, then steady if it can't (the
+    splash says "Can't join" at the same moment);
+  - **green** once it reaches the Chart, fading out after 10 s: dark while all
+    is well;
+  - **red** when the Chart stops answering (Wi-Fi still up), at the same moment
+    the screen goes back to the splash (5 s);
+  - **purple**, breathing slowly, in Wi-Fi setup;
+  - **yellow**, blinking, while a firmware update installs.
+- Its brightness is on the web page's Settings (5% at first; 0 turns it off).
+
 **Web page**
 
 - The Copilot serves its own page at **http://metarmap-copilot.local/** (or its
@@ -76,6 +90,7 @@ buttons: **Pixels**, **Airports**, and the **logo**.
   saving restarts the Copilot with them. If it can't join the new network, use
   **Wi-Fi setup** on its screen (below). A USB build's `secrets.h` applies only
   when it changes, so what you save on the page stays.
+  Also the **status light**'s brightness (0-100%, 0 for off), on at once.
 - **Log**: the last 32 KB of the Copilot's log (what the serial console shows,
   each line with the seconds since startup), following new lines as they come,
   and **Download**.
@@ -338,6 +353,8 @@ for the endpoints.
 | `src/wifi_setup.cpp`, `src/remote_setup_page.h` | Wi-Fi setup: the Copilot's own network, the captive portal, the setup page |
 | `src/wifi_setup_text.cpp` | Wi-Fi setup's network name, QR code text and network list |
 | `src/ui.cpp` | The screens (LVGL) |
+| `src/status_led.cpp` | The status light on the back: its color for what the Copilot is doing |
+| `src/timing.h` | Timings the screens and the status light share |
 | `src/map_client.cpp` | Polling the Chart and sending controls, on its own task |
 | `src/map_parse.cpp` | The API's JSON into `MapLive` and `MapStatus` |
 | `src/legend.cpp` | Which legend entries the Chart is showing |

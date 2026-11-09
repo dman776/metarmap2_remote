@@ -61,6 +61,7 @@ Settings settings_load() {
   s.streamUrl = getString(p, "stream_url", "");
   s.volume = p.getUChar("volume", s.volume);
   s.webPassword = getString(p, "web_pass", kDefaultWebPassword);
+  s.ledBrightness = p.getUChar("led_pct", s.ledBrightness);
   p.remove("speech_server");  // a prototype's own speech server: spoken METARs come from the map now
   p.end();
   if (s.wifiName.empty()) s.wifiName = kSetupSsid;
@@ -96,6 +97,13 @@ void settings_save_connection(const Settings& s) {
   putString(p, "wifi_pass", s.wifiPassword);
   putString(p, "map_host", s.mapHost);
   if (p.getUShort("map_port", 0) != s.mapPort) p.putUShort("map_port", s.mapPort);
+  p.end();
+}
+
+void settings_save_led(int brightness) {
+  Preferences p;
+  p.begin(kNamespace, false);
+  if (p.getUChar("led_pct", 255) != brightness) p.putUChar("led_pct", (uint8_t)brightness);  // changes only
   p.end();
 }
 
