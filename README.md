@@ -207,6 +207,28 @@ leave the logo out). The project is sliced for a Flashforge AD5X with 0.2 mm
 layers, 4 walls and 15% infill; pick your own printer and filament in the
 slicer and slice it again.
 
+## Install
+
+The quickest way, with only Python 3 and a USB-C data cable: plug the board in
+and run [`install.py`](install.py) (download that one file, or use a clone):
+
+```sh
+python3 install.py              # the newest release
+python3 install.py --latest     # the newest build of the main branch
+```
+
+It downloads the release's factory image, checks its checksum, and flashes it
+with esptool (yours if it's installed, or one it sets up for itself and then
+removes). If it can't reach the board it shows the BOOT + RESET steps and tries
+again. The remote then starts in **Wi-Fi setup**: join the network it names from
+your phone and pick your Wi-Fi (see *Wi-Fi setup*). Other options:
+`--port PORT`, `--file FILE` (a factory.bin you built), `--yes`.
+
+Releases made before v26.11.08 have no factory image, so until the next release
+use `--latest`.
+
+To change the code, or build it yourself, use Setup below.
+
 ## Setup
 
 You need [PlatformIO](https://platformio.org/) (the VS Code extension or
@@ -231,17 +253,19 @@ You need [PlatformIO](https://platformio.org/) (the VS Code extension or
 If the upload can't find the board, hold **BOOT**, tap **RESET**, release
 **BOOT**, and upload again.
 
-### Flashing a board without PlatformIO
+### Flashing a factory image yourself
 
-Each release (and each branch build) also has
+`install.py` does this for you. Each release (and each branch build) has
 `metarmap_remote-es3c28p-factory.bin`: the whole flash in one file (the
 bootloader, the partition table and the firmware, which `pio run` also writes
 to `.pio/build/es3c28p/factory.bin`). With
 [esptool](https://github.com/espressif/esptool) (`pip install esptool`):
 
 ```sh
-esptool.py --chip esp32s3 write_flash 0x0 metarmap_remote-es3c28p-factory.bin
+esptool --chip esp32s3 write-flash 0x0 metarmap_remote-es3c28p-factory.bin
 ```
+
+(esptool before 5 spells it `esptool.py ... write_flash`.)
 
 It also clears the board's saved settings, so the remote starts in **Wi-Fi
 setup** and you set it up from your phone. To update a board that's already
@@ -329,6 +353,8 @@ for the endpoints.
 | `src/update_check.cpp` | GitHub's release JSON, versions, what's an update |
 | `src/settings.cpp` | Wi-Fi, map and update settings, in flash |
 | `src/display.h` | Display and touch driver settings (LovyanGFX) |
+| `install.py` | The installer: downloads a release's factory image and flashes it (Python only) |
+| `tools/test_install.py` | Its tests: `python3 -m unittest discover -s tools -p 'test_*.py'` |
 | `tools/factory.py` | After each build: `factory.bin`, the whole flash for a blank board |
 | `src/logo.c`, `src/star_icon.c`, `src/icons.c` | Images, generated from `assets/*.svg` and `assets/icons/*.svg` |
 | `src/github_roots.h` | The certificates trusted for GitHub, generated |
