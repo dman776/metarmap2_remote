@@ -464,7 +464,7 @@ void showBrightnessSheet();
 void showBrightnessValue(int pct) {
   brightPct = pct;
   char text[16];
-  snprintf(text, sizeof(text), "LED %d%%", pct);
+  snprintf(text, sizeof(text), "Pixels %d%%", pct);
   setText(ledLabel, text);
   showBrightnessSheet();
 }
@@ -549,7 +549,7 @@ void buildLedsPanel(lv_obj_t* p) {
   ledBtn = footButton(foot, &icon_sun, &ledIcon, &ledLabel, openBrightness);
   showAuto(-1);
   iconFollows(ledIcon, ledBtn);
-  setText(ledLabel, "LED");
+  setText(ledLabel, "Pixels");
 }
 
 // ---- the visualizer picker: every visualizer at once, a tile each (its icon and short name), and Close ---------
@@ -716,7 +716,7 @@ void buildBrightness(lv_obj_t* scr) {
   lv_obj_set_flex_align(head, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
   lv_obj_set_style_pad_column(head, 8, 0);
   icon(head, &icon_sun, kAccent);
-  label(head, "LED brightness", &lv_font_montserrat_14, kText);
+  label(head, "Pixel brightness", &lv_font_montserrat_14, kText);
   brtValue = label(head, "", &lv_font_montserrat_16, kAccent);
   lv_obj_set_flex_grow(brtValue, 1);
   lv_obj_set_style_text_align(brtValue, LV_TEXT_ALIGN_RIGHT, 0);
@@ -1080,7 +1080,7 @@ std::string cardLine(const Tile& t) {
   } else if (live.exclusive) {
     snprintf(text, sizeof(text), "Locate is paused by %s", live.activeName.c_str());
   } else if (cardLocated) {
-    snprintf(text, sizeof(text), t.isVirtual ? "Pulsing on the web map" : "LED pulsing on the map");
+    snprintf(text, sizeof(text), t.isVirtual ? "Pulsing on the web map" : "Pixel pulsing on the Chart");
   }
   return text;
 }
@@ -1312,7 +1312,7 @@ void buildRail(lv_obj_t* scr) {
   lv_obj_set_flex_align(rail, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
   const lv_image_dsc_t* icons[2] = {&icon_leds, &icon_pin};
-  const char* names[2] = {"LEDs", "Airports"};
+  const char* names[2] = {"Pixels", "Airports"};
   for (int i = 0; i < 2; i++) {
     lv_obj_t* b = button(rail, &stRail);
     lv_obj_add_style(b, &stRailOn, LV_STATE_CHECKED);
@@ -1447,17 +1447,17 @@ void showSplash(SplashMode mode) {
     lv_obj_set_size(img, 66, 66);
     lv_image_set_inner_align(img, LV_IMAGE_ALIGN_CENTER);
   }
-  label(splash, "MetarMap2", &lv_font_montserrat_28, kText);
+  label(splash, "MetarMap2 Copilot", &lv_font_montserrat_28, kText);
   repoLabel = label(splash, kRepo, &lv_font_montserrat_12, kMuted);
-  std::string version = std::string("Remote ") + FIRMWARE_VERSION;
+  std::string version = std::string("Copilot ") + FIRMWARE_VERSION;
   label(splash, version.c_str(), &lv_font_montserrat_12, kMuted);
-  mapVersion = label(splash, "Map ...", &lv_font_montserrat_12, kMuted);  // once the map answers
+  mapVersion = label(splash, "Chart ...", &lv_font_montserrat_12, kMuted);  // once the map answers
   mapAddress = label(splash, "", &lv_font_montserrat_12, kMuted);
   lv_obj_add_flag(mapAddress, LV_OBJ_FLAG_HIDDEN);
   lv_obj_set_style_margin_bottom(onDemand ? mapAddress : mapVersion, 10, 0);
   wifiState = splashStep(splash, "Connecting to Wi-Fi...", &wifiStep);
   mapState =
-      splashStep(splash, mode == SplashMode::Reconnect ? "Reconnecting to the map..." : "Connecting to the map...");
+      splashStep(splash, mode == SplashMode::Reconnect ? "Reconnecting to the Chart..." : "Connecting to the Chart...");
 
   if (!onDemand) {  // shown once it can't join the Wi-Fi (tickSplash)
     wifiSetupBtn = button(splash, &stBtn);
@@ -1524,10 +1524,10 @@ void showSplashOnDemand(lv_event_t*) {
 
 void tickSplash() {
   if (!splash) return;
-  if (status.valid && !status.versionText.empty()) setText(mapVersion, "Map " + status.versionText);
+  if (status.valid && !status.versionText.empty()) setText(mapVersion, "Chart " + status.versionText);
   if (splashMode == SplashMode::OnDemand) {
     const char* host = status.ip.length() ? status.ip.c_str() : client->host();
-    setText(mapAddress, std::string("Map at ") + host + (conn.online ? "" : " - not answering"));
+    setText(mapAddress, std::string("Chart at ") + host + (conn.online ? "" : " - not answering"));
     if (*remote_web_address()) setText(repoLabel, std::string("Settings: ") + remote_web_address());
     lv_obj_set_style_text_color(mapAddress, hex(conn.online ? kMuted : 0xff8a8a), 0);
     if (millis() - splashStart >= kSplashShowMs) hideSplash();
@@ -1599,7 +1599,7 @@ void showSetupScreen() {
   lv_obj_set_flex_align(head, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
   lv_obj_set_style_pad_column(head, 8, 0);
   label(head, LV_SYMBOL_WIFI, &lv_font_montserrat_16, kAccent);
-  label(head, wifi_setup_fresh() ? "Set up the remote's Wi-Fi" : "Wi-Fi setup", &lv_font_montserrat_16, kText);
+  label(head, wifi_setup_fresh() ? "Set up the Copilot's Wi-Fi" : "Wi-Fi setup", &lv_font_montserrat_16, kText);
 
   lv_obj_t* row = box(setupScr, LV_FLEX_FLOW_ROW);
   lv_obj_set_size(row, LV_PCT(100), LV_SIZE_CONTENT);
@@ -1874,7 +1874,7 @@ void checkMapLost() {
   if (!lostSince) lostSince = millis() | 1;
   // (The logo's splash says the map isn't answering; once it's closed, this one comes.)
   if (millis() - lostSince >= kLostMs && !splash && !updScr && !setupScr) {
-    LOGF("ui: the map is unreachable; reconnecting\n");
+    LOGF("ui: the Chart is unreachable; reconnecting\n");
     showSplash(SplashMode::Reconnect);
   }
 }

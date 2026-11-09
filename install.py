@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Flash the MetarMap2 Remote onto a new ESP32-S3 board (the LCDwiki ES3C28P), with nothing but Python.
+"""Flash MetarMap2 Copilot onto a new ESP32-S3 board (the LCDwiki ES3C28P), with nothing but Python.
 
     python3 install.py                 the newest release
     python3 install.py --latest        the newest build of the main branch (may be unfinished)
@@ -10,7 +10,7 @@ It downloads the release's factory image (metarmap_remote-es3c28p-factory.bin: t
 checks it against the SHA-256 GitHub gives for it, and writes it with esptool: yours if it's installed, else one
 it installs for itself in a temporary Python environment and removes afterwards.
 
-A flashed board has no Wi-Fi settings: it starts in Wi-Fi setup (its own network, MetarMap2-Remote-XXXX, and a
+A flashed board has no Wi-Fi settings: it starts in Wi-Fi setup (its own network, MetarMap2-Copilot-XXXX, and a
 QR code on its screen) and you set it up from your phone. It also replaces what the board had, saved settings
 included. To update a board that's already set up, use its own update screen.
 
@@ -232,7 +232,7 @@ def flash(esptool, image, port, interactive):
 
 def parse_args(argv):
     parser = argparse.ArgumentParser(
-        description="Flash the MetarMap2 Remote onto a new ESP32-S3 board.",
+        description="Flash MetarMap2 Copilot onto a new ESP32-S3 board.",
         epilog="The board needs a USB-C data cable. If it isn't found, hold BOOT, tap RESET, release BOOT.",
     )
     parser.add_argument("--latest", action="store_true", help="the newest main-branch build, not the newest release")
@@ -265,10 +265,10 @@ def main(argv=None):
         print("\nCancelled.", file=sys.stderr)
         return 1
     print(
-        "\nDone. The remote restarts and shows Wi-Fi setup:\n"
-        "  1. On your phone, join the Wi-Fi network it names (MetarMap2-Remote-XXXX), or scan its QR code.\n"
+        "\nDone. The Copilot restarts and shows Wi-Fi setup:\n"
+        "  1. On your phone, join the Wi-Fi network it names (MetarMap2-Copilot-XXXX), or scan its QR code.\n"
         "  2. The setup page opens by itself (or go to http://192.168.4.1/):\n"
-        "     pick your Wi-Fi and enter the map's address."
+        "     pick your Wi-Fi and enter the Chart's address."
     )
     return 0
 

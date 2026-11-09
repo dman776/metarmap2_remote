@@ -6,7 +6,7 @@
 
 static const char kRemoteSetupPage[] PROGMEM = R"html(<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MetarMap2 Remote setup</title>
+<title>MetarMap2 Copilot setup</title>
 <style>
 :root{--bg:#0b1117;--s1:#121a23;--s2:#18222d;--line:#223041;--ctl:#2c3b4e;--tx:#e6edf3;--tx2:#c4d0dd;--mut:#93a4b8;
 --acc:#f5b544;--ok:#3ddc84;--bad:#ff5a5a}
@@ -33,8 +33,8 @@ button{min-height:44px;padding:0 16px;font:inherit;font-weight:600;color:var(--t
 .note{color:var(--mut);font-size:14px;margin:10px 0 0}.err{color:var(--bad)}.okc{color:var(--ok)}
 [hidden]{display:none!important}
 </style></head><body><main>
-<h1>MetarMap2 Remote</h1>
-<p class="sub" id="sub">Set up its Wi-Fi and the map it controls.</p>
+<h1>MetarMap2 Copilot</h1>
+<p class="sub" id="sub">Set up its Wi-Fi and the Chart it controls.</p>
 
 <form id="form">
 <section>
@@ -42,11 +42,11 @@ button{min-height:44px;padding:0 16px;font:inherit;font-weight:600;color:var(--t
 <div class="nets" id="nets"><p class="note">Looking for networks...</p></div>
 <div id="otherBox" hidden><label for="other">Network name</label><input id="other" maxlength="32" autocomplete="off" autocapitalize="none"></div>
 <div id="passBox" hidden><label for="pass">Password</label><input id="pass" type="password" maxlength="63" autocomplete="off"></div>
-<p class="note">The remote uses 2.4 GHz Wi-Fi only.</p>
+<p class="note">The Copilot uses 2.4 GHz Wi-Fi only.</p>
 </section>
 
 <section>
-<h2>The map</h2>
+<h2>The Chart</h2>
 <div class="row"><div><label for="host">Address</label><input id="host" required maxlength="63" autocapitalize="none" placeholder="metarmap.local"></div>
 <div class="port"><label for="port">Port</label><input id="port" type="number" min="1" max="65535" required></div></div>
 <p class="note">Its name or IP, as you open its web page: metarmap.local unless you gave the Pi another hostname.</p>
@@ -86,7 +86,7 @@ async function load() {
   try {
     const r = await fetch('/setup/networks', {cache: 'no-store'});
     const s = await r.json();
-    $('#sub').textContent = 'Set up its Wi-Fi and the map it controls. (' + s.apName + ', ' + s.version + ')';
+    $('#sub').textContent = 'Set up its Wi-Fi and the Chart it controls. (' + s.apName + ', ' + s.version + ')';
     if (!filled) {
       filled = true;
       $('#host').value = s.mapHost; $('#port').value = s.mapPort;
@@ -133,10 +133,10 @@ $('#form').onsubmit = async ev => {
     if (!r.ok) throw new Error(t);
     saved = true;
     msg.className = 'note okc';
-    msg.textContent = 'Saved. The remote restarts and joins ' + name + '. Put this phone back on your usual Wi-Fi; '
-      + "if the remote can't join it, tap Wi-Fi setup on its screen to try again.";
+    msg.textContent = 'Saved. The Copilot restarts and joins ' + name + '. Put this phone back on your usual Wi-Fi; '
+      + "if the Copilot can't join it, tap Wi-Fi setup on its screen to try again.";
     $('#save').disabled = true;
-  } catch (e) { msg.className = 'note err'; msg.textContent = e.message || "The remote didn't answer."; }
+  } catch (e) { msg.className = 'note err'; msg.textContent = e.message || "The Copilot didn't answer."; }
 };
 </script>
 </body></html>

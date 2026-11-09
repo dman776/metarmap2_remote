@@ -6,11 +6,16 @@
 #include <string>
 #include <vector>
 
-// The Wi-Fi a fresh remote has saved (a build without secrets.h): finding it at startup starts config mode.
-constexpr const char* kSetupSsid = "MetarMap2-Remote";
+// The Wi-Fi a fresh Copilot has saved (a build without secrets.h): finding it at startup starts config mode.
+constexpr const char* kSetupSsid = "MetarMap2-Copilot";
+// Its name before the B56 product names (MetarMap2 Remote): still means "not set up"
+constexpr const char* kOldSetupSsid = "MetarMap2-Remote";
 
-// The access point's name: kSetupSsid and the last two bytes of the board's MAC, e.g. "MetarMap2-Remote-A1B2", so
-// remotes set up side by side don't share one
+// Whether a saved Wi-Fi name is one of those (or empty): nothing set up yet
+bool isSetupSsid(const std::string& name);
+
+// The access point's name: kSetupSsid and the last two bytes of the board's MAC, e.g. "MetarMap2-Copilot-A1B2",
+// so Copilots set up side by side don't share one
 std::string setupApName(const uint8_t mac[6]);
 
 // What a phone camera reads to join an open network: WIFI:S:<name>;T:nopass;; (\ ; , : " in the name escaped)

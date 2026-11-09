@@ -24,7 +24,7 @@
 namespace {
 
 constexpr const char* kUser = "metar";  // as the map's own web UI
-constexpr const char* kRealm = "MetarMap2 Remote";
+constexpr const char* kRealm = "MetarMap2 Copilot";
 constexpr uint32_t kRestartAfterMs = 1500;  // after saving the connection: time for the answer to get out
 
 WebServer server(80);
@@ -130,15 +130,15 @@ void saveConnection(bool keepPassword) {
     return;
   }
   if (host.empty() || host.size() > 63 || host.find_first_of(" /:") != std::string::npos) {
-    server.send(400, "text/plain", "The map's address is a name or an IP, like metarmap.local or 192.168.1.50.");
+    server.send(400, "text/plain", "The Chart's address is a name or an IP, like metarmap.local or 192.168.1.50.");
     return;
   }
   if (portNum < 1 || portNum > 65535) {
-    server.send(400, "text/plain", "The map's port is a number from 1 to 65535.");
+    server.send(400, "text/plain", "The Chart's port is a number from 1 to 65535.");
     return;
   }
-  if (name == kSetupSsid) {
-    server.send(400, "text/plain", "That's the name a remote has before it's set up: choose your Wi-Fi network.");
+  if (isSetupSsid(name)) {
+    server.send(400, "text/plain", "That's the name a Copilot has before it's set up: choose your Wi-Fi network.");
     return;
   }
   std::string password = server.hasArg("wifi_pass") ? server.arg("wifi_pass").c_str() : "";
@@ -152,7 +152,7 @@ void saveConnection(bool keepPassword) {
   settings->mapPort = (uint16_t)portNum;
   settings_save_connection(*settings);
   LOGF("web: connection saved (%s, map %s:%d); restarting\n", name.c_str(), host.c_str(), portNum);
-  server.send(200, "text/plain", "Saved. The remote restarts to use them.");
+  server.send(200, "text/plain", "Saved. The Copilot restarts to use them.");
   restartAt = millis() + kRestartAfterMs;
 }
 
@@ -173,7 +173,7 @@ void onSetupNetworks() {
   JsonDocument doc;
   doc["apName"] = wifi_setup_ap_name();
   doc["scanning"] = scanning;
-  doc["wifiName"] = settings->wifiName == kSetupSsid ? "" : settings->wifiName;
+  doc["wifiName"] = isSetupSsid(settings->wifiName) ? "" : settings->wifiName;
   doc["mapHost"] = settings->mapHost;
   doc["mapPort"] = settings->mapPort;
   doc["version"] = FIRMWARE_VERSION;
@@ -262,7 +262,7 @@ void onScreen() {
   server.sendHeader("Cache-Control", "no-store");
   if (server.hasArg("download")) {
     server.sendHeader("Content-Disposition",
-                      ("attachment; filename=\"remote-screen-" + std::to_string(millis() / 1000) + ".png\"").c_str());
+                      ("attachment; filename=\"copilot-screen-" + std::to_string(millis() / 1000) + ".png\"").c_str());
   }
   server.setContentLength(png.size());
   server.send(200, "image/png", "");
@@ -283,7 +283,7 @@ void onLogFile() {
   if (!allowed()) return;
   uint64_t from = 0;
   std::string text = log_since(from);
-  server.sendHeader("Content-Disposition", "attachment; filename=\"remote-log.txt\"");
+  server.sendHeader("Content-Disposition", "attachment; filename=\"copilot-log.txt\"");
   server.send(200, "text/plain; charset=utf-8", text.c_str());
 }
 
@@ -308,10 +308,10 @@ void start() {
 
 // On the Wi-Fi: its name on the network, and the address the logo's splash shows
 void announce() {
-  if (MDNS.begin("metarmap-remote")) MDNS.addService("http", "tcp", 80);
+  if (MDNS.begin("metarmap-copilot")) MDNS.addService("http", "tcp", 80);
   address = "http://" + std::string(WiFi.localIP().toString().c_str()) + "/";
   announced = true;
-  LOGF("web: %s (http://metarmap-remote.local/)\n", address.c_str());
+  LOGF("web: %s (http://metarmap-copilot.local/)\n", address.c_str());
 }
 
 }  // namespace

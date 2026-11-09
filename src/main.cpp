@@ -1,4 +1,4 @@
-// MetarMap2 Remote: a small version of the map's /remote page on the ES3C28P.
+// MetarMap2 Copilot: a small version of the map's /remote page on the ES3C28P.
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_heap_caps.h>
@@ -27,7 +27,7 @@ static Settings settings;  // read once at startup; the clients keep pointers in
 void setup() {
   Serial.begin(115200);
   log_begin();  // the log the web page shows
-  LOGF("MetarMap2 Remote %s\n", FIRMWARE_VERSION);
+  LOGF("MetarMap2 Copilot %s\n", FIRMWARE_VERSION);
 
   settings = settings_load();  // Wi-Fi and map: from secrets.h, else as saved
   neopixelWrite(RGB_LED, 0, 0, 0);
@@ -44,9 +44,9 @@ void setup() {
   ui_init(mapClient, updater);
 
   WiFi.mode(WIFI_STA);
-  WiFi.setHostname("metarmap-remote");
+  WiFi.setHostname("metarmap-copilot");
   wifi_setup_begin(settings);
-  if (settings.wifiName == kSetupSsid) {
+  if (isSetupSsid(settings.wifiName)) {
     wifi_setup_start(SetupReason::Fresh);  // not set up yet: its own network, for a phone to set it up
   } else {
     WiFi.setAutoReconnect(true);

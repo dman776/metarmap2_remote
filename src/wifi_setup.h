@@ -1,4 +1,4 @@
-// Wi-Fi config mode: the remote opens its own Wi-Fi network (open, e.g. "MetarMap2-Remote-A1B2") with a captive
+// Wi-Fi config mode: the remote opens its own Wi-Fi network (open, e.g. "MetarMap2-Copilot-A1B2") with a captive
 // portal, so a phone that joins it gets the setup page (remote_web.cpp) to pick the Wi-Fi and the map's address.
 //
 // A fresh remote (its saved Wi-Fi is kSetupSsid: a build without secrets.h) starts in it and stays until it's set
@@ -23,7 +23,7 @@ void wifi_setup_stop();  // back to the saved Wi-Fi (not for a fresh remote: it 
 
 bool wifi_setup_active();
 bool wifi_setup_fresh();                  // started because nothing is set up yet
-const std::string& wifi_setup_ap_name();  // e.g. MetarMap2-Remote-A1B2
+const std::string& wifi_setup_ap_name();  // e.g. MetarMap2-Copilot-A1B2
 const char* wifi_setup_address();         // http://192.168.4.1/
 int wifi_setup_phones();                  // devices joined to the access point
 
