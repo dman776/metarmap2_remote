@@ -8,11 +8,19 @@ void tearDown() {}
 
 void test_ap_name_has_the_mac_suffix() {
   const uint8_t mac[6] = {0x24, 0x6f, 0x28, 0x11, 0xa1, 0x0b};
-  TEST_ASSERT_EQUAL_STRING("MetarMap2-Remote-A10B", setupApName(mac).c_str());
+  TEST_ASSERT_EQUAL_STRING("MetarMap2-Copilot-A10B", setupApName(mac).c_str());
+}
+
+void test_setup_ssid_old_and_new() {
+  TEST_ASSERT_TRUE(isSetupSsid("MetarMap2-Copilot"));
+  TEST_ASSERT_TRUE(isSetupSsid("MetarMap2-Remote"));  // a Copilot from before the product names
+  TEST_ASSERT_TRUE(isSetupSsid(""));
+  TEST_ASSERT_FALSE(isSetupSsid("Quinn-IoT"));
+  TEST_ASSERT_FALSE(isSetupSsid("MetarMap2-Copilot-A1B2"));  // an access point's name isn't a saved network
 }
 
 void test_qr_for_an_open_network() {
-  TEST_ASSERT_EQUAL_STRING("WIFI:S:MetarMap2-Remote-A1B2;T:nopass;;", wifiQr("MetarMap2-Remote-A1B2").c_str());
+  TEST_ASSERT_EQUAL_STRING("WIFI:S:MetarMap2-Copilot-A1B2;T:nopass;;", wifiQr("MetarMap2-Copilot-A1B2").c_str());
   TEST_ASSERT_EQUAL_STRING("WIFI:S:a\\;b\\:c\\,d\\\\e\\\";T:nopass;;", wifiQr("a;b:c,d\\e\"").c_str());
 }
 
@@ -32,6 +40,7 @@ void test_scan_is_tidied() {
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_ap_name_has_the_mac_suffix);
+  RUN_TEST(test_setup_ssid_old_and_new);
   RUN_TEST(test_qr_for_an_open_network);
   RUN_TEST(test_scan_is_tidied);
   return UNITY_END();

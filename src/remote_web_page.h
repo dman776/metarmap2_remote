@@ -6,7 +6,7 @@
 
 static const char kRemoteWebPage[] PROGMEM = R"html(<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MetarMap2 Remote</title>
+<title>MetarMap2 Copilot</title>
 <style>
 :root{--bg:#0b1117;--s1:#121a23;--s2:#18222d;--line:#223041;--ctl:#2c3b4e;--tx:#e6edf3;--tx2:#c4d0dd;--mut:#93a4b8;
 --acc:#f5b544;--ok:#3ddc84;--bad:#ff5a5a}
@@ -35,12 +35,12 @@ progress{width:100%;height:10px;margin-top:10px;accent-color:var(--acc)}
 .wide{grid-column:1/-1}[hidden]{display:none!important}
 dl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:0}dt{color:var(--mut)}dd{margin:0;font:13px ui-monospace,monospace}
 </style></head><body>
-<header><h1>MetarMap2 Remote</h1><span class="v" id="version"></span></header>
+<header><h1>MetarMap2 Copilot</h1><span class="v" id="version"></span></header>
 <main>
 
 <section class="wide app" hidden>
 <h2>Screen</h2>
-<img class="screen" id="screen" alt="The remote's screen">
+<img class="screen" id="screen" alt="The Copilot's screen">
 <div class="row tight"><label class="chk"><input type="checkbox" id="live"> Live</label>
 <button id="snap">Refresh</button><a class="btn" href="/screen.png?download=1">Download PNG</a></div>
 </section>
@@ -61,14 +61,14 @@ dl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:0}dt{color:va
 <form id="connForm">
 <label for="wifiName">Wi-Fi network</label><input id="wifiName" required maxlength="32" autocomplete="off">
 <label for="wifiPass">Wi-Fi password</label><input id="wifiPass" type="password" placeholder="unchanged" autocomplete="new-password">
-<div class="row"><div><label for="mapHost">Map address</label><input id="mapHost" required placeholder="metarmap.local"></div>
+<div class="row"><div><label for="mapHost">Chart address</label><input id="mapHost" required placeholder="metarmap.local"></div>
 <div style="flex:0 0 96px"><label for="mapPort">Port</label><input id="mapPort" type="number" min="1" max="65535" required></div></div>
 <button class="primary">Save and restart</button>
-<p class="note" id="connMsg">The remote restarts to use them. If it can't join the new network, flash it over USB with include/secrets.h.</p>
+<p class="note" id="connMsg">The Copilot restarts to use them. If it can't join the new network, flash it over USB with include/secrets.h.</p>
 </form>
 <form id="pwForm"><label for="pw1">New web password (user metar)</label><input id="pw1" type="password" autocomplete="new-password" minlength="3">
 <label for="pw2">Again</label><input id="pw2" type="password" autocomplete="new-password" minlength="3">
-<p class="note err" id="pwDefault" hidden>The password is still the default (map), as on the map's own web UI.</p>
+<p class="note err" id="pwDefault" hidden>The password is still the default (map), as on MetarMap2 Web.</p>
 <button>Change password</button><p class="note" id="pwMsg"></p></form>
 </section>
 
@@ -134,7 +134,7 @@ async function poll() {
       $('#wifiName').value = s.wifiName; $('#mapHost').value = s.mapHost; $('#mapPort').value = s.mapPort;
     }
   } catch (e) {
-    if (!offline) say($('#updMsg'), "The remote isn't answering (restarting?). Trying again...", true);
+    if (!offline) say($('#updMsg'), "The Copilot isn't answering (restarting?). Trying again...", true);
     offline = true;
   }
 }
@@ -152,7 +152,7 @@ $('#branch').onchange = async () => {
 };
 $('#check').onclick = async () => { try { await post('/api/check', {}); poll(); } catch (e) { say($('#updMsg'), e.message, true); } };
 $('#install').onclick = async () => {
-  if (!confirm('Install ' + $('#available').textContent.trim() + '? The remote restarts when it has it.')) return;
+  if (!confirm('Install ' + $('#available').textContent.trim() + '? The Copilot restarts when it has it.')) return;
   try { await post('/api/install', {}); poll(); } catch (e) { say($('#updMsg'), e.message, true); }
 };
 

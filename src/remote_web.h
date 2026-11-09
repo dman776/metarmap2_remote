@@ -1,4 +1,4 @@
-// The remote's own web page, http://metarmap-remote.local/ (or its IP): its settings (Wi-Fi, the map's address,
+// The remote's own web page, http://metarmap-copilot.local/ (or its IP): its settings (Wi-Fi, the map's address,
 // the update channel), firmware updates, the log, and screenshots. Behind a login: user metar, password map until
 // it's changed (on the page, or WEB_PASSWORD in secrets.h), the same as the map's own web UI.
 //
@@ -21,7 +21,7 @@
 class Updater;
 struct Settings;
 
-// Starts the server and mDNS (metarmap-remote.local) once Wi-Fi is up. Call once from setup().
+// Starts the server and mDNS (metarmap-copilot.local) once Wi-Fi is up. Call once from setup().
 void remote_web_begin(Updater& updater, Settings& settings);
 
 // Call from loop() (the LVGL task: screenshots read the display): answers requests.

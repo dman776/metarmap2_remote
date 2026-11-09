@@ -9,6 +9,8 @@ std::string setupApName(const uint8_t mac[6]) {
   return std::string(kSetupSsid) + suffix;
 }
 
+bool isSetupSsid(const std::string& name) { return name.empty() || name == kSetupSsid || name == kOldSetupSsid; }
+
 std::string wifiQr(const std::string& ssid) {
   std::string escaped;
   for (char c : ssid) {
