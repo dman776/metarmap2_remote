@@ -172,8 +172,8 @@ buttons: **Pixels**, **Airports**, and the **logo**.
   (about 75 large US airports; dimmed for the others): the information letter,
   the runways and approaches in use, the NOTAMs.
 - **Read along**: once the sound starts, the card's METAR gives way to the ATIS
-  line by line, the FAA's text over how it's said, with the line being said
-  lit and kept in view. The Chart sends the lines (`/api/atis/<code>/lines`); the
+  line by line in the FAA's text, with the line being said lit, the others
+  dimmed, and it kept in view. The Chart sends the lines (`/api/atis/<code>/lines`); the
   Copilot knows how far into the audio it is from the WAV's length, so the
   highlight follows the voice closely. Tap the text to stop; after the end it
   stays to read, and a tap goes back to the METAR.
