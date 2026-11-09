@@ -10,9 +10,11 @@ The map stays in charge. The remote reads the map's state over its HTTP API and
 sends it the same controls the `/remote` page does; it never fetches weather or
 drives LEDs itself.
 
-| LEDs | Airports | Splash | Update |
-|---|---|---|---|
-| ![The Visualizer tab (an older picture: before the side rail)](docs/visualizer.png) | ![The Info tab (an older picture: before the side rail)](docs/locator.png) | ![The splash screen](docs/splash.png) | ![The firmware update screen](docs/update.png) |
+| LEDs | Airports | An airport's card |
+|---|---|---|
+| ![The LEDs panel: the visualizer, its legend, Auto and LED](docs/leds.png) | ![The Airports panel: a page of airports and the page strip](docs/airports.png) | ![An airport's card: its METAR, and Locate, AWOS and ATIS](docs/card.png) |
+| **Brightness** | **Splash** | **Update** |
+| ![The brightness sheet](docs/brightness.png) | ![The splash screen](docs/splash.png) | ![The firmware update screen](docs/update.png) |
 
 ## What it does
 

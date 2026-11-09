@@ -299,13 +299,15 @@ std::vector<bool> legendInUse() { return legend::inUse(status, live, shownIndex)
 void showLegend() {
   lv_obj_clean(legendBox);
   legendUsed = legendInUse();
-  int itemW = (kPanelW - 2 * kPad - 4) / 2;
+  // one column, full width, while they fit that way (four; the legend shows only those in use); else two
+  int shown = (int)std::count(legendUsed.begin(), legendUsed.end(), true);
+  int itemW = shown <= 4 ? kPanelW - 2 * kPad : (kPanelW - 2 * kPad - 4) / 2;
   for (size_t i = 0; i < status.legend.size(); i++) {
     if (!legendUsed[i]) continue;
     const LegendItem& item = status.legend[i];
     lv_obj_t* row = box(legendBox, LV_FLEX_FLOW_ROW);
     lv_obj_add_style(row, &stCard, 0);
-    lv_obj_set_size(row, itemW, 24);
+    lv_obj_set_size(row, itemW, 22);
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(row, 6, 0);
 
@@ -338,7 +340,12 @@ void markPicked(int index);
 void showVisualizer(int index) {
   shownIndex = index;
   bool known = index >= 0 && index < (int)status.visualizers.size();
-  setText(visName, known ? status.visualizers[index].name : "");
+  std::string name = known ? status.visualizers[index].name : "";
+  // 16 px, or 14 if it doesn't fit ("Dewpoint Spread")
+  bool fits = lv_text_get_width(name.c_str(), name.size(), &lv_font_montserrat_16, 0) <=
+              lv_obj_get_content_width(lv_obj_get_parent(visName));
+  lv_obj_set_style_text_font(visName, fits ? &lv_font_montserrat_16 : &lv_font_montserrat_14, 0);
+  setText(visName, name);
   markPicked(index);
   // Clear the old legend; the new one shows once it can be filtered.
   if (legendInUse() != legendUsed) showLegend();
@@ -436,7 +443,7 @@ void openPicker(lv_event_t* = nullptr);
 void buildLedsPanel(lv_obj_t* p) {
   // ◀ [the visualizer] ▶; the visualizer opens the picker
   lv_obj_t* hero = box(p, LV_FLEX_FLOW_ROW);
-  lv_obj_set_size(hero, LV_PCT(100), 60);
+  lv_obj_set_size(hero, LV_PCT(100), 56);
   lv_obj_set_style_pad_column(hero, 6, 0);
   for (int step : {-1, 0, 1}) {
     lv_obj_t* b = button(hero, &stBtn);
@@ -456,7 +463,7 @@ void buildLedsPanel(lv_obj_t* p) {
       lv_obj_t* grid = icon(b, &icon_grid, kAccentLine);  // there's more: the picker
       lv_obj_add_flag(grid, LV_OBJ_FLAG_IGNORE_LAYOUT);
       lv_image_set_scale(grid, 128);
-      lv_obj_align(grid, LV_ALIGN_TOP_RIGHT, 6, -8);
+      lv_obj_align(grid, LV_ALIGN_TOP_RIGHT, 6, -3);
       lv_obj_add_event_cb(b, openPicker, LV_EVENT_CLICKED, nullptr);
     } else {
       lv_obj_set_width(b, 44);
@@ -469,7 +476,8 @@ void buildLedsPanel(lv_obj_t* p) {
   legendBox = box(p, LV_FLEX_FLOW_ROW_WRAP);
   lv_obj_set_width(legendBox, LV_PCT(100));
   lv_obj_set_flex_grow(legendBox, 1);
-  lv_obj_set_style_pad_gap(legendBox, 4, 0);
+  lv_obj_set_style_pad_row(legendBox, 3, 0);
+  lv_obj_set_style_pad_column(legendBox, 4, 0);
   lv_obj_set_style_border_side(legendBox, LV_BORDER_SIDE_TOP, 0);
   lv_obj_set_style_border_width(legendBox, 1, 0);
   lv_obj_set_style_border_color(legendBox, hex(kLine), 0);
@@ -524,7 +532,7 @@ void onPick(lv_event_t* e) {
   lv_timer_set_repeat_count(pickerTimer, 1);
 }
 
-lv_obj_t* pickTile(const lv_image_dsc_t* src, const char* text) {
+lv_obj_t* pickTile(const lv_image_dsc_t* src, const char* text, int tileW) {
   lv_obj_t* t = button(picker, &stBtn);
   lv_obj_add_style(t, &stLit, LV_STATE_CHECKED);
   lv_obj_set_flex_flow(t, LV_FLEX_FLOW_COLUMN);
@@ -535,7 +543,10 @@ lv_obj_t* pickTile(const lv_image_dsc_t* src, const char* text) {
   if (!src) lv_obj_add_flag(img, LV_OBJ_FLAG_HIDDEN);  // a visualizer whose icon this firmware doesn't know
   lv_obj_t* l = lv_label_create(t);                    // in the tile's text color, so it lights up with it
   lv_label_set_text(l, text);
-  lv_obj_set_style_text_font(l, &lv_font_montserrat_12, 0);
+  // a map without short names sends only the full ones: smaller if it doesn't fit, so "Precipitation" doesn't
+  // break mid-word
+  bool fits = lv_text_get_width(text, strlen(text), &lv_font_montserrat_12, 0) <= tileW - 6;
+  lv_obj_set_style_text_font(l, fits ? &lv_font_montserrat_12 : &lv_font_montserrat_10, 0);
   lv_label_set_long_mode(l, LV_LABEL_LONG_DOT);
   lv_obj_set_width(l, LV_PCT(100));
   lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
@@ -551,13 +562,13 @@ void buildPicker() {
   int tileH = (kH - 2 * 4 - (rows - 1) * kTileGap) / rows;
   for (size_t i = 0; i < status.visualizers.size(); i++) {
     const Visualizer& v = status.visualizers[i];
-    lv_obj_t* t = pickTile(vis_icon(v.icon.c_str()), v.shortName.c_str());
+    lv_obj_t* t = pickTile(vis_icon(v.icon.c_str()), v.shortName.c_str(), tileW);
     lv_obj_set_size(t, tileW, tileH);
     if (v.exclusive) lv_obj_set_style_border_color(t, hex(kEffect), 0);  // it takes the whole strip
     lv_obj_add_event_cb(t, onPick, LV_EVENT_CLICKED, (void*)(intptr_t)i);
     pickTiles.push_back(t);
   }
-  lv_obj_t* close = pickTile(&icon_close, "Close");
+  lv_obj_t* close = pickTile(&icon_close, "Close", tileW);
   lv_obj_set_size(close, tileW, tileH);
   lv_obj_set_style_bg_opa(close, LV_OPA_TRANSP, 0);
   lv_obj_set_style_border_color(close, hex(kLine), 0);
@@ -672,7 +683,11 @@ void buildBrightness(lv_obj_t* scr) {
       lv_obj_set_height(brtSlider, 14);
       lv_slider_set_range(brtSlider, 0, 100);
       lv_obj_set_style_bg_color(brtSlider, hex(kControl), LV_PART_MAIN);
+      lv_obj_set_style_bg_opa(brtSlider, LV_OPA_COVER, LV_PART_MAIN);  // the theme leaves the track clear here
+      lv_obj_set_style_radius(brtSlider, 7, LV_PART_MAIN);
       lv_obj_set_style_bg_color(brtSlider, hex(kAccent), LV_PART_INDICATOR);
+      lv_obj_set_style_bg_opa(brtSlider, LV_OPA_COVER, LV_PART_INDICATOR);
+      lv_obj_set_style_radius(brtSlider, 7, LV_PART_INDICATOR);
       lv_obj_set_style_bg_color(brtSlider, lv_color_white(), LV_PART_KNOB);
       lv_obj_set_style_border_color(brtSlider, hex(kAccent), LV_PART_KNOB);
       lv_obj_set_style_border_width(brtSlider, 3, LV_PART_KNOB);
@@ -1189,6 +1204,9 @@ void buildCard(lv_obj_t* scr) {
   lv_slider_set_range(volSlider, 0, 100);
   lv_slider_set_value(volSlider, stream_volume(), LV_ANIM_OFF);
   lv_obj_set_style_bg_color(volSlider, hex(kControl), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(volSlider, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_set_style_bg_color(volSlider, hex(kAccent), LV_PART_INDICATOR);
+  lv_obj_set_style_bg_opa(volSlider, LV_OPA_COVER, LV_PART_INDICATOR);
   lv_obj_set_style_pad_all(volSlider, 6, LV_PART_KNOB);
   lv_obj_set_ext_click_area(volSlider, 14);
   lv_obj_add_event_cb(volSlider, onVolume, LV_EVENT_VALUE_CHANGED, nullptr);
@@ -1400,7 +1418,8 @@ void showSplash(SplashMode mode) {
     lv_obj_set_style_pad_column(updButtonSplash, 6, 0);
     updLabelSplash = lv_label_create(updButtonSplash);
     lv_label_set_long_mode(updLabelSplash, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_max_width(updLabelSplash, 130, 0);
+    lv_obj_set_width(updLabelSplash, 130);
+    lv_obj_set_style_text_align(updLabelSplash, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_add_event_cb(updButtonSplash, [](lv_event_t*) { showUpdate(); }, LV_EVENT_CLICKED, nullptr);
     showSplashUpdate();
   }
@@ -1704,7 +1723,17 @@ void ui_init(MapClient& c, Updater& u) {
   showSplash(SplashMode::Startup);
 }
 
-void ui_show_tab(int tab) { showTab(tab == 1 ? 1 : 0); }
+// The picker and the sheets closed, for a clean screenshot
+static void closeOverlays() {
+  closePicker();
+  closeBrightness();
+  if (cardOpen()) closeCard();
+}
+
+void ui_show_tab(int tab) {
+  closeOverlays();
+  showTab(tab == 1 ? 1 : 0);
+}
 
 void ui_show_update() { showUpdate(); }
 
@@ -1714,6 +1743,7 @@ void ui_show_splash() {
 
 void ui_open(char what) {
   if (splash || updScr) return;
+  closeOverlays();
   if (what == 'p') {
     showTab(0);
     openPicker();
