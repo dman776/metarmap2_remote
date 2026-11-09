@@ -68,6 +68,7 @@ constexpr uint32_t kSplashHoldMs = 2000;     // the splash stays this long after
 constexpr uint32_t kWifiTimeoutMs = 15000;   // then the splash names the network it can't join
 constexpr uint32_t kSplashShowMs = 30000;    // the logo's splash closes itself after this long
 constexpr uint32_t kLostMs = 5000;           // the map unreachable this long: back to the splash screen
+constexpr uint32_t kPulseNoteMs = 2000;      // the card says "Pixel pulsing" this long after a locate (one pulse)
 constexpr uint32_t kPickedMs = 250;          // the picked visualizer shows lit this long before the picker closes
 constexpr uint32_t kLegendTickMs = 40;       // the legend's auto-scroll: a step this often,
 constexpr float kLegendPxPerSec = 24;        // this fast,
@@ -963,7 +964,7 @@ lv_obj_t *cardActions, *locateBtn, *awosBtn, *atisBtn;
 lv_obj_t *volRow, *volSlider, *volLabel;
 lv_obj_t* transcript = nullptr;  // the ATIS being read: each line the FAA's text, then how it's said
 int cardTile = -1;               // the tile whose card is open
-bool cardLocated = false;        // the card asked the map to pulse the LED
+uint32_t cardLocatedAt = 0;      // when the card last asked the Chart to pulse the pixel (0: not yet)
 std::vector<lv_obj_t*> txRows;
 int txLit = -1;       // the line being said
 bool txOpen = false;  // the transcript is on screen (it stays after the end, to read; a tap closes it)
@@ -1079,7 +1080,7 @@ std::string cardLine(const Tile& t) {
     snprintf(text, sizeof(text), "The ATIS - tap the text to go back");
   } else if (live.exclusive) {
     snprintf(text, sizeof(text), "Locate is paused by %s", live.activeName.c_str());
-  } else if (cardLocated) {
+  } else if (cardLocatedAt && millis() - cardLocatedAt < kPulseNoteMs) {  // only while it's pulsing
     snprintf(text, sizeof(text), t.isVirtual ? "Pulsing on the web map" : "Pixel pulsing on the Chart");
   }
   return text;
@@ -1137,7 +1138,10 @@ void showCard() {
 void locate(const Tile& t) {
   if (live.exclusive) return;
   client->command("/locate/" + std::to_string(t.pixel));
-  cardLocated = true;
+  cardLocatedAt = millis() | 1;
+  // the Chart pulses once (about a second): the note goes when it's over, and the METAR moves up
+  lv_timer_t* over = lv_timer_create([](lv_timer_t*) { showCard(); }, kPulseNoteMs + 50, nullptr);
+  lv_timer_set_repeat_count(over, 1);
 }
 
 void openCard(int tileIndex) {
@@ -1145,7 +1149,7 @@ void openCard(int tileIndex) {
   if (cardSpeaking()) stream_set_playing(false);
   closeTranscript();
   cardTile = tileIndex;
-  cardLocated = false;
+  cardLocatedAt = 0;
   locate(tiles[tileIndex]);  // a tap finds it on the map at once
   lv_obj_remove_flag(card.backdrop, LV_OBJ_FLAG_HIDDEN);
   lv_obj_move_foreground(card.backdrop);
