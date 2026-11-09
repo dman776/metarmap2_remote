@@ -231,6 +231,22 @@ You need [PlatformIO](https://platformio.org/) (the VS Code extension or
 If the upload can't find the board, hold **BOOT**, tap **RESET**, release
 **BOOT**, and upload again.
 
+### Flashing a board without PlatformIO
+
+Each release (and each branch build) also has
+`metarmap_remote-es3c28p-factory.bin`: the whole flash in one file (the
+bootloader, the partition table and the firmware, which `pio run` also writes
+to `.pio/build/es3c28p/factory.bin`). With
+[esptool](https://github.com/espressif/esptool) (`pip install esptool`):
+
+```sh
+esptool.py --chip esp32s3 write_flash 0x0 metarmap_remote-es3c28p-factory.bin
+```
+
+It also clears the board's saved settings, so the remote starts in **Wi-Fi
+setup** and you set it up from your phone. To update a board that's already
+set up, use its update screen (or `pio run -t upload`), which keeps them.
+
 ## Network and security
 
 The remote only uses the map's endpoints that need no login: `/api/live`,
@@ -306,6 +322,7 @@ for the endpoints.
 | `src/update_check.cpp` | GitHub's release JSON, versions, what's an update |
 | `src/settings.cpp` | Wi-Fi, map and update settings, in flash |
 | `src/display.h` | Display and touch driver settings (LovyanGFX) |
+| `tools/factory.py` | After each build: `factory.bin`, the whole flash for a blank board |
 | `src/logo.c`, `src/star_icon.c`, `src/icons.c` | Images, generated from `assets/*.svg` and `assets/icons/*.svg` |
 | `src/github_roots.h` | The certificates trusted for GitHub, generated |
 | `include/lv_conf.h` | LVGL settings and fonts |
@@ -353,7 +370,9 @@ day (`v26.11.07.1`).
 
 - Push a release tag named for today (`git tag v26.11.07 && git push origin v26.11.07`): it
   creates the GitHub release, if there isn't one, and attaches
-  `metarmap_remote-es3c28p.bin`. That's the **Releases** channel.
+  `metarmap_remote-es3c28p.bin` (the app, which the remote's updater installs)
+  and `metarmap_remote-es3c28p-factory.bin` (the whole flash, for a blank
+  board). That's the **Releases** channel.
 - Each push to a branch replaces a pre-release tagged `build-<branch>` with that
   commit's firmware: `build-main` is **Latest commit**, the others are
   **Branch**. Deleting a branch removes its build.
