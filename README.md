@@ -247,6 +247,13 @@ It also clears the board's saved settings, so the remote starts in **Wi-Fi
 setup** and you set it up from your phone. To update a board that's already
 set up, use its update screen (or `pio run -t upload`), which keeps them.
 
+**A `factory.bin` you build yourself contains your `include/secrets.h`**: your
+Wi-Fi password, the map's address and `WEB_PASSWORD`, if you set them. A board
+flashed with it joins your Wi-Fi at once instead of starting in Wi-Fi setup, and
+the file mustn't be shared. The ones attached to the GitHub releases are built
+by GitHub without a `secrets.h`. To build one without yours, move
+`include/secrets.h` aside first.
+
 ## Network and security
 
 The remote only uses the map's endpoints that need no login: `/api/live`,
