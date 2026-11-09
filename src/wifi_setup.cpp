@@ -20,18 +20,47 @@ bool fresh = false;
 std::string apName;
 uint32_t lastPhoneAt = 0, lastTryAt = 0;
 bool scanning = false;
+bool wantScan = false;    // a scan is asked for and hasn't answered yet: start one, again if it fails
+uint32_t nextScanAt = 0;  // not before: after a failure
+int scanFailures = 0;
 std::vector<ScannedNetwork> networks;
 
-void scan() {
+constexpr int kScanTries = 6;
+constexpr uint32_t kScanRetryMs = 2000;
+
+// Starts a scan in the background (wifi_setup_tick collects it). It can refuse right after the radio changed
+// mode, or while the station is busy connecting: then it's asked again a moment later.
+void startScan() {
+  int rc = WiFi.scanNetworks(true);
+  scanning = rc == WIFI_SCAN_RUNNING;
   if (scanning) return;
-  scanning = WiFi.scanNetworks(true) == WIFI_SCAN_RUNNING;  // in the background; wifi_setup_tick collects it
+  LOGF("wifi setup: scan didn't start (%d)\n", rc);
+  if (++scanFailures < kScanTries)
+    nextScanAt = millis() + kScanRetryMs;
+  else
+    wantScan = false;
+}
+
+void scan() {
+  wantScan = true;
+  scanFailures = 0;
+  nextScanAt = millis();
 }
 
 void collectScan() {
   int n = WiFi.scanComplete();
   if (n == WIFI_SCAN_RUNNING) return;
   scanning = false;
-  if (n < 0) return;  // failed: keep the last list
+  if (n < 0) {  // failed: asked again (the last list stays meanwhile)
+    LOGF("wifi setup: scan failed (%d)\n", n);
+    WiFi.scanDelete();
+    if (++scanFailures < kScanTries)
+      nextScanAt = millis() + kScanRetryMs;
+    else
+      wantScan = false;
+    return;
+  }
+  wantScan = false;
   std::vector<ScannedNetwork> found;
   for (int i = 0; i < n; i++) {
     ScannedNetwork net;
@@ -66,7 +95,7 @@ void wifi_setup_start(SetupReason why) {
   active = true;
   lastPhoneAt = lastTryAt = millis();
   networks.clear();
-  scan();
+  scan();  // started by wifi_setup_tick, and asked again if the radio isn't ready yet
   LOGF("wifi setup: on (%s), network %s at %s\n", fresh ? "not set up yet" : "can't join the saved Wi-Fi",
        apName.c_str(), kAddress);
 }
@@ -89,18 +118,21 @@ const char* wifi_setup_address() { return kAddress; }
 int wifi_setup_phones() { return active ? WiFi.softAPgetStationNum() : 0; }
 
 std::vector<ScannedNetwork> wifi_setup_networks(bool& busy) {
-  busy = scanning;
+  busy = scanning || wantScan;
   return networks;
 }
 
 void wifi_setup_rescan() {
-  if (active) scan();
+  if (active && !scanning) scan();
 }
 
 void wifi_setup_tick() {
   if (!active) return;
   dns.processNextRequest();
-  if (scanning) collectScan();
+  if (scanning)
+    collectScan();
+  else if (wantScan && (int32_t)(millis() - nextScanAt) >= 0)
+    startScan();
   uint32_t now = millis();
   bool phone = WiFi.softAPgetStationNum() > 0;
   if (phone) lastPhoneAt = now;
