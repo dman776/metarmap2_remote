@@ -61,12 +61,16 @@ constexpr int kStripH = 34;
 constexpr int kBrightStep = 5;  // % per press of - or +
 constexpr int kPresets[4] = {10, 25, 50, 100};
 
-constexpr uint32_t kHoldMs = 3000;          // a touched control keeps its value while the map catches up
-constexpr uint32_t kSplashHoldMs = 2000;    // the splash stays this long after connecting
-constexpr uint32_t kWifiTimeoutMs = 15000;  // then the splash names the network it can't join
-constexpr uint32_t kSplashShowMs = 30000;   // the logo's splash closes itself after this long
-constexpr uint32_t kLostMs = 5000;          // the map unreachable this long: back to the splash screen
-constexpr uint32_t kPickedMs = 250;         // the picked visualizer shows lit this long before the picker closes
+constexpr uint32_t kHoldMs = 3000;           // a touched control keeps its value while the map catches up
+constexpr uint32_t kSplashHoldMs = 2000;     // the splash stays this long after connecting
+constexpr uint32_t kWifiTimeoutMs = 15000;   // then the splash names the network it can't join
+constexpr uint32_t kSplashShowMs = 30000;    // the logo's splash closes itself after this long
+constexpr uint32_t kLostMs = 5000;           // the map unreachable this long: back to the splash screen
+constexpr uint32_t kPickedMs = 250;          // the picked visualizer shows lit this long before the picker closes
+constexpr uint32_t kLegendTickMs = 40;       // the legend's auto-scroll: a step this often,
+constexpr float kLegendPxPerSec = 24;        // this fast,
+constexpr uint32_t kLegendPauseMs = 2000;    // resting this long at the top and the bottom,
+constexpr uint32_t kLegendResumeMs = 10000;  // and starting again this long after a finger let go of it
 constexpr const char* kRepo = "github.com/dman776/metarmap2";
 
 MapClient* client = nullptr;
@@ -296,20 +300,63 @@ int brightPct = -1;       // the LEDs' brightness on screen
 
 std::vector<bool> legendInUse() { return legend::inUse(status, live, shownIndex); }
 
+// The legend's auto-scroll: when its entries don't all fit, it glides down to the last, rests, glides back up,
+// rests, and so on. A finger takes over (it scrolls by hand as any list does); 10 s after it lets go, the gliding
+// starts again from wherever it was left.
+float legendY = 0;             // where the glide is, in px from the top
+int legendDir = 1;             // down (1) or up (-1)
+uint32_t legendRestUntil = 0;  // resting at an end until then
+uint32_t legendTouchedAt = 0;  // when a finger last had it (0: never)
+
+void restartLegendScroll() {
+  legendY = 0;
+  legendDir = 1;
+  legendRestUntil = millis() + kLegendPauseMs;
+  lv_obj_scroll_to_y(legendBox, 0, LV_ANIM_OFF);
+}
+
+void onLegendTouch(lv_event_t*) { legendTouchedAt = millis() | 1; }
+
+void tickLegend(lv_timer_t*) {
+  if (lv_obj_has_flag(panels[0], LV_OBJ_FLAG_HIDDEN)) return;
+  int32_t y = lv_obj_get_scroll_y(legendBox);
+  int32_t max = y + lv_obj_get_scroll_bottom(legendBox);
+  if (max <= 0) return;  // it all fits
+  uint32_t now = millis();
+  if (legendTouchedAt) {
+    if (lv_obj_has_state(legendBox, LV_STATE_PRESSED) || now - legendTouchedAt < kLegendResumeMs) return;
+    legendTouchedAt = 0;  // carry on from where the finger left it, the way it was going
+    legendY = (float)y;
+    legendRestUntil = now;
+  }
+  if ((int32_t)(legendRestUntil - now) > 0) return;
+  legendY += legendDir * kLegendPxPerSec * kLegendTickMs / 1000.0f;
+  if (legendY >= max) {
+    legendY = (float)max;
+    legendDir = -1;
+    legendRestUntil = now + kLegendPauseMs;
+  } else if (legendY <= 0) {
+    legendY = 0;
+    legendDir = 1;
+    legendRestUntil = now + kLegendPauseMs;
+  }
+  if ((int32_t)lroundf(legendY) != y) lv_obj_scroll_to_y(legendBox, (int32_t)lroundf(legendY), LV_ANIM_OFF);
+}
+
 void showLegend() {
   lv_obj_clean(legendBox);
   legendUsed = legendInUse();
-  // one column, full width, while they fit that way (four; the legend shows only those in use); else two
-  int shown = (int)std::count(legendUsed.begin(), legendUsed.end(), true);
-  int itemW = shown <= 4 ? kPanelW - 2 * kPad : (kPanelW - 2 * kPad - 4) / 2;
+  // an entry a row, full width; a long label wraps onto a second line rather than being cut off
   for (size_t i = 0; i < status.legend.size(); i++) {
     if (!legendUsed[i]) continue;
     const LegendItem& item = status.legend[i];
     lv_obj_t* row = box(legendBox, LV_FLEX_FLOW_ROW);
     lv_obj_add_style(row, &stCard, 0);
-    lv_obj_set_size(row, itemW, 22);
+    lv_obj_set_size(row, LV_PCT(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_min_height(row, 22, 0);
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(row, 6, 0);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_CLICKABLE);  // a touch on it is a touch on the legend (and scrolls it)
 
     // The LED: a dot in its color, a bar for a gradient, a ring for off.
     const auto& c = item.colors;
@@ -328,11 +375,13 @@ void showLegend() {
       lv_obj_set_style_border_width(led, 2, 0);  // the flash color as a ring
       lv_obj_set_style_border_color(led, hex(c.back()), 0);
     }
+    lv_obj_remove_flag(led, LV_OBJ_FLAG_CLICKABLE);
 
     lv_obj_t* text = label(row, item.label.c_str(), &lv_font_montserrat_12, kText);
     lv_obj_set_flex_grow(text, 1);
-    lv_label_set_long_mode(text, LV_LABEL_LONG_DOT);
+    lv_label_set_long_mode(text, LV_LABEL_LONG_WRAP);
   }
+  restartLegendScroll();
 }
 
 void markPicked(int index);
@@ -473,18 +522,22 @@ void buildLedsPanel(lv_obj_t* p) {
   }
 
   // what the LEDs mean, two columns (scrolls only if a visualizer has more than fit)
-  legendBox = box(p, LV_FLEX_FLOW_ROW_WRAP);
+  // a line above it, on its own, so the entries scroll out of sight under it rather than over it
+  lv_obj_t* line = box(p, LV_FLEX_FLOW_ROW);
+  lv_obj_set_size(line, LV_PCT(100), 1);
+  lv_obj_set_style_bg_color(line, hex(kLine), 0);
+  lv_obj_set_style_bg_opa(line, LV_OPA_COVER, 0);
+  legendBox = box(p, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_width(legendBox, LV_PCT(100));
   lv_obj_set_flex_grow(legendBox, 1);
   lv_obj_set_style_pad_row(legendBox, 3, 0);
-  lv_obj_set_style_pad_column(legendBox, 4, 0);
-  lv_obj_set_style_border_side(legendBox, LV_BORDER_SIDE_TOP, 0);
-  lv_obj_set_style_border_width(legendBox, 1, 0);
-  lv_obj_set_style_border_color(legendBox, hex(kLine), 0);
-  lv_obj_set_style_pad_top(legendBox, 8, 0);
   lv_obj_add_flag(legendBox, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(legendBox, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_set_scroll_dir(legendBox, LV_DIR_VER);
-  lv_obj_set_scrollbar_mode(legendBox, LV_SCROLLBAR_MODE_ACTIVE);
+  lv_obj_set_scrollbar_mode(legendBox, LV_SCROLLBAR_MODE_AUTO);  // a thin bar says there's more
+  for (lv_event_code_t code : {LV_EVENT_PRESSED, LV_EVENT_PRESSING, LV_EVENT_RELEASED})
+    lv_obj_add_event_cb(legendBox, onLegendTouch, code, nullptr);
+  lv_timer_create(tickLegend, kLegendTickMs, nullptr);
 
   // Auto (with the countdown to the next visualizer) and LED (opens the brightness sheet)
   lv_obj_t* foot = box(p, LV_FLEX_FLOW_ROW);

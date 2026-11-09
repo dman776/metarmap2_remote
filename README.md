@@ -31,6 +31,10 @@ buttons: **LEDs**, **Airports**, and the **logo**.
 - The legend, showing only the entries the map is showing now: if every
   airport is VFR, just VFR (plus lightning or missing reports, if any). It
   appears once the map has switched, never unfiltered.
+- An entry a row, its whole label (a long one wraps onto a second line). When
+  they don't all fit, the list glides slowly down to the last entry, rests 2 s,
+  glides back up, rests, and so on. Scroll it with a finger to read it your own
+  way; 10 s after you let go it starts gliding again from there.
 - Along the bottom: **Auto** (auto-rotate on or off, lit while on, counting down
   to the next visualizer) and **LED**, the brightness, which opens a sheet: a
   slider, - and + (5% a press), and 10%, 25%, 50% and 100%.
