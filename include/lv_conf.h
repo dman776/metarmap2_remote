@@ -5,8 +5,8 @@
 
 #define LV_COLOR_DEPTH 16
 
-// Use the C library's allocator: the ESP32 heap, with large blocks in PSRAM.
-#define LV_USE_STDLIB_MALLOC LV_STDLIB_CLIB
+// LVGL's objects in PSRAM (src/lv_mem_psram.c): internal RAM is kept for Wi-Fi and TLS.
+#define LV_USE_STDLIB_MALLOC LV_STDLIB_CUSTOM
 #define LV_USE_STDLIB_STRING LV_STDLIB_CLIB
 #define LV_USE_STDLIB_SPRINTF LV_STDLIB_CLIB
 

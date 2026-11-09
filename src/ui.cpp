@@ -1345,13 +1345,21 @@ void setStep(lv_obj_t* state, const char* text, uint32_t color) {
   lv_obj_set_style_text_color(state, hex(color), 0);
 }
 
+// The splash is deleted (closed, or replaced by the update screen): forget its widgets, which the update
+// check's answers would otherwise write to after they're gone.
+void forgetSplash() {
+  splash = nullptr;
+  updButtonSplash = nullptr;
+  updLabelSplash = nullptr;
+}
+
 void hideSplash() {
   lv_screen_load_anim(remoteScreen, LV_SCR_LOAD_ANIM_FADE_IN, 400, 0, true);  // then deletes the splash
-  splash = nullptr;
+  forgetSplash();
 }
 
 void showSplashUpdate() {
-  if (!updButtonSplash) return;
+  if (!splash || !updButtonSplash) return;
   bool available = upd.available;
   std::string text = available ? "Update " + upd.candidate : "Firmware";
   setText(updLabelSplash, text);
@@ -1363,6 +1371,7 @@ void showSplashUpdate() {
 void showSplash(SplashMode mode) {
   splashMode = mode;
   bool onDemand = mode == SplashMode::OnDemand;
+  forgetSplash();
   splash = lv_obj_create(nullptr);
   lv_obj_remove_style_all(splash);
   lv_obj_set_style_bg_color(splash, hex(kBg), 0);
@@ -1370,7 +1379,6 @@ void showSplash(SplashMode mode) {
   lv_obj_set_flex_flow(splash, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_flex_align(splash, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
   lv_obj_set_style_pad_row(splash, 2, 0);
-  updButtonSplash = nullptr;
 
   lv_obj_t* img = lv_image_create(splash);
   lv_image_set_src(img, &logo);
@@ -1671,7 +1679,7 @@ void showUpdate() {
   // The touch that's still down began on another screen: forget it.
   lv_indev_reset(nullptr, nullptr);
   lv_screen_load_anim(updScr, LV_SCR_LOAD_ANIM_FADE_IN, 300, 0, fromSplash);  // a splash on screen goes for good
-  if (fromSplash) splash = nullptr;
+  if (fromSplash) forgetSplash();
   refreshUpdate();
   if (upd.phase == UpdateState::Idle) updater->check();  // fresh, while it's open
 }
@@ -1738,7 +1746,7 @@ void ui_show_tab(int tab) {
 void ui_show_update() { showUpdate(); }
 
 void ui_show_splash() {
-  if (!splash) showSplash(SplashMode::OnDemand);
+  if (!splash && !updScr) showSplash(SplashMode::OnDemand);
 }
 
 void ui_open(char what) {

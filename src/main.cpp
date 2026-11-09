@@ -1,6 +1,7 @@
 // MetarMap2 Remote: a small version of the map's /remote page on the ES3C28P.
 #include <Arduino.h>
 #include <WiFi.h>
+#include <esp_heap_caps.h>
 
 #include "audio.h"
 #include "board_es3c28p.h"
@@ -55,7 +56,7 @@ void loop() {
   // Serial console: "S" sends a screenshot (tools/screenshot.py); "1" and
   // "2" open the LEDs and Airports panels; "3" shows the splash screen,
   // "4" the update screen, "5" the visualizer picker, "6" the brightness
-  // sheet and "7" an airport's card.
+  // sheet and "7" an airport's card; "H" logs the free memory.
   if (Serial.available()) {
     int c = Serial.read();
     if (c == 'S') {
@@ -70,6 +71,12 @@ void loop() {
       ui_show_update();
     } else if (c >= '5' && c <= '7') {
       ui_open("pbc"[c - '5']);
+    } else if (c == 'H') {  // the memory left: internal RAM is what TLS (update checks) and Wi-Fi need
+      LOGF("heap: internal free %u, largest block %u, min ever %u; PSRAM free %u\n",
+           (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+           (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+           (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
+           (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
     }
   }
   delay(5);
