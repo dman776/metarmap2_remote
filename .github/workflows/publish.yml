@@ -2,6 +2,8 @@ name: publish
 
 # Firmware for the remote's update channels (src/update_check.h):
 #   a release tag (v26.11.05)  -> metarmap_remote-es3c28p.bin on that GitHub release   (Releases)
+#                                 and metarmap_remote-es3c28p-factory.bin, the whole flash for a blank board
+#                                 (esptool write_flash 0x0; the updater uses only the first)
 #   a push to a branch         -> a pre-release tagged build-<branch>, replaced each push (Latest commit, Branch)
 #   a deleted branch           -> its build-<branch> pre-release removed
 # A branch push that changes only the README and docs/ doesn't build: the branch's firmware is the same.
@@ -27,6 +29,7 @@ concurrency:
 
 env:
   ASSET: metarmap_remote-es3c28p.bin
+  FACTORY: metarmap_remote-es3c28p-factory.bin
   GH_TOKEN: ${{ github.token }}
 
 jobs:
@@ -49,6 +52,7 @@ jobs:
           pip install platformio
           pio run -e es3c28p
           cp .pio/build/es3c28p/firmware.bin "$ASSET"
+          cp .pio/build/es3c28p/factory.bin "$FACTORY"  # tools/factory.py
           sed -n 's/^#define FIRMWARE_VERSION "\(.*\)"$/\1/p' include/firmware_version.h | tee version.txt
 
       - name: Release
@@ -56,14 +60,14 @@ jobs:
         run: |
           tag="$GITHUB_REF_NAME"
           gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --verify-tag --title "$tag" --generate-notes
-          gh release upload "$tag" "$ASSET" --clobber
+          gh release upload "$tag" "$ASSET" "$FACTORY" --clobber
 
       - name: Branch build
         if: github.ref_type == 'branch'
         run: |
           tag="build-$(echo "$GITHUB_REF_NAME" | sed 's/[^A-Za-z0-9._-]/-/g')"
           gh release delete "$tag" --cleanup-tag --yes >/dev/null 2>&1 || true
-          gh release create "$tag" "$ASSET" --prerelease --latest=false --target "$GITHUB_SHA" \
+          gh release create "$tag" "$ASSET" "$FACTORY" --prerelease --latest=false --target "$GITHUB_SHA" \
             --title "$(cat version.txt)" \
             --notes "Firmware for the remote's Latest commit and Branch update channels: branch \`$GITHUB_REF_NAME\` at $GITHUB_SHA. Replaced on each push."
 
