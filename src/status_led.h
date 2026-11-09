@@ -29,12 +29,12 @@ struct Inputs {
   bool installing = false;  // an update is installing or restarting into the new firmware
 };
 
-constexpr uint32_t kGreenMs = 10000;       // green this long after the Chart answers,
-constexpr uint32_t kFadeMs = 1500;         // then fading out over this long
-constexpr uint32_t kBlinkMs = 500;         // joining Wi-Fi: on this long, off this long
-constexpr uint32_t kUpdateBlinkMs = 400;   // installing an update: the same, quicker
-constexpr uint32_t kBreatheMs = 4000;      // Wi-Fi setup mode: one breath, dim to full and back
-constexpr int kDefaultBrightness = 5;      // %: a soft glow on the wall
+constexpr uint32_t kGreenMs = 10000;      // green this long after the Chart answers,
+constexpr uint32_t kFadeMs = 1500;        // then fading out over this long
+constexpr uint32_t kBlinkMs = 500;        // joining Wi-Fi: on this long, off this long
+constexpr uint32_t kUpdateBlinkMs = 400;  // installing an update: the same, quicker
+constexpr uint32_t kBreatheMs = 4000;     // Wi-Fi setup mode: one breath, dim to full and back
+constexpr int kDefaultBrightness = 5;     // %: a soft glow on the wall
 
 constexpr Rgb kBlue{0, 0, 255};
 constexpr Rgb kGreen{0, 255, 0};

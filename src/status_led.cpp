@@ -39,8 +39,10 @@ Rgb StatusLight::tick(const Inputs& in, uint32_t now, int brightness) {
   }
   if (in.wifi != wifi_) {
     wifi_ = in.wifi;
-    if (!wifi_) wifiDownSince_ = now;
-    else offlineSince_ = now;  // waiting for the Chart from here
+    if (!wifi_)
+      wifiDownSince_ = now;
+    else
+      offlineSince_ = now;  // waiting for the Chart from here
   }
   bool online = in.wifi && in.online;
   if (online != online_) {
@@ -67,7 +69,8 @@ Rgb StatusLight::tick(const Inputs& in, uint32_t now, int brightness) {
   }
   // Wi-Fi up, the Chart not answering
   if (now - offlineSince_ >= kLostMs) return scale(kRed, kFull, brightness);
-  if (!everOnline_) return scale(kBlue, blinkOn(offlineSince_, now, kBlinkMs) ? kFull : 0, brightness);  // still connecting
+  if (!everOnline_)
+    return scale(kBlue, blinkOn(offlineSince_, now, kBlinkMs) ? kFull : 0, brightness);  // still connecting
   return Rgb{};  // a blip: dark until it's the splash's 5 s
 }
 
