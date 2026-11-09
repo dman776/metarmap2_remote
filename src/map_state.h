@@ -14,7 +14,16 @@
 struct Visualizer {
   std::string id;
   std::string name;
+  std::string shortName;  // the name where there's little room (the picker); the name from a map without it
+  std::string icon;       // what its icon shows (icons.h vis_icon()); "" from a map without it
   bool exclusive = false;
+};
+
+// An airport's details from /api/status, for its card
+struct AirportInfo {
+  std::string code;
+  std::string name;  // "" if the map has none
+  std::string raw;   // the METAR as reported; "" without one
 };
 
 struct LegendItem {
@@ -36,6 +45,7 @@ struct MapStatus {
   int activeIndex = -1;  // the visualizer the legend is for
   std::vector<LegendItem> legend;
   std::vector<Visualizer> visualizers;
+  std::vector<AirportInfo> airports;  // in LED order
 };
 
 struct Station {

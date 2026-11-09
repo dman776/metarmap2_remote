@@ -62,7 +62,13 @@ void statusFilter(JsonDocument& filter) {
   JsonObject vis = filter["visualizers"].add<JsonObject>();
   vis["id"] = true;
   vis["name"] = true;
+  vis["shortName"] = true;
+  vis["icon"] = true;
   vis["exclusive"] = true;
+  JsonObject airport = filter["airports"].add<JsonObject>();
+  airport["code"] = true;
+  airport["text"] = true;
+  airport["raw"] = true;
 }
 
 MapLive parseLive(JsonVariantConst doc) {
@@ -141,8 +147,17 @@ MapStatus parseStatus(JsonVariantConst doc) {
     Visualizer v;
     v.id = vis["id"] | "";
     v.name = vis["name"] | "";
+    v.shortName = vis["shortName"] | v.name.c_str();
+    v.icon = vis["icon"] | "";
     v.exclusive = vis["exclusive"] | false;
     status.visualizers.push_back(v);
+  }
+  for (JsonVariantConst a : doc["airports"].as<JsonArrayConst>()) {
+    AirportInfo info;
+    info.code = a["code"] | "";
+    info.name = a["text"] | "";
+    info.raw = a["raw"] | "";
+    if (!info.code.empty()) status.airports.push_back(info);
   }
   return status;
 }

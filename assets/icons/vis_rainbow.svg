@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
+  <!-- visualizer icon 'rainbow' (metarmap2's visualizer.ICONS), white: the remote recolors it -->
+  <g fill="none" stroke-width="2.2" stroke-linecap="round"><path d="M2 18a10 10 0 0 1 20 0" stroke="#ff5a5a"/><path d="M5.5 18a6.5 6.5 0 0 1 13 0" stroke="#f5b544"/><path d="M9 18a3 3 0 0 1 6 0" stroke="#4ea8ff"/></g>
+</svg>

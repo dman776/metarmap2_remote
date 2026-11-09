@@ -5,8 +5,8 @@
 
 #define LV_COLOR_DEPTH 16
 
-// Use the C library's allocator: the ESP32 heap, with large blocks in PSRAM.
-#define LV_USE_STDLIB_MALLOC LV_STDLIB_CLIB
+// LVGL's objects in PSRAM (src/lv_mem_psram.c): internal RAM is kept for Wi-Fi and TLS.
+#define LV_USE_STDLIB_MALLOC LV_STDLIB_CUSTOM
 #define LV_USE_STDLIB_STRING LV_STDLIB_CLIB
 #define LV_USE_STDLIB_SPRINTF LV_STDLIB_CLIB
 
@@ -18,6 +18,7 @@
 #define LV_LOG_LEVEL LV_LOG_LEVEL_WARN
 #define LV_LOG_PRINTF 0
 
+#define LV_FONT_MONTSERRAT_10 1  // the rail's labels
 #define LV_FONT_MONTSERRAT_12 1
 #define LV_FONT_MONTSERRAT_14 1
 #define LV_FONT_MONTSERRAT_16 1

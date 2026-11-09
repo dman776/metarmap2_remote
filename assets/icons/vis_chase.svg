@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
+  <!-- visualizer icon 'chase' (metarmap2's visualizer.ICONS), white: the remote recolors it -->
+  <g fill="#ffffff"><circle cx="4" cy="12" r="2" opacity=".25"/><circle cx="10" cy="12" r="2" opacity=".5"/><circle cx="16" cy="12" r="2.5" opacity=".8"/><circle cx="21" cy="12" r="2"/></g>
+</svg>

@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24">
+  <!-- white: the remote recolors it -->
+  <g fill="#ffffff"><circle cx="5" cy="11" r="3"/><circle cx="12" cy="11" r="3"/><circle cx="19" cy="11" r="3"/><rect x="1" y="17" width="22" height="1.8" rx=".9" opacity=".5"/></g>
+</svg>
