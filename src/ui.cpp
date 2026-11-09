@@ -963,7 +963,7 @@ Sheet card;
 lv_obj_t *cardDot, *cardCode, *cardTag, *cardName, *cardStatus, *cardMetar;
 lv_obj_t *cardActions, *locateBtn, *awosBtn, *atisBtn;
 lv_obj_t *volRow, *volSlider, *volLabel;
-lv_obj_t* transcript = nullptr;  // the ATIS being read: each line the FAA's text, then how it's said
+lv_obj_t* transcript = nullptr;  // the ATIS being read, line by line, in the FAA's text
 int cardTile = -1;               // the tile whose card is open
 uint32_t cardLocatedAt = 0;      // when the card last asked the Chart to pulse the pixel (0: not yet)
 std::vector<lv_obj_t*> txRows;
@@ -991,20 +991,17 @@ int cardSpeaking() {
   return radio.atis ? 2 : 1;
 }
 
+// The line being said stands out, the others dim; with none (before or after the reading) they're all there to read.
 void lightLine(int i) {
   if (i == txLit) return;
-  if (txLit >= 0 && txLit < (int)txRows.size()) {
-    lv_obj_set_style_bg_opa(txRows[txLit], LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_color(txRows[txLit], hex(kSurface), 0);
-    lv_obj_set_style_text_color(lv_obj_get_child(txRows[txLit], 1), hex(kMuted), 0);
-  }
   txLit = i;
-  if (i >= 0 && i < (int)txRows.size()) {
-    lv_obj_set_style_bg_opa(txRows[i], LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(txRows[i], hex(kAccent), 0);
-    lv_obj_set_style_text_color(lv_obj_get_child(txRows[i], 1), hex(kText), 0);
-    lv_obj_scroll_to_view(txRows[i], LV_ANIM_ON);
+  for (int n = 0; n < (int)txRows.size(); n++) {
+    bool lit = n == i;
+    lv_obj_set_style_bg_opa(txRows[n], lit ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_color(txRows[n], hex(lit ? kAccent : kSurface), 0);
+    lv_obj_set_style_text_color(lv_obj_get_child(txRows[n], 0), hex(lit || i < 0 ? kText : kMuted), 0);
   }
+  if (i >= 0 && i < (int)txRows.size()) lv_obj_scroll_to_view(txRows[i], LV_ANIM_ON);
 }
 
 void openTranscript() {
@@ -1015,7 +1012,6 @@ void openTranscript() {
     lv_obj_t* row = box(transcript, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_size(row, LV_PCT(100), LV_SIZE_CONTENT);
     lv_obj_set_style_pad_all(row, 4, 0);
-    lv_obj_set_style_pad_row(row, 2, 0);
     lv_obj_set_style_radius(row, 6, 0);
     lv_obj_set_style_bg_color(row, hex(kAccentSoft), 0);
     lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
@@ -1023,14 +1019,12 @@ void openTranscript() {
     lv_obj_set_style_border_width(row, 3, 0);
     lv_obj_set_style_border_color(row, hex(kSurface), 0);
     lv_obj_add_flag(row, LV_OBJ_FLAG_EVENT_BUBBLE);  // a tap on a line is a tap on the transcript
-    lv_obj_t* raw = label(row, line.raw.c_str(), &lv_font_montserrat_12, kText);
-    lv_obj_t* said = label(row, line.said.c_str(), &lv_font_montserrat_12, kMuted);
-    for (lv_obj_t* l : {raw, said}) {
-      lv_obj_set_width(l, LV_PCT(100));
-      lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
-      lv_obj_add_flag(l, LV_OBJ_FLAG_EVENT_BUBBLE);
-    }
-    if (line.raw.empty()) lv_obj_add_flag(raw, LV_OBJ_FLAG_HIDDEN);
+    // the FAA's text; "No ATIS is available" has only the words said
+    const std::string& text = line.raw.empty() ? line.said : line.raw;
+    lv_obj_t* l = label(row, text.c_str(), &lv_font_montserrat_12, kText);
+    lv_obj_set_width(l, LV_PCT(100));
+    lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
+    lv_obj_add_flag(l, LV_OBJ_FLAG_EVENT_BUBBLE);
     txRows.push_back(row);
   }
   lv_obj_scroll_to_y(transcript, 0, LV_ANIM_OFF);
