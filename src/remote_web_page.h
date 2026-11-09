@@ -25,8 +25,9 @@ button.primary{background:var(--acc);border-color:var(--acc);color:#1a1204}
 button:disabled{opacity:.4;cursor:default}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.row>*{flex:1;min-width:0}
 input,select{min-width:0}
+.row.tight{gap:0}.row.tight>*{flex:0 0 auto}
 .note{color:var(--mut);font-size:13px;margin:8px 0 0}.err{color:var(--bad)}.okc{color:var(--ok)}
-.screen{display:block;width:100%;max-width:640px;aspect-ratio:4/3;image-rendering:pixelated;border-radius:8px;border:1px solid var(--line);background:#000}
+.screen{display:block;width:320px;max-width:100%;aspect-ratio:4/3;border-radius:8px;border:1px solid var(--line);background:#000}
 pre{margin:0;height:340px;overflow:auto;background:#05090d;border:1px solid var(--line);border-radius:8px;padding:10px;
 font:12px/1.4 ui-monospace,Menlo,monospace;color:var(--tx2);white-space:pre-wrap;word-break:break-word}
 .chk{display:inline-flex;gap:6px;align-items:center;margin:12px 12px 0 0;color:var(--tx2);font-size:14px}.chk input{width:auto}
@@ -40,7 +41,7 @@ dl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:0}dt{color:va
 <section class="wide app" hidden>
 <h2>Screen</h2>
 <img class="screen" id="screen" alt="The remote's screen">
-<div class="row" style="flex:0"><label class="chk"><input type="checkbox" id="live"> Live</label>
+<div class="row tight"><label class="chk"><input type="checkbox" id="live"> Live</label>
 <button id="snap">Refresh</button><a class="btn" href="/screen.png?download=1">Download PNG</a></div>
 </section>
 
@@ -74,7 +75,7 @@ dl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:0}dt{color:va
 <section class="wide app" hidden>
 <h2>Log</h2>
 <pre id="log"></pre>
-<div class="row" style="flex:0"><label class="chk"><input type="checkbox" id="follow" checked> Follow</label>
+<div class="row tight"><label class="chk"><input type="checkbox" id="follow" checked> Follow</label>
 <button id="clear">Clear view</button><a class="btn" href="/log.txt">Download</a></div>
 </section>
 
