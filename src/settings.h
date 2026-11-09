@@ -21,6 +21,7 @@ struct Settings {
   std::string streamUrl;                   // the MP3 stream the Radio plays; "" for none
   int volume = 63;                         // the speaker's, 0-100 (%): the volume slider while audio plays
   std::string webPassword;                 // the web page's login password (user metar); map until it's changed
+  int ledBrightness = 5;                   // the status light on the back, 0-100 (%); 0 is off
 };
 
 // The saved settings, after saving secrets.h's if this build has them.
@@ -37,6 +38,9 @@ void settings_save_update(const Settings& settings);
 
 // Saves the Wi-Fi network and password, and the map's address and port (the web page; used after a restart).
 void settings_save_connection(const Settings& settings);
+
+// Saves the status light's brightness (0-100). Writes only a change.
+void settings_save_led(int brightness);
 
 // Saves the web page's login password.
 void settings_save_web_password(const std::string& password);

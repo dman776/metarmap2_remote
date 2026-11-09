@@ -66,6 +66,10 @@ dl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:0}dt{color:va
 <button class="primary">Save and restart</button>
 <p class="note" id="connMsg">The Copilot restarts to use them. If it can't join the new network, flash it over USB with include/secrets.h.</p>
 </form>
+<label for="led">Status light on the back <span id="ledVal"></span></label>
+<input id="led" type="range" min="0" max="100" step="1" style="padding:0;accent-color:var(--acc)">
+<p class="note" id="ledMsg">Blue: no Wi-Fi (blinking while joining). Green after it reaches the Chart, then dark.
+Red: the Chart isn't answering. Purple: Wi-Fi setup. Yellow: installing an update. 0 turns it off.</p>
 <form id="pwForm"><label for="pw1">New web password (user metar)</label><input id="pw1" type="password" autocomplete="new-password" minlength="3">
 <label for="pw2">Again</label><input id="pw2" type="password" autocomplete="new-password" minlength="3">
 <p class="note err" id="pwDefault" hidden>The password is still the default (map), as on MetarMap2 Web.</p>
@@ -132,6 +136,7 @@ async function poll() {
     if (!filled) {
       filled = true;
       $('#wifiName').value = s.wifiName; $('#mapHost').value = s.mapHost; $('#mapPort').value = s.mapPort;
+      $('#led').value = s.led; $('#ledVal').textContent = s.led + '%';
     }
   } catch (e) {
     if (!offline) say($('#updMsg'), "The Copilot isn't answering (restarting?). Trying again...", true);
@@ -163,6 +168,15 @@ $('#connForm').onsubmit = async ev => {
       map_host: $('#mapHost').value, map_port: $('#mapPort').value}));
     $('#wifiPass').value = '';
   } catch (e) { say($('#connMsg'), e.message, true); }
+};
+let ledTimer = null;
+$('#led').oninput = () => {
+  $('#ledVal').textContent = $('#led').value + '%';
+  clearTimeout(ledTimer);  // saved once the slider rests, not on every step
+  ledTimer = setTimeout(async () => {
+    try { say($('#ledMsg'), await post('/api/led', {brightness: $('#led').value})); }
+    catch (e) { say($('#ledMsg'), e.message, true); }
+  }, 300);
 };
 async function setPassword(a, b, msg) {
   if (a.value !== b.value) { say(msg, "The two don't match.", true); return false; }

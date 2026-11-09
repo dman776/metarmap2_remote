@@ -19,6 +19,7 @@
 #include "pages.h"
 #include "remote_web.h"
 #include "stream.h"
+#include "timing.h"
 #include "updater.h"
 #include "wifi_setup.h"
 
@@ -63,11 +64,11 @@ constexpr int kStripH = 34;
 constexpr int kBrightStep = 5;  // % per press of - or +
 constexpr int kPresets[4] = {10, 25, 50, 100};
 
-constexpr uint32_t kHoldMs = 3000;           // a touched control keeps its value while the map catches up
-constexpr uint32_t kSplashHoldMs = 2000;     // the splash stays this long after connecting
-constexpr uint32_t kWifiTimeoutMs = 15000;   // then the splash names the network it can't join
+constexpr uint32_t kHoldMs = 3000;        // a touched control keeps its value while the map catches up
+constexpr uint32_t kSplashHoldMs = 2000;  // the splash stays this long after connecting
+// kWifiTimeoutMs (then the splash names the network it can't join) and kLostMs (the map unreachable this long: back
+// to the splash screen) are in timing.h: the status light on the back keeps the same time
 constexpr uint32_t kSplashShowMs = 30000;    // the logo's splash closes itself after this long
-constexpr uint32_t kLostMs = 5000;           // the map unreachable this long: back to the splash screen
 constexpr uint32_t kPulseNoteMs = 2000;      // the card says "Pixel pulsing" this long after a locate (one pulse)
 constexpr uint32_t kPickedMs = 250;          // the picked visualizer shows lit this long before the picker closes
 constexpr uint32_t kLegendTickMs = 40;       // the legend's auto-scroll: a step this often,
