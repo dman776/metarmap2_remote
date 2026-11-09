@@ -25,6 +25,8 @@
 #define LV_FONT_MONTSERRAT_28 1
 #define LV_FONT_DEFAULT &lv_font_montserrat_14
 
+#define LV_USE_QRCODE 1  // Wi-Fi config mode: a phone scans it to join the remote's network
+
 #define LV_USE_THEME_DEFAULT 1
 #define LV_THEME_DEFAULT_DARK 1
 

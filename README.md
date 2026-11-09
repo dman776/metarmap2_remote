@@ -74,13 +74,32 @@ buttons: **LEDs**, **Airports**, and the **logo**.
 - **Firmware**: the installed and available versions, the update channel and
   branch, **Check now** and **Install**, with its progress.
 - **Settings**: the Wi-Fi network and password, and the map's address and port;
-  saving restarts the remote with them. If it can't join the new network, flash
-  it over USB with `include/secrets.h`. A USB build's `secrets.h` applies only
+  saving restarts the remote with them. If it can't join the new network, use
+  **Wi-Fi setup** on its screen (below). A USB build's `secrets.h` applies only
   when it changes, so what you save on the page stays.
 - **Log**: the last 32 KB of the remote's log (what the serial console shows,
   each line with the seconds since startup), following new lines as they come,
   and **Download**.
 - Live control of the map stays on the touchscreen and the map's own pages.
+
+**Wi-Fi setup**
+
+- A remote that isn't set up yet (the published firmware, or a build without
+  `secrets.h`) opens its own open Wi-Fi network, **MetarMap2-Remote-** and four
+  letters from the board (e.g. `MetarMap2-Remote-8160`), and shows how to join
+  it: the name, and a QR code a phone's camera scans to join.
+- On the phone, the setup page opens by itself (a captive portal, like a hotel's
+  Wi-Fi), or go to **http://192.168.4.1/**. Pick your Wi-Fi from the networks
+  the remote can see (2.4 GHz only), or **Other network...** for a hidden one,
+  enter its password, and the map's address (`metarmap.local` unless you gave
+  the Pi another hostname) and port. **Save and connect** restarts the remote
+  on your Wi-Fi. No login here: it's your phone on the remote's own network.
+- A remote that was set up but can't join its Wi-Fi any more (a new router, a
+  changed password) shows **Wi-Fi setup** on its splash once it says "Can't
+  join" or "Can't find". The same network and page come up; meanwhile, while no
+  phone is joined, it keeps trying the saved Wi-Fi and closes Wi-Fi setup if
+  that comes back (a router restarting). **Cancel**, or 10 minutes with no
+  phone, also closes it.
 
 **Splash screen**
 
@@ -193,12 +212,13 @@ slicer and slice it again.
 You need [PlatformIO](https://platformio.org/) (the VS Code extension or
 `pip install platformio`) and a MetarMap2 map on your network.
 
-1. Copy `include/secrets.example.h` to `include/secrets.h` and fill it in:
-   your Wi-Fi network and password, and the map's address and port
+1. Optional: copy `include/secrets.example.h` to `include/secrets.h` and fill
+   it in: your Wi-Fi network and password, and the map's address and port
    (`metarmap.local` or its IP; port `80` unless you changed
    `web_server.port`). `secrets.h` is git-ignored. The remote saves these in
-   its flash when it starts, so they stay through firmware updates, which
-   don't have them; flash again with a changed `secrets.h` to change them.
+   its flash the first time it starts with them, so they stay through firmware
+   updates, which don't have them. Without `secrets.h`, the remote starts in
+   **Wi-Fi setup** (above) and you set it up from your phone.
 2. Connect the board by USB-C. It shows up as a serial port
    (`/dev/cu.usbmodem*` on macOS); no driver is needed.
 3. Build and flash:
@@ -227,6 +247,11 @@ remote trusts just the root certificates GitHub's API and downloads use
 (`src/github_roots.h`), and checks each download against the SHA-256 GitHub
 gives for it before switching to it. The published firmware has no Wi-Fi
 settings in it.
+
+The Wi-Fi setup network is open and its page has no login, as anyone setting it
+up has to be at the remote: it comes up only on a remote that isn't set up yet,
+or from a tap on the remote's own screen, and closes after 10 minutes with
+nobody joined.
 
 ## How it works
 
@@ -264,6 +289,8 @@ for the endpoints.
 | `src/remote_web.cpp`, `src/remote_web_page.h` | The remote's own web page: settings, firmware, the log, screenshots |
 | `src/log.cpp`, `src/log_ring.cpp` | Logging to serial and the last 32 KB kept for the web page |
 | `src/png.cpp` | Screenshots as PNG (compressed by the ESP32-S3 ROM's deflate on the board) |
+| `src/wifi_setup.cpp`, `src/remote_setup_page.h` | Wi-Fi setup: the remote's own network, the captive portal, the setup page |
+| `src/wifi_setup_text.cpp` | Wi-Fi setup's network name, QR code text and network list |
 | `src/ui.cpp` | The screens (LVGL) |
 | `src/map_client.cpp` | Polling the map and sending controls, on its own task |
 | `src/map_parse.cpp` | The API's JSON into `MapLive` and `MapStatus` |
@@ -340,7 +367,7 @@ At 115200 baud the console logs the version, the connection and each control
 sent, and the update checks. It also takes one-letter commands: `1` and `2`
 open the LEDs and Airports panels, `3` shows the splash screen, `4` the
 update screen, `5` the visualizer picker, `6` the brightness sheet, `7` the
-card of the Airports page's first airport, `H` logs the free memory, and `S` sends a screenshot, which
+card of the Airports page's first airport, `H` logs the free memory, `W` starts Wi-Fi setup, and `S` sends a screenshot, which
 `tools/screenshot.py` saves as a PNG (it needs pyserial):
 
 ```sh

@@ -15,6 +15,7 @@
 #include "stream.h"
 #include "ui.h"
 #include "updater.h"
+#include "wifi_setup.h"
 
 volatile bool g_serialBusy = false;
 
@@ -44,23 +45,30 @@ void setup() {
 
   WiFi.mode(WIFI_STA);
   WiFi.setHostname("metarmap-remote");
-  WiFi.setAutoReconnect(true);
-  WiFi.begin(settings.wifiName.c_str(), settings.wifiPassword.c_str());
+  wifi_setup_begin(settings);
+  if (settings.wifiName == kSetupSsid) {
+    wifi_setup_start(SetupReason::Fresh);  // not set up yet: its own network, for a phone to set it up
+  } else {
+    WiFi.setAutoReconnect(true);
+    WiFi.begin(settings.wifiName.c_str(), settings.wifiPassword.c_str());
+  }
 
   mapClient.begin(settings.mapHost.c_str(), settings.mapPort);
   updater.begin(settings);
-  remote_web_begin(updater, settings);  // starts once Wi-Fi is up
+  remote_web_begin(updater, settings);  // starts once Wi-Fi is up, or config mode is on
 }
 
 void loop() {
   lv_timer_handler();
   ui_tick();
+  wifi_setup_tick();
   remote_web_tick();
 
   // Serial console: "S" sends a screenshot (tools/screenshot.py); "1" and
   // "2" open the LEDs and Airports panels; "3" shows the splash screen,
   // "4" the update screen, "5" the visualizer picker, "6" the brightness
-  // sheet and "7" an airport's card; "H" logs the free memory.
+  // sheet and "7" an airport's card; "H" logs the free memory; "W" starts
+  // Wi-Fi config mode (as the splash's Wi-Fi setup button does).
   if (Serial.available()) {
     int c = Serial.read();
     if (c == 'S') {
@@ -75,6 +83,8 @@ void loop() {
       ui_show_update();
     } else if (c >= '5' && c <= '7') {
       ui_open("pbc"[c - '5']);
+    } else if (c == 'W') {
+      wifi_setup_start(SetupReason::Lost);
     } else if (c == 'H') {  // the memory left: internal RAM is what TLS (update checks) and Wi-Fi need
       LOGF("heap: internal free %u, largest block %u, min ever %u; PSRAM free %u\n",
            (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),

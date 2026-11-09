@@ -3,6 +3,7 @@
 #include <Preferences.h>
 
 #include "log.h"
+#include "wifi_setup_text.h"
 
 #if __has_include("secrets.h")
 #include "secrets.h"
@@ -51,9 +52,9 @@ Settings settings_load() {
   }
 #endif
   Settings s;
-  s.wifiName = getString(p, "wifi_name", "");
+  s.wifiName = getString(p, "wifi_name", kSetupSsid);  // nothing set up yet: Wi-Fi config mode
   s.wifiPassword = getString(p, "wifi_pass", "");
-  s.mapHost = getString(p, "map_host", "");
+  s.mapHost = getString(p, "map_host", "metarmap.local");  // the installer's usual hostname
   s.mapPort = p.getUShort("map_port", 80);
   s.updateChannel = getString(p, "upd_channel", s.updateChannel);
   s.updateBranch = getString(p, "upd_branch", s.updateBranch);
@@ -62,7 +63,7 @@ Settings settings_load() {
   s.webPassword = getString(p, "web_pass", kDefaultWebPassword);
   p.remove("speech_server");  // a prototype's own speech server: spoken METARs come from the map now
   p.end();
-  if (s.wifiName.empty()) LOGF("settings: no Wi-Fi network saved; flash a build with include/secrets.h\n");
+  if (s.wifiName.empty()) s.wifiName = kSetupSsid;
   return s;
 }
 
