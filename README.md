@@ -108,25 +108,6 @@ buttons: **LEDs**, **Airports**, and the **logo**.
   the installed one), **Latest commit** (the newest commit of `main`) and
   **Branch** (the newest commit of the branch you pick). The choice is saved.
 
-**Radio (a prototype)**
-
-- The remote can play an MP3 stream through the speaker (an airport tower's
-  feed, an internet radio station) from `STREAM_URL` in `secrets.h`. **For now
-  nothing starts it**: its controls were on a web page on the remote, which is
-  gone until it comes back for settings. The spoken METARs use the same player.
-- The stream must be `http://` or `https://` and **MP3** (not AAC or Ogg). It
-  follows up to three redirects. `https://` works without checking the
-  certificate: the audio isn't secret and the remote sends nothing but the
-  request. If the connection drops it tries again every few seconds.
-- The speaker is a single small one, so this suits voice better than music.
-  The codec is set up for 16 kHz only, so the stream is decoded
-  ([minimp3](https://github.com/lieff/minimp3), public domain, in
-  `src/third_party/`) and resampled to that, mixed down to mono.
-- Two tasks on core 0: one reads the network into a 192 KB buffer in PSRAM,
-  the other decodes and writes to I2S. Playing starts once 16 KB (or, for a
-  slow stream, 4 s of what it has) is buffered, and the speaker is quiet while
-  it refills after a dropout. The touch tick isn't played while audio is on.
-
 **Volume**
 
 - While the speaker plays, the airport's card has a volume slider above its
@@ -136,7 +117,7 @@ buttons: **LEDs**, **Airports**, and the **logo**.
 **Spoken weather**
 
 - **AWOS** on an airport's card reads its METAR through the speaker, as an AWOS
-  reads it. It stops the Radio and plays once, the card saying "Getting the
+  reads it. It plays once, the card saying "Getting the
   AWOS..." and then "Playing the AWOS".
 - AWOS and ATIS work only while the map can speak (`/api/live`'s `speech`); with
   speech off at the map, or no server set, they're dimmed. They follow the map
@@ -218,7 +199,6 @@ You need [PlatformIO](https://platformio.org/) (the VS Code extension or
    `web_server.port`). `secrets.h` is git-ignored. The remote saves these in
    its flash when it starts, so they stay through firmware updates, which
    don't have them; flash again with a changed `secrets.h` to change them.
-   A `STREAM_URL` for the Radio is optional (see above).
 2. Connect the board by USB-C. It shows up as a serial port
    (`/dev/cu.usbmodem*` on macOS); no driver is needed.
 3. Build and flash:
@@ -292,8 +272,8 @@ for the endpoints.
 | `src/map_state.h` | The map's state as the remote knows it |
 | `src/lvgl_port.cpp` | Display and touch for LVGL, screenshots |
 | `src/audio.cpp` | The codec, the touch tick and the I2S output |
-| `src/stream.cpp` | The Radio: reading an MP3 stream and playing it, on two tasks |
-| `src/stream_dsp.cpp` | The stream's ring buffer, resampler and URL parsing |
+| `src/stream.cpp` | The speaker's player: the spoken weather from the map, on two tasks |
+| `src/stream_dsp.cpp` | The player's ring buffer, resampler and URL parsing |
 | `src/third_party/minimp3.h` | The MP3 decoder (public domain); one marked change: its scratch can live in PSRAM |
 | `src/updater.cpp` | Checking GitHub and installing firmware, on its own task |
 | `src/update_check.cpp` | GitHub's release JSON, versions, what's an update |
@@ -311,7 +291,7 @@ The firmware uses the Arduino framework with [LVGL](https://lvgl.io/) 9,
 
 ### Tests and lint
 
-The parsing, legend, paging, update-check and audio-stream (buffer, resampler, URL) code is plain C++ with unit tests that
+The parsing, legend, paging, update-check and audio (buffer, resampler, URL) code is plain C++ with unit tests that
 run on your computer (PlatformIO's Unity framework). The JSON fixtures in
 `test/test_parse` are real, trimmed answers from a map.
 
