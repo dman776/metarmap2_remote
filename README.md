@@ -65,9 +65,10 @@ buttons: **LEDs**, **Airports**, and the **logo**.
 **Web page**
 
 - The remote serves its own page at **http://metarmap-remote.local/** (or its
-  IP, which the logo's splash shows as "Settings: http://..."). The first visit
-  asks you to choose a password (or set `WEB_PASSWORD` in `secrets.h`); after
-  that you log in as **admin**.
+  IP, which the logo's splash shows as "Settings: http://..."). Log in as
+  **metar** with the password **map**, the same defaults as the map's own web
+  UI, and change the password on the page (or set `WEB_PASSWORD` in
+  `secrets.h`). The page says so while it's still `map`.
 - **Screen**: the remote's screen as a PNG, refreshed on demand or live (about
   once a second), and **Download PNG**.
 - **Firmware**: the installed and available versions, the update channel and

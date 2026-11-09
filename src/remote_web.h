@@ -1,6 +1,6 @@
 // The remote's own web page, http://metarmap-remote.local/ (or its IP): its settings (Wi-Fi, the map's address,
-// the update channel), firmware updates, the log, and screenshots. Behind a login (user "admin", the password set
-// in secrets.h WEB_PASSWORD or on the page's first visit).
+// the update channel), firmware updates, the log, and screenshots. Behind a login: user metar, password map until
+// it's changed (on the page, or WEB_PASSWORD in secrets.h), the same as the map's own web UI.
 //
 //   GET  /                     the page
 //   GET  /api/state            {version, ip, wifiName, mapHost, mapPort, update: {...}}
@@ -8,7 +8,7 @@
 //   POST /api/channel          channel (releases, latest, branch), branch
 //   POST /api/check            check GitHub now
 //   POST /api/install          install the available firmware
-//   POST /api/password         password (at least 6 characters); open without a login while none is set
+//   POST /api/password         password (3 to 64 characters)
 //   GET  /screen.png           the screen now (?download=1: as a file)
 //   GET  /log?from=N           the kept log after position N; X-Log-End: the position to ask from next
 //   GET  /log.txt              all of the kept log, as a file

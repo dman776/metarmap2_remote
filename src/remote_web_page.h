@@ -37,14 +37,6 @@ dl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:0}dt{color:va
 <header><h1>MetarMap2 Remote</h1><span class="v" id="version"></span></header>
 <main>
 
-<section id="setup" class="wide" hidden>
-<h2>Choose a password</h2>
-<p>The remote's web page needs a password before it shows anything. You'll log in as <b>admin</b> with it.</p>
-<form id="setupForm"><label for="p1">Password (6 or more characters)</label><input id="p1" type="password" autocomplete="new-password" required minlength="6">
-<label for="p2">Again</label><input id="p2" type="password" autocomplete="new-password" required minlength="6">
-<button class="primary">Save password</button><p class="note" id="setupMsg"></p></form>
-</section>
-
 <section class="wide app" hidden>
 <h2>Screen</h2>
 <img class="screen" id="screen" alt="The remote's screen">
@@ -73,8 +65,9 @@ dl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:0}dt{color:va
 <button class="primary">Save and restart</button>
 <p class="note" id="connMsg">The remote restarts to use them. If it can't join the new network, flash it over USB with include/secrets.h.</p>
 </form>
-<form id="pwForm"><label for="pw1">New web password</label><input id="pw1" type="password" autocomplete="new-password" minlength="6">
-<label for="pw2">Again</label><input id="pw2" type="password" autocomplete="new-password" minlength="6">
+<form id="pwForm"><label for="pw1">New web password (user metar)</label><input id="pw1" type="password" autocomplete="new-password" minlength="3">
+<label for="pw2">Again</label><input id="pw2" type="password" autocomplete="new-password" minlength="3">
+<p class="note err" id="pwDefault" hidden>The password is still the default (map), as on the map's own web UI.</p>
 <button>Change password</button><p class="note" id="pwMsg"></p></form>
 </section>
 
@@ -106,9 +99,8 @@ async function poll() {
     if (!r.ok) throw new Error(r.status);
     const s = await r.json();
     offline = false;
-    if (s.needsPassword) { $('#setup').hidden = false; document.querySelectorAll('.app').forEach(e => e.hidden = true); return; }
-    $('#setup').hidden = true;
     document.querySelectorAll('.app').forEach(e => e.hidden = false);
+    $('#pwDefault').hidden = !s.defaultPassword;
     $('#version').textContent = s.version + ' · ' + s.ip;
     $('#installed').textContent = s.version;
     $('#uptime').textContent = dur(s.uptime);
@@ -177,10 +169,6 @@ async function setPassword(a, b, msg) {
   catch (e) { say(msg, e.message, true); return false; }
 }
 $('#pwForm').onsubmit = async ev => { ev.preventDefault(); await setPassword($('#pw1'), $('#pw2'), $('#pwMsg')); };
-$('#setupForm').onsubmit = async ev => {
-  ev.preventDefault();
-  if (await setPassword($('#p1'), $('#p2'), $('#setupMsg'))) setTimeout(() => location.reload(), 800);
-};
 
 // ---- the screen: one now, or live (the next as soon as one has arrived) ----
 let liveTimer = null;

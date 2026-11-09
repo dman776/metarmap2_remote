@@ -59,7 +59,7 @@ Settings settings_load() {
   s.updateBranch = getString(p, "upd_branch", s.updateBranch);
   s.streamUrl = getString(p, "stream_url", "");
   s.volume = p.getUChar("volume", s.volume);
-  s.webPassword = getString(p, "web_pass", "");
+  s.webPassword = getString(p, "web_pass", kDefaultWebPassword);
   p.remove("speech_server");  // a prototype's own speech server: spoken METARs come from the map now
   p.end();
   if (s.wifiName.empty()) LOGF("settings: no Wi-Fi network saved; flash a build with include/secrets.h\n");

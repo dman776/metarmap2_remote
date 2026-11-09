@@ -8,8 +8,8 @@
 #define MAP_HOST "metarmap.local"
 #define MAP_PORT 80
 
-// Optional: the password for the remote's web page (http://metarmap-remote.local/, user "admin"). Without it, the
-// page asks you to choose one the first time it's opened. Either way, it can be changed on the page.
+// Optional: the password for the remote's web page (http://metarmap-remote.local/, user "metar"). Without it, the
+// password is "map", as on the map's own web UI, until it's changed on the page.
 // #define WEB_PASSWORD "choose-one"
 
 // Optional, a prototype: an MP3 stream for the Radio (an airport tower's feed),

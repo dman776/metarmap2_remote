@@ -21,7 +21,7 @@
 
 namespace {
 
-constexpr const char* kUser = "admin";
+constexpr const char* kUser = "metar";  // as the map's own web UI
 constexpr const char* kRealm = "MetarMap2 Remote";
 constexpr uint32_t kRestartAfterMs = 1500;  // after saving the connection: time for the answer to get out
 
@@ -61,12 +61,8 @@ std::vector<uint8_t> romDeflate(const std::vector<uint8_t>& raw) {
   return out;
 }
 
-// A login: the password, once there is one. Without one, only the page and setting it are open.
+// The login: user metar, the password (map until it's changed, as the map's own web UI)
 bool allowed() {
-  if (settings->webPassword.empty()) {
-    server.send(403, "text/plain", "Choose a password for the remote's web page first.");
-    return false;
-  }
   if (server.authenticate(kUser, settings->webPassword.c_str())) return true;
   server.requestAuthentication(BASIC_AUTH, kRealm);
   return false;
@@ -86,21 +82,11 @@ void sendJson(JsonDocument& doc) {
 }
 
 void onPage() {
-  // With a password: the login first. Without: the page, which asks for one.
-  if (!settings->webPassword.empty() && !server.authenticate(kUser, settings->webPassword.c_str())) {
-    server.requestAuthentication(BASIC_AUTH, kRealm);
-    return;
-  }
+  if (!allowed()) return;
   server.send_P(200, "text/html", kRemoteWebPage);
 }
 
 void onState() {
-  if (settings->webPassword.empty()) {  // the page asks for a password before anything else
-    JsonDocument doc;
-    doc["needsPassword"] = true;
-    sendJson(doc);
-    return;
-  }
   if (!allowed()) return;
   static UpdateState st;
   static uint32_t rev = 0;
@@ -112,6 +98,7 @@ void onState() {
   doc["mapHost"] = settings->mapHost;
   doc["mapPort"] = settings->mapPort;
   doc["uptime"] = millis() / 1000;
+  doc["defaultPassword"] = settings->webPassword == kDefaultWebPassword;
   JsonObject u = doc["update"].to<JsonObject>();
   u["phase"] = phaseName(st.phase);
   u["channel"] = update::channelName(st.channel);
@@ -179,17 +166,16 @@ void onInstall() {
 }
 
 void onPassword() {
-  // Open while there's none (the first visit); after that it needs the current one (the login).
-  if (!settings->webPassword.empty() && !allowed()) return;
+  if (!allowed()) return;
   std::string password = server.hasArg("password") ? server.arg("password").c_str() : "";
-  if (password.size() < 6 || password.size() > 64) {
-    server.send(400, "text/plain", "The password needs 6 to 64 characters.");
+  if (password.size() < 3 || password.size() > 64) {
+    server.send(400, "text/plain", "The password needs 3 to 64 characters.");
     return;
   }
   settings->webPassword = password;
   settings_save_web_password(password);
   LOGF("web: password set\n");
-  server.send(200, "text/plain", "Saved. Log in as admin with the new password.");
+  server.send(200, "text/plain", "Saved. Log in as metar with the new password.");
 }
 
 void onScreen() {
@@ -242,8 +228,7 @@ void start() {
   if (MDNS.begin("metarmap-remote")) MDNS.addService("http", "tcp", 80);
   address = "http://" + std::string(WiFi.localIP().toString().c_str()) + "/";
   started = true;
-  LOGF("web: %s (http://metarmap-remote.local/)%s\n", address.c_str(),
-       settings->webPassword.empty() ? "; choose a password there" : "");
+  LOGF("web: %s (http://metarmap-remote.local/)\n", address.c_str());
 }
 
 }  // namespace
