@@ -8,6 +8,9 @@
 #include <cstdint>
 #include <string>
 
+// The web page's password until it's changed: the map's own default (metarmap2 settings.py web_server)
+constexpr const char* kDefaultWebPassword = "map";
+
 struct Settings {
   std::string wifiName;
   std::string wifiPassword;
@@ -17,6 +20,7 @@ struct Settings {
   std::string updateBranch;                // "" until one is picked
   std::string streamUrl;                   // the MP3 stream the Radio plays; "" for none
   int volume = 63;                         // the speaker's, 0-100 (%): the volume slider while audio plays
+  std::string webPassword;                 // the web page's login password (user metar); map until it's changed
 };
 
 // The saved settings, after saving secrets.h's if this build has them.
@@ -30,3 +34,9 @@ void settings_save_volume(int volume);
 
 // Saves the update channel and branch.
 void settings_save_update(const Settings& settings);
+
+// Saves the Wi-Fi network and password, and the map's address and port (the web page; used after a restart).
+void settings_save_connection(const Settings& settings);
+
+// Saves the web page's login password.
+void settings_save_web_password(const std::string& password);

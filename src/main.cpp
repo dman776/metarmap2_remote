@@ -10,6 +10,7 @@
 #include "log.h"
 #include "lvgl_port.h"
 #include "map_client.h"
+#include "remote_web.h"
 #include "settings.h"
 #include "stream.h"
 #include "ui.h"
@@ -24,6 +25,7 @@ static Settings settings;  // read once at startup; the clients keep pointers in
 
 void setup() {
   Serial.begin(115200);
+  log_begin();  // the log the web page shows
   LOGF("MetarMap2 Remote %s\n", FIRMWARE_VERSION);
 
   settings = settings_load();  // Wi-Fi and map: from secrets.h, else as saved
@@ -47,11 +49,13 @@ void setup() {
 
   mapClient.begin(settings.mapHost.c_str(), settings.mapPort);
   updater.begin(settings);
+  remote_web_begin(updater, settings);  // starts once Wi-Fi is up
 }
 
 void loop() {
   lv_timer_handler();
   ui_tick();
+  remote_web_tick();
 
   // Serial console: "S" sends a screenshot (tools/screenshot.py); "1" and
   // "2" open the LEDs and Airports panels; "3" shows the splash screen,

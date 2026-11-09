@@ -80,3 +80,10 @@ void lvgl_port_screenshot() {
   Serial.print("\nEND\n");
   Serial.flush();
 }
+
+void lvgl_port_capture(std::vector<uint16_t>& pixels, int& w, int& h) {
+  w = g_lcd->width();
+  h = g_lcd->height();
+  pixels.resize((size_t)w * h);  // 150 KB: in PSRAM
+  for (int y = 0; y < h; y++) g_lcd->readRect(0, y, w, 1, (lgfx::rgb565_t*)&pixels[(size_t)y * w]);
+}

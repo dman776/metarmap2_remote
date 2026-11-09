@@ -62,6 +62,26 @@ buttons: **LEDs**, **Airports**, and the **logo**.
   buttons: **Close**, and **Firmware** (**Update v...** when there's one), the
   firmware update screen. It closes on its own after 30 s.
 
+**Web page**
+
+- The remote serves its own page at **http://metarmap-remote.local/** (or its
+  IP, which the logo's splash shows as "Settings: http://..."). Log in as
+  **metar** with the password **map**, the same defaults as the map's own web
+  UI, and change the password on the page (or set `WEB_PASSWORD` in
+  `secrets.h`). The page says so while it's still `map`.
+- **Screen**: the remote's screen as a PNG, refreshed on demand or live (about
+  once a second), and **Download PNG**.
+- **Firmware**: the installed and available versions, the update channel and
+  branch, **Check now** and **Install**, with its progress.
+- **Settings**: the Wi-Fi network and password, and the map's address and port;
+  saving restarts the remote with them. If it can't join the new network, flash
+  it over USB with `include/secrets.h`. A USB build's `secrets.h` applies only
+  when it changes, so what you save on the page stays.
+- **Log**: the last 32 KB of the remote's log (what the serial console shows,
+  each line with the seconds since startup), following new lines as they come,
+  and **Download**.
+- Live control of the map stays on the touchscreen and the map's own pages.
+
 **Splash screen**
 
 - At startup: the MetarMap2 logo, the metarmap2 repo, the remote's firmware
@@ -261,6 +281,9 @@ for the endpoints.
 | File | What it does |
 |---|---|
 | `src/main.cpp` | Setup, Wi-Fi, the main loop, serial commands |
+| `src/remote_web.cpp`, `src/remote_web_page.h` | The remote's own web page: settings, firmware, the log, screenshots |
+| `src/log.cpp`, `src/log_ring.cpp` | Logging to serial and the last 32 KB kept for the web page |
+| `src/png.cpp` | Screenshots as PNG (compressed by the ESP32-S3 ROM's deflate on the board) |
 | `src/ui.cpp` | The screens (LVGL) |
 | `src/map_client.cpp` | Polling the map and sending controls, on its own task |
 | `src/map_parse.cpp` | The API's JSON into `MapLive` and `MapStatus` |
@@ -337,7 +360,7 @@ At 115200 baud the console logs the version, the connection and each control
 sent, and the update checks. It also takes one-letter commands: `1` and `2`
 open the LEDs and Airports panels, `3` shows the splash screen, `4` the
 update screen, `5` the visualizer picker, `6` the brightness sheet, `7` the
-card of the Airports page's first airport, and `S` sends a screenshot, which
+card of the Airports page's first airport, `H` logs the free memory, and `S` sends a screenshot, which
 `tools/screenshot.py` saves as a PNG (it needs pyserial):
 
 ```sh

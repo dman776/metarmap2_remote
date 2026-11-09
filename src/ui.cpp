@@ -17,6 +17,7 @@
 #include "map_client.h"
 #include "map_parse.h"
 #include "pages.h"
+#include "remote_web.h"
 #include "stream.h"
 #include "updater.h"
 
@@ -1371,6 +1372,7 @@ enum class SplashMode {
 lv_obj_t* splash = nullptr;
 SplashMode splashMode = SplashMode::Startup;
 lv_obj_t *wifiStep, *wifiState, *mapState, *mapVersion, *mapAddress, *updButtonSplash, *updLabelSplash;
+lv_obj_t* repoLabel;  // the repo; on the logo's splash, the remote's web page once it's up
 uint32_t splashStart = 0;
 uint32_t connectedAt = 0;
 
@@ -1441,7 +1443,7 @@ void showSplash(SplashMode mode) {
     lv_image_set_inner_align(img, LV_IMAGE_ALIGN_CENTER);
   }
   label(splash, "MetarMap2", &lv_font_montserrat_28, kText);
-  label(splash, kRepo, &lv_font_montserrat_12, kMuted);
+  repoLabel = label(splash, kRepo, &lv_font_montserrat_12, kMuted);
   std::string version = std::string("Remote ") + FIRMWARE_VERSION;
   label(splash, version.c_str(), &lv_font_montserrat_12, kMuted);
   mapVersion = label(splash, "Map ...", &lv_font_montserrat_12, kMuted);  // once the map answers
@@ -1507,6 +1509,7 @@ void tickSplash() {
   if (splashMode == SplashMode::OnDemand) {
     const char* host = status.ip.length() ? status.ip.c_str() : client->host();
     setText(mapAddress, std::string("Map at ") + host + (conn.online ? "" : " - not answering"));
+    if (*remote_web_address()) setText(repoLabel, std::string("Settings: ") + remote_web_address());
     lv_obj_set_style_text_color(mapAddress, hex(conn.online ? kMuted : 0xff8a8a), 0);
     if (millis() - splashStart >= kSplashShowMs) hideSplash();
     return;

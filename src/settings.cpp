@@ -26,11 +26,22 @@ Settings settings_load() {
   Preferences p;
   p.begin(kNamespace, false);
 #ifdef WIFI_SSID
-  // A build from your computer: its secrets.h is the newest word.
-  putString(p, "wifi_name", WIFI_SSID);
-  putString(p, "wifi_pass", WIFI_PASSWORD);
-  putString(p, "map_host", MAP_HOST);
-  if (p.getUShort("map_port", 0) != MAP_PORT) p.putUShort("map_port", MAP_PORT);
+  // A build from your computer: its secrets.h is the newest word, the first time it starts with them. After that
+  // what's saved on the web page stays, until secrets.h changes.
+  std::string seed = std::string(WIFI_SSID) + "\n" + WIFI_PASSWORD + "\n" + MAP_HOST + "\n" + std::to_string(MAP_PORT);
+  if (getString(p, "conn_seed", "\x01") != seed) {
+    putString(p, "conn_seed", seed);
+    putString(p, "wifi_name", WIFI_SSID);
+    putString(p, "wifi_pass", WIFI_PASSWORD);
+    putString(p, "map_host", MAP_HOST);
+    if (p.getUShort("map_port", 0) != MAP_PORT) p.putUShort("map_port", MAP_PORT);
+  }
+#endif
+#ifdef WEB_PASSWORD
+  if (getString(p, "web_seed", "\x01") != WEB_PASSWORD) {  // the same: once, then the web page's
+    putString(p, "web_seed", WEB_PASSWORD);
+    putString(p, "web_pass", WEB_PASSWORD);
+  }
 #endif
 #ifdef STREAM_URL
   // Only when this build's URL is new: one sent over the network (stream_url) otherwise stays through restarts.
@@ -48,6 +59,7 @@ Settings settings_load() {
   s.updateBranch = getString(p, "upd_branch", s.updateBranch);
   s.streamUrl = getString(p, "stream_url", "");
   s.volume = p.getUChar("volume", s.volume);
+  s.webPassword = getString(p, "web_pass", kDefaultWebPassword);
   p.remove("speech_server");  // a prototype's own speech server: spoken METARs come from the map now
   p.end();
   if (s.wifiName.empty()) LOGF("settings: no Wi-Fi network saved; flash a build with include/secrets.h\n");
@@ -73,5 +85,22 @@ void settings_save_update(const Settings& s) {
   p.begin(kNamespace, false);
   putString(p, "upd_channel", s.updateChannel);
   putString(p, "upd_branch", s.updateBranch);
+  p.end();
+}
+
+void settings_save_connection(const Settings& s) {
+  Preferences p;
+  p.begin(kNamespace, false);
+  putString(p, "wifi_name", s.wifiName);
+  putString(p, "wifi_pass", s.wifiPassword);
+  putString(p, "map_host", s.mapHost);
+  if (p.getUShort("map_port", 0) != s.mapPort) p.putUShort("map_port", s.mapPort);
+  p.end();
+}
+
+void settings_save_web_password(const std::string& password) {
+  Preferences p;
+  p.begin(kNamespace, false);
+  putString(p, "web_pass", password);
   p.end();
 }
