@@ -20,6 +20,7 @@
 #include "remote_web.h"
 #include "stream.h"
 #include "updater.h"
+#include "wifi_setup.h"
 
 extern "C" const lv_image_dsc_t logo;       // logo.c, from assets/logo.svg
 extern "C" const lv_image_dsc_t star_icon;  // star_icon.c, from assets/star.svg
@@ -1373,6 +1374,8 @@ lv_obj_t* splash = nullptr;
 SplashMode splashMode = SplashMode::Startup;
 lv_obj_t *wifiStep, *wifiState, *mapState, *mapVersion, *mapAddress, *updButtonSplash, *updLabelSplash;
 lv_obj_t* repoLabel;  // the repo; on the logo's splash, the remote's web page once it's up
+lv_obj_t* splashLogo = nullptr;
+lv_obj_t* wifiSetupBtn = nullptr;  // once the remote can't join its Wi-Fi: Wi-Fi config mode
 uint32_t splashStart = 0;
 uint32_t connectedAt = 0;
 
@@ -1406,6 +1409,8 @@ void forgetSplash() {
   splash = nullptr;
   updButtonSplash = nullptr;
   updLabelSplash = nullptr;
+  splashLogo = nullptr;
+  wifiSetupBtn = nullptr;
 }
 
 void hideSplash() {
@@ -1435,7 +1440,7 @@ void showSplash(SplashMode mode) {
   lv_obj_set_flex_align(splash, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
   lv_obj_set_style_pad_row(splash, 2, 0);
 
-  lv_obj_t* img = lv_image_create(splash);
+  lv_obj_t* img = splashLogo = lv_image_create(splash);
   lv_image_set_src(img, &logo);
   if (onDemand) {  // smaller, to make room for the buttons
     lv_image_set_scale(img, 176);
@@ -1453,6 +1458,20 @@ void showSplash(SplashMode mode) {
   wifiState = splashStep(splash, "Connecting to Wi-Fi...", &wifiStep);
   mapState =
       splashStep(splash, mode == SplashMode::Reconnect ? "Reconnecting to the map..." : "Connecting to the map...");
+
+  if (!onDemand) {  // shown once it can't join the Wi-Fi (tickSplash)
+    wifiSetupBtn = button(splash, &stBtn);
+    lv_obj_set_size(wifiSetupBtn, 180, 44);
+    lv_obj_set_style_margin_top(wifiSetupBtn, 8, 0);
+    lv_obj_set_flex_flow(wifiSetupBtn, LV_FLEX_FLOW_ROW);
+    center(wifiSetupBtn);
+    lv_obj_set_style_pad_column(wifiSetupBtn, 8, 0);
+    label(wifiSetupBtn, LV_SYMBOL_WIFI, &lv_font_montserrat_16, kAccent);
+    lv_label_set_text(lv_label_create(wifiSetupBtn), "Wi-Fi setup");
+    lv_obj_add_event_cb(
+        wifiSetupBtn, [](lv_event_t*) { wifi_setup_start(SetupReason::Lost); }, LV_EVENT_CLICKED, nullptr);
+    lv_obj_add_flag(wifiSetupBtn, LV_OBJ_FLAG_HIDDEN);
+  }
 
   if (onDemand) {
     // the connection is the dot on the logo and the address above: the steps aren't needed
@@ -1531,6 +1550,10 @@ void tickSplash() {
   } else {
     setStep(wifiState, "", kVfr);
   }
+  // Can't join: the Wi-Fi setup button, in the logo's place
+  bool stuck = !wifi && millis() - splashStart >= kWifiTimeoutMs;
+  if (wifiSetupBtn) showHidden(wifiSetupBtn, stuck);
+  if (splashLogo) showHidden(splashLogo, !stuck);
   if (conn.online) {
     setStep(mapState, "OK", kVfr);
   } else if (wifi && conn.wifi && conn.httpCode != 0) {
@@ -1545,6 +1568,103 @@ void tickSplash() {
   }
   if (!connectedAt) connectedAt = millis() ? millis() : 1;
   if (millis() - connectedAt >= kSplashHoldMs) hideSplash();
+}
+
+// ---- Wi-Fi config mode -----------------------------------------------------------------------------------------
+//
+// While the remote has its own Wi-Fi network up (wifi_setup.h): how to join it from a phone (a QR code to scan) and
+// what's happening. Cancel goes back to trying the saved network (not on a fresh remote: it has none).
+
+lv_obj_t* setupScr = nullptr;
+lv_obj_t* setupStatus = nullptr;
+
+void setupStep(lv_obj_t* parent, const char* text, const lv_font_t* font, uint32_t color) {
+  lv_obj_t* l = label(parent, text, font, color);
+  lv_obj_set_width(l, LV_PCT(100));
+  lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
+}
+
+void showSetupScreen() {
+  bool fromSplash = splash != nullptr;
+  setupScr = lv_obj_create(nullptr);
+  lv_obj_remove_style_all(setupScr);
+  lv_obj_set_style_bg_color(setupScr, hex(kBg), 0);
+  lv_obj_set_style_bg_opa(setupScr, LV_OPA_COVER, 0);
+  lv_obj_set_flex_flow(setupScr, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_style_pad_all(setupScr, 10, 0);
+  lv_obj_set_style_pad_row(setupScr, 8, 0);
+
+  lv_obj_t* head = box(setupScr, LV_FLEX_FLOW_ROW);
+  lv_obj_set_size(head, LV_PCT(100), LV_SIZE_CONTENT);
+  lv_obj_set_flex_align(head, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_column(head, 8, 0);
+  label(head, LV_SYMBOL_WIFI, &lv_font_montserrat_16, kAccent);
+  label(head, wifi_setup_fresh() ? "Set up the remote's Wi-Fi" : "Wi-Fi setup", &lv_font_montserrat_16, kText);
+
+  lv_obj_t* row = box(setupScr, LV_FLEX_FLOW_ROW);
+  lv_obj_set_size(row, LV_PCT(100), LV_SIZE_CONTENT);
+  lv_obj_set_style_pad_column(row, 10, 0);
+  std::string join = wifiQr(wifi_setup_ap_name());
+  lv_obj_t* qr = lv_qrcode_create(row);
+  lv_qrcode_set_size(qr, 104);
+  lv_qrcode_set_dark_color(qr, lv_color_black());
+  lv_qrcode_set_light_color(qr, lv_color_white());
+  lv_qrcode_update(qr, join.c_str(), join.size());
+  lv_obj_set_style_border_color(qr, lv_color_white(), 0);  // the quiet zone a camera needs around it
+  lv_obj_set_style_border_width(qr, 6, 0);
+
+  lv_obj_t* steps = box(row, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_grow(steps, 1);
+  lv_obj_set_height(steps, LV_SIZE_CONTENT);
+  lv_obj_set_style_pad_row(steps, 3, 0);
+  setupStep(steps, "1. On your phone, join", &lv_font_montserrat_12, kMuted);
+  // the network's name on one line: 14 px, or 12 if it doesn't fit beside the code
+  const std::string& ap = wifi_setup_ap_name();
+  lv_obj_update_layout(setupScr);
+  bool fits = lv_text_get_width(ap.c_str(), ap.size(), &lv_font_montserrat_14, 0) <= lv_obj_get_content_width(steps);
+  setupStep(steps, ap.c_str(), fits ? &lv_font_montserrat_14 : &lv_font_montserrat_12, kAccent);
+  setupStep(steps, "(or scan the code)", &lv_font_montserrat_12, kMuted);
+  lv_obj_t* two =
+      label(steps, "2. The setup page opens by itself, or go to\n192.168.4.1", &lv_font_montserrat_12, kMuted);
+  lv_obj_set_width(two, LV_PCT(100));
+  lv_label_set_long_mode(two, LV_LABEL_LONG_WRAP);
+  lv_obj_set_style_margin_top(two, 6, 0);
+
+  lv_obj_t* foot = box(setupScr, LV_FLEX_FLOW_ROW);
+  lv_obj_set_size(foot, LV_PCT(100), 44);
+  lv_obj_set_flex_align(foot, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_column(foot, 8, 0);
+  setupStatus = label(foot, "", &lv_font_montserrat_12, kText2);
+  lv_obj_set_flex_grow(setupStatus, 1);
+  lv_label_set_long_mode(setupStatus, LV_LABEL_LONG_WRAP);
+  if (!wifi_setup_fresh()) {
+    lv_obj_t* cancel = button(foot, &stBtn);
+    lv_obj_set_size(cancel, 96, LV_PCT(100));
+    lv_obj_center(label(cancel, "Cancel", &lv_font_montserrat_14, kText2));
+    lv_obj_add_event_cb(cancel, [](lv_event_t*) { wifi_setup_stop(); }, LV_EVENT_CLICKED, nullptr);
+  }
+
+  lv_indev_reset(nullptr, nullptr);  // the tap that opened it isn't a tap on it
+  lv_screen_load_anim(setupScr, LV_SCR_LOAD_ANIM_FADE_IN, 300, 0, fromSplash);  // a splash on screen goes for good
+  if (fromSplash) forgetSplash();
+}
+
+void tickSetupScreen() {
+  int phones = wifi_setup_phones();
+  std::string text = phones > 0           ? "A phone has joined: finish on the setup page."
+                     : wifi_setup_fresh() ? "Waiting for a phone..."
+                                          : "Waiting for a phone; still trying " + wifiName() + " meanwhile.";
+  setText(setupStatus, text);
+}
+
+// Config mode is over (it joined the saved network, Cancel, or no phone for 10 minutes): the splash takes over, and
+// the remote fades in once the map answers.
+void hideSetupScreen() {
+  lv_obj_t* old = setupScr;
+  setupScr = nullptr;
+  setupStatus = nullptr;
+  showSplash(SplashMode::Reconnect);
+  lv_obj_delete_delayed(old, 400);
 }
 
 // ---- the update screen ---------------------------------------------------------------------------------------
@@ -1753,7 +1873,7 @@ void checkMapLost() {
   if (!everOnline) return;  // still starting up: the startup splash is on it
   if (!lostSince) lostSince = millis() | 1;
   // (The logo's splash says the map isn't answering; once it's closed, this one comes.)
-  if (millis() - lostSince >= kLostMs && !splash && !updScr) {
+  if (millis() - lostSince >= kLostMs && !splash && !updScr && !setupScr) {
     LOGF("ui: the map is unreachable; reconnecting\n");
     showSplash(SplashMode::Reconnect);
   }
@@ -1822,6 +1942,10 @@ void ui_open(char what) {
 
 void ui_tick() {
   if (client->getConnection(conn, connRev)) showConnection();
+  bool setup = wifi_setup_active();
+  if (setup && !setupScr && !updScr) showSetupScreen();
+  if (!setup && setupScr) hideSetupScreen();
+  if (setupScr) tickSetupScreen();
   checkMapLost();
   tickSplash();
   if (updater->get(upd, updRev)) {

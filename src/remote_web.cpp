@@ -14,10 +14,12 @@
 #include "log.h"
 #include "lvgl_port.h"
 #include "png.h"
+#include "remote_setup_page.h"
 #include "remote_web_page.h"
 #include "settings.h"
 #include "update_check.h"
 #include "updater.h"
+#include "wifi_setup.h"
 
 namespace {
 
@@ -29,6 +31,7 @@ WebServer server(80);
 Updater* updater = nullptr;
 Settings* settings = nullptr;
 bool started = false;
+bool announced = false;  // mDNS and the address: once the remote is on the Wi-Fi
 uint32_t restartAt = 0;
 std::string address;
 
@@ -82,6 +85,10 @@ void sendJson(JsonDocument& doc) {
 }
 
 void onPage() {
+  if (wifi_setup_active()) {  // config mode: the setup page, no login (it's a phone on the remote's own network)
+    server.send_P(200, "text/html", kRemoteSetupPage);
+    return;
+  }
   if (!allowed()) return;
   server.send_P(200, "text/html", kRemoteWebPage);
 }
@@ -113,8 +120,9 @@ void onState() {
   sendJson(doc);
 }
 
-void onConnection() {
-  if (!allowed()) return;
+// Saves the Wi-Fi network and the map's address from the request, then restarts to use them. `keepPassword`: a blank
+// password keeps the saved one (the settings page); otherwise blank is an open network (the setup page).
+void saveConnection(bool keepPassword) {
   std::string name = arg("wifi_name"), host = arg("map_host"), port = arg("map_port");
   int portNum = atoi(port.c_str());
   if (name.empty() || name.size() > 32) {
@@ -129,16 +137,83 @@ void onConnection() {
     server.send(400, "text/plain", "The map's port is a number from 1 to 65535.");
     return;
   }
-  settings->wifiName = name;
-  if (server.hasArg("wifi_pass") && !server.arg("wifi_pass").isEmpty()) {  // blank: keep the one saved
-    settings->wifiPassword = server.arg("wifi_pass").c_str();
+  if (name == kSetupSsid) {
+    server.send(400, "text/plain", "That's the name a remote has before it's set up: choose your Wi-Fi network.");
+    return;
   }
+  std::string password = server.hasArg("wifi_pass") ? server.arg("wifi_pass").c_str() : "";
+  if (!password.empty() && (password.size() < 8 || password.size() > 63)) {
+    server.send(400, "text/plain", "A Wi-Fi password has 8 to 63 characters (or none, for an open network).");
+    return;
+  }
+  settings->wifiName = name;
+  if (!password.empty() || !keepPassword) settings->wifiPassword = password;
   settings->mapHost = host;
   settings->mapPort = (uint16_t)portNum;
   settings_save_connection(*settings);
   LOGF("web: connection saved (%s, map %s:%d); restarting\n", name.c_str(), host.c_str(), portNum);
   server.send(200, "text/plain", "Saved. The remote restarts to use them.");
   restartAt = millis() + kRestartAfterMs;
+}
+
+void onConnection() {
+  if (!allowed()) return;
+  saveConnection(true);
+}
+
+// ---- config mode: the setup page's network list and saving, and the captive portal ----
+
+void onSetupNetworks() {
+  if (!wifi_setup_active()) {
+    server.send(404, "text/plain", "not found");
+    return;
+  }
+  bool scanning = false;
+  std::vector<ScannedNetwork> found = wifi_setup_networks(scanning);
+  JsonDocument doc;
+  doc["apName"] = wifi_setup_ap_name();
+  doc["scanning"] = scanning;
+  doc["wifiName"] = settings->wifiName == kSetupSsid ? "" : settings->wifiName;
+  doc["mapHost"] = settings->mapHost;
+  doc["mapPort"] = settings->mapPort;
+  doc["version"] = FIRMWARE_VERSION;
+  JsonArray list = doc["networks"].to<JsonArray>();
+  for (const ScannedNetwork& n : found) {
+    JsonObject o = list.add<JsonObject>();
+    o["ssid"] = n.ssid;
+    o["rssi"] = n.rssi;
+    o["secure"] = n.secure;
+  }
+  sendJson(doc);
+}
+
+void onSetupRescan() {
+  if (!wifi_setup_active()) {
+    server.send(404, "text/plain", "not found");
+    return;
+  }
+  wifi_setup_rescan();
+  server.send(200, "text/plain", "OK");
+}
+
+void onSetupSave() {
+  if (!wifi_setup_active()) {
+    server.send(404, "text/plain", "not found");
+    return;
+  }
+  saveConnection(false);
+}
+
+// Anything else, in config mode: to the setup page. A phone joining the network asks a known address (Apple's
+// hotspot-detect.html, Android's generate_204, Windows' connecttest.txt) and, sent elsewhere, shows its "sign in to
+// network" sheet with the setup page.
+void onNotFound() {
+  if (wifi_setup_active()) {
+    server.sendHeader("Location", wifi_setup_address());
+    server.send(302, "text/plain", "");
+    return;
+  }
+  server.send(404, "text/plain", "not found");
 }
 
 void onChannel() {
@@ -223,11 +298,19 @@ void start() {
   server.on("/screen.png", HTTP_GET, onScreen);
   server.on("/log", HTTP_GET, onLog);
   server.on("/log.txt", HTTP_GET, onLogFile);
-  server.onNotFound([]() { server.send(404, "text/plain", "not found"); });
+  server.on("/setup/networks", HTTP_GET, onSetupNetworks);
+  server.on("/setup/rescan", HTTP_POST, onSetupRescan);
+  server.on("/setup/save", HTTP_POST, onSetupSave);
+  server.onNotFound(onNotFound);
   server.begin();
+  started = true;
+}
+
+// On the Wi-Fi: its name on the network, and the address the logo's splash shows
+void announce() {
   if (MDNS.begin("metarmap-remote")) MDNS.addService("http", "tcp", 80);
   address = "http://" + std::string(WiFi.localIP().toString().c_str()) + "/";
-  started = true;
+  announced = true;
   LOGF("web: %s (http://metarmap-remote.local/)\n", address.c_str());
 }
 
@@ -241,10 +324,12 @@ void remote_web_begin(Updater& u, Settings& s) {
 void remote_web_tick() {
   if (!settings) return;
   if (restartAt && (int32_t)(millis() - restartAt) >= 0) ESP.restart();
+  bool online = WiFi.status() == WL_CONNECTED;
   if (!started) {
-    if (WiFi.status() == WL_CONNECTED) start();
-    return;
+    if (!online && !wifi_setup_active()) return;
+    start();
   }
+  if (online && !announced) announce();
   server.handleClient();
 }
 

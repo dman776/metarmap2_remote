@@ -12,6 +12,10 @@
 //   GET  /screen.png           the screen now (?download=1: as a file)
 //   GET  /log?from=N           the kept log after position N; X-Log-End: the position to ask from next
 //   GET  /log.txt              all of the kept log, as a file
+//
+// In Wi-Fi config mode (wifi_setup.h), without a login: / is the setup page, GET /setup/networks the networks found
+// and what is saved, POST /setup/rescan, POST /setup/save (wifi_name, wifi_pass, map_host, map_port: saved, then a
+// restart); anything else redirects to the page (the captive portal).
 #pragma once
 
 class Updater;
