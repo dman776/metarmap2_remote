@@ -89,6 +89,10 @@ struct MapLive {
   // that doesn't say (older ones), or while a whole-strip effect runs
   bool hasLegendInUse = false;
   std::vector<std::string> legendInUse;
+  // A visualizer whose pixels step through the same steps together (Flight Category Forecast): the steps' names
+  // ("Now", "+3h", ...) and the one on now; empty and -1 for any other visualizer (or an older map)
+  std::vector<std::string> stepLabels;
+  int stepIndex = -1;
   std::vector<Station> stations;  // in LED order
   int locatePixel = -1;
   double locateAt = NAN;

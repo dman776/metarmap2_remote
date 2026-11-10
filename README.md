@@ -27,6 +27,9 @@ buttons: **Pixels**, **Airports**, and the **logo**.
 - Tap the visualizer for the **picker**: every visualizer at once, a tile each with its icon and short name
   ("Density Alt"), the running one lit; tap one to switch the Chart to it, or **Close**. Rainbow and Chase, which
   take the whole strip, have a purple border.
+- **Flight Category Forecast** steps every airport through Now, +3h, +6h and +12h, so a row of four chips under its
+  name shows which step the Chart is on, the current one lit. The row only appears for a visualizer that steps
+  (needs a Chart newer than 26.11.08); with an older one it's left out.
 - The legend, showing only the entries the Chart is showing now: if every
   airport is VFR, just VFR (plus lightning or missing reports, if any). It
   appears once the Chart has switched, never unfiltered.

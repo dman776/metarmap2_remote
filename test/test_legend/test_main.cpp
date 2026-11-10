@@ -99,6 +99,24 @@ void test_the_map_names_lightning_and_the_color_under_it() {
   TEST_ASSERT_EQUAL_STRING("2 6 ", used(inUse(f)).c_str());
 }
 
+void test_the_forecast_legend_names_its_dim_white_step() {
+  // Flight Category Forecast: the cycle through the categories is a look no color of the legend matches, so it can
+  // only be told by the map's keys; "no_forecast" is the dim white for a step with no TAF
+  Fixture f = showing(
+      {
+          {"VFR", "Green", "solid", {0x00ff00}, "VFR"},
+          {"MVFR", "Blue", "solid", {0x0000ff}, "MVFR"},
+          {"IFR", "Red", "solid", {0xff0000}, "IFR"},
+          {"LIFR", "Purple", "solid", {0xff00ff}, "LIFR"},
+          {"No forecast", "Dim white", "solid", {0x404040}, "no_forecast"},
+          {"METAR not available", "Off", "off", {}, "no_report"},
+      },
+      {led("cycle", {0x00ff00, 0x2ad400, 0xff0000, 0x404040})});
+  f.live.hasLegendInUse = true;
+  f.live.legendInUse = {"VFR", "IFR", "no_forecast"};
+  TEST_ASSERT_EQUAL_STRING("0 2 4 ", used(inUse(f)).c_str());
+}
+
 void test_an_empty_list_from_the_map_shows_the_whole_legend() {
   TEST_ASSERT_EQUAL_STRING("0 1 2 3 4 5 6 7 ", used(inUse(saying({}))).c_str());
 }
@@ -238,6 +256,7 @@ int main() {
   RUN_TEST(test_the_maps_list_is_taken_at_its_word);
   RUN_TEST(test_the_map_knows_an_estimated_category);
   RUN_TEST(test_the_map_names_lightning_and_the_color_under_it);
+  RUN_TEST(test_the_forecast_legend_names_its_dim_white_step);
   RUN_TEST(test_an_empty_list_from_the_map_shows_the_whole_legend);
   RUN_TEST(test_the_maps_list_still_waits_for_its_own_legend);
   RUN_TEST(test_an_older_map_is_still_matched_by_look);

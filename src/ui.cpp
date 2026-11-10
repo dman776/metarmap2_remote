@@ -293,6 +293,8 @@ std::vector<bool> legendInUse();
 // ---- the LEDs panel: the visualizer (◀ name ▶; the name opens the picker), its legend, Auto and LED --------------
 
 lv_obj_t *visName, *legendBox;
+constexpr int kMaxSteps = 4;
+lv_obj_t *stepRow, *stepChip[kMaxSteps];  // a stepping visualizer's steps (Flight Category Forecast), the one on lit
 lv_obj_t *autoBtn, *autoIcon, *autoLabel, *ledBtn, *ledIcon, *ledLabel;
 int shownIndex = -1;           // the visualizer on screen
 std::vector<bool> legendUsed;  // the legend entries on screen
@@ -390,6 +392,20 @@ void showLegend() {
 
 void markPicked(int index);
 
+// A stepping visualizer's steps in a row under its name, the one on now lit; the row is gone for any other
+void showSteps() {
+  size_t n = std::min<size_t>(live.stepLabels.size(), kMaxSteps);
+  bool stepping = live.valid && n > 0 && live.activeIndex == shownIndex;
+  showHidden(stepRow, stepping);
+  for (int i = 0; i < kMaxSteps; i++) {
+    bool used = stepping && i < (int)n;
+    showHidden(stepChip[i], used);
+    if (!used) continue;
+    setText(lv_obj_get_child(stepChip[i], 0), live.stepLabels[i]);
+    setChecked(stepChip[i], i == live.stepIndex);
+  }
+}
+
 void showVisualizer(int index) {
   shownIndex = index;
   bool known = index >= 0 && index < (int)status.visualizers.size();
@@ -400,6 +416,7 @@ void showVisualizer(int index) {
   lv_obj_set_style_text_font(visName, fits ? &lv_font_montserrat_16 : &lv_font_montserrat_14, 0);
   setText(visName, name);
   markPicked(index);
+  showSteps();
   // Clear the old legend; the new one shows once it can be filtered.
   if (legendInUse() != legendUsed) showLegend();
 }
@@ -523,6 +540,24 @@ void buildLedsPanel(lv_obj_t* p) {
       icon(b, step < 0 ? &icon_left : &icon_right, kText2);
       lv_obj_add_event_cb(b, onStep, LV_EVENT_CLICKED, (void*)(intptr_t)step);
     }
+  }
+
+  // a stepping visualizer's steps (Flight Category Forecast): Now, +3h, +6h, +12h; hidden for the others
+  stepRow = box(p, LV_FLEX_FLOW_ROW);
+  lv_obj_set_size(stepRow, LV_PCT(100), 24);
+  lv_obj_set_style_pad_column(stepRow, 4, 0);
+  lv_obj_add_flag(stepRow, LV_OBJ_FLAG_HIDDEN);
+  for (int i = 0; i < kMaxSteps; i++) {
+    stepChip[i] = button(stepRow, &stBtn);
+    lv_obj_add_style(stepChip[i], &stLit, LV_STATE_CHECKED);
+    lv_obj_remove_flag(stepChip[i], LV_OBJ_FLAG_CLICKABLE);  // it only says where the Chart is
+    lv_obj_set_height(stepChip[i], LV_PCT(100));
+    lv_obj_set_flex_grow(stepChip[i], 1);
+    lv_obj_set_flex_flow(stepChip[i], LV_FLEX_FLOW_COLUMN);
+    center(stepChip[i]);
+    lv_obj_t* text = lv_label_create(stepChip[i]);  // takes the chip's text color, lit or not
+    lv_label_set_text(text, "");
+    lv_obj_set_style_text_font(text, &lv_font_montserrat_12, 0);
   }
 
   // what the LEDs mean, two columns (scrolls only if a visualizer has more than fit)
@@ -1970,6 +2005,7 @@ void ui_tick() {
     showRotation();
     showBrightness();
     showStations();
+    showSteps();
     if (legendInUse() != legendUsed) showLegend();
   }
 

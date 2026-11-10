@@ -113,6 +113,25 @@ void test_live_legend_in_use() {
   TEST_ASSERT_EQUAL_STRING("no_report", live.legendInUse[1].c_str());
 }
 
+void test_live_step() {
+  // A stepping visualizer (Flight Category Forecast) says which of its steps is on; the others, and an older map, don't
+  const char* json = R"({"visualizer": {"active": 13, "name": "Flight Category Forecast",
+      "step": {"labels": ["Now", "+3h", "+6h", "+12h"], "index": 2, "prefix": "FC"}}, "leds": []})";
+  MapLive live = parseLive(filtered(json, liveFilter).as<JsonVariantConst>());
+  TEST_ASSERT_EQUAL_UINT(4, live.stepLabels.size());
+  TEST_ASSERT_EQUAL_STRING("Now", live.stepLabels[0].c_str());
+  TEST_ASSERT_EQUAL_STRING("+12h", live.stepLabels[3].c_str());
+  TEST_ASSERT_EQUAL_INT(2, live.stepIndex);
+
+  const char* other = R"({"visualizer": {"active": 0, "step": null}, "leds": []})";
+  live = parseLive(filtered(other, liveFilter).as<JsonVariantConst>());
+  TEST_ASSERT_TRUE(live.stepLabels.empty());
+  TEST_ASSERT_EQUAL_INT(-1, live.stepIndex);
+  live = parseLive(filtered(kLiveJson, liveFilter).as<JsonVariantConst>());
+  TEST_ASSERT_TRUE(live.stepLabels.empty());
+  TEST_ASSERT_EQUAL_INT(-1, live.stepIndex);
+}
+
 void test_live_without_legend_in_use() {
   // An older map doesn't send it; a whole-strip effect sends null.
   TEST_ASSERT_FALSE(parseLive(filtered(kLiveJson, liveFilter).as<JsonVariantConst>()).hasLegendInUse);
@@ -292,6 +311,7 @@ int main() {
   RUN_TEST(test_atis_lines);
   RUN_TEST(test_atis_line_at);
   RUN_TEST(test_live_legend_in_use);
+  RUN_TEST(test_live_step);
   RUN_TEST(test_live_without_legend_in_use);
   RUN_TEST(test_live_filter_drops_the_rest);
   RUN_TEST(test_status);
