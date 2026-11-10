@@ -11,7 +11,7 @@ drives pixels itself.
 
 | Pixels | Airports | An airport's card |
 |---|---|---|
-| ![The Pixels panel: the visualizer, its legend, Auto and Pixels](docs/leds.png) | ![The Airports panel: a page of airports and the page strip](docs/airports.png) | ![An airport's card: its METAR, and Locate, AWOS and ATIS](docs/card.png) |
+| ![The Pixels panel: the visualizer, its steps, its legend, Auto and Pixels](docs/leds.png) | ![The Airports panel: a page of airports and the page strip](docs/airports.png) | ![An airport's card: its METAR, and Locate, AWOS and ATIS](docs/card.png) |
 | **Brightness** | **Splash** | **Update** |
 | ![The brightness sheet](docs/brightness.png) | ![The splash screen](docs/splash.png) | ![The firmware update screen](docs/update.png) |
 
@@ -27,6 +27,9 @@ buttons: **Pixels**, **Airports**, and the **logo**.
 - Tap the visualizer for the **picker**: every visualizer at once, a tile each with its icon and short name
   ("Density Alt"), the running one lit; tap one to switch the Chart to it, or **Close**. Rainbow and Chase, which
   take the whole strip, have a purple border.
+- **Flight Category Forecast** steps every airport through Now, +3h, +6h and +12h, so a row of four chips under its
+  name shows which step the Chart is on, the current one lit. The row only appears for a visualizer that steps
+  (needs a Chart newer than 26.11.08); with an older one it's left out.
 - The legend, showing only the entries the Chart is showing now: if every
   airport is VFR, just VFR (plus lightning or missing reports, if any). It
   appears once the Chart has switched, never unfiltered.

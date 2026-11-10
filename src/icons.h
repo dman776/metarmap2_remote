@@ -23,6 +23,7 @@ extern const lv_image_dsc_t icon_sun;
 extern const lv_image_dsc_t icon_tower;
 extern const lv_image_dsc_t icon_vis_ban;
 extern const lv_image_dsc_t icon_vis_chase;
+extern const lv_image_dsc_t icon_vis_clock;
 extern const lv_image_dsc_t icon_vis_cloud;
 extern const lv_image_dsc_t icon_vis_compass;
 extern const lv_image_dsc_t icon_vis_droplet;

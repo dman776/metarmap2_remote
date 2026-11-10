@@ -28,6 +28,7 @@ void liveFilter(JsonDocument& filter) {
   v["exclusive"] = true;
   v["autoRotate"] = true;
   v["legendInUse"] = true;
+  v["step"] = true;
   JsonObject led = filter["leds"].add<JsonObject>();
   led["code"] = true;
   led["pixel"] = true;
@@ -88,6 +89,10 @@ MapLive parseLive(JsonVariantConst doc) {
   if (v["legendInUse"].is<JsonArrayConst>()) {
     live.hasLegendInUse = true;
     for (JsonVariantConst key : v["legendInUse"].as<JsonArrayConst>()) live.legendInUse.push_back(key | "");
+  }
+  if (v["step"]["labels"].is<JsonArrayConst>()) {
+    for (JsonVariantConst label : v["step"]["labels"].as<JsonArrayConst>()) live.stepLabels.push_back(label | "");
+    live.stepIndex = v["step"]["index"] | -1;
   }
   for (JsonVariantConst led : doc["leds"].as<JsonArrayConst>()) {
     Station s;
