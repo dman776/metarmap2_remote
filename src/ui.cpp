@@ -410,10 +410,19 @@ void showVisualizer(int index) {
   shownIndex = index;
   bool known = index >= 0 && index < (int)status.visualizers.size();
   std::string name = known ? status.visualizers[index].name : "";
-  // 16 px, or 14 if it doesn't fit ("Dewpoint Spread")
-  bool fits = lv_text_get_width(name.c_str(), name.size(), &lv_font_montserrat_16, 0) <=
-              lv_obj_get_content_width(lv_obj_get_parent(visName));
-  lv_obj_set_style_text_font(visName, fits ? &lv_font_montserrat_16 : &lv_font_montserrat_14, 0);
+  lv_obj_update_layout(lv_obj_get_parent(visName));  // its width is settled before it's measured
+  int32_t room = lv_obj_get_content_width(lv_obj_get_parent(visName));
+  auto fitsIn = [&](const std::string& text, const lv_font_t* font) {
+    return lv_text_get_width(text.c_str(), text.size(), font, 0) <= room;
+  };
+  // 16 px, or 14 if it doesn't fit ("Dewpoint Spread"), or the short name if the name is too long even for that
+  // ("Flight Category Forecast" is "FC Forecast")
+  const lv_font_t* font = fitsIn(name, &lv_font_montserrat_16) ? &lv_font_montserrat_16 : &lv_font_montserrat_14;
+  if (known && !fitsIn(name, font) && !status.visualizers[index].shortName.empty()) {
+    name = status.visualizers[index].shortName;
+    font = fitsIn(name, &lv_font_montserrat_16) ? &lv_font_montserrat_16 : &lv_font_montserrat_14;
+  }
+  lv_obj_set_style_text_font(visName, font, 0);
   setText(visName, name);
   markPicked(index);
   showSteps();
