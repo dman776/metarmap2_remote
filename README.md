@@ -11,7 +11,7 @@ drives pixels itself.
 
 | Pixels | Airports | An airport's card |
 |---|---|---|
-| ![The Pixels panel: the visualizer, its legend, Auto and Pixels](docs/leds.png) | ![The Airports panel: a page of airports and the page strip](docs/airports.png) | ![An airport's card: its METAR, and Locate, AWOS and ATIS](docs/card.png) |
+| ![The Pixels panel: the visualizer, its steps, its legend, Auto and Pixels](docs/leds.png) | ![The Airports panel: a page of airports and the page strip](docs/airports.png) | ![An airport's card: its METAR, and Locate, AWOS and ATIS](docs/card.png) |
 | **Brightness** | **Splash** | **Update** |
 | ![The brightness sheet](docs/brightness.png) | ![The splash screen](docs/splash.png) | ![The firmware update screen](docs/update.png) |
 
