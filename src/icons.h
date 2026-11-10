@@ -35,6 +35,7 @@ extern const lv_image_dsc_t icon_vis_plane;
 extern const lv_image_dsc_t icon_vis_rain;
 extern const lv_image_dsc_t icon_vis_rainbow;
 extern const lv_image_dsc_t icon_vis_thermometer;
+extern const lv_image_dsc_t icon_vis_umbrella;
 extern const lv_image_dsc_t icon_vis_warning;
 extern const lv_image_dsc_t icon_vis_wind;
 
