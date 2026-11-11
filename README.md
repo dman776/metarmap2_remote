@@ -23,7 +23,8 @@ buttons: **Pixels**, **Airports**, and the **logo**.
 **Pixels**
 
 - The running visualizer, big, with ◀ and ▶ either side to step through them. It follows the Chart when something
-  else changes the visualizer (auto-rotate, the web UI, Home Assistant).
+  else changes the visualizer (auto-rotate, the web UI, Home Assistant). A name too long for the header shows its
+  short name instead ("FC Forecast").
 - Tap the visualizer for the **picker**: every visualizer at once, a tile each with its icon and short name
   ("Density Alt"), the running one lit; tap one to switch the Chart to it, or **Close**. Rainbow and Chase, which
   take the whole strip, have a purple border.
@@ -51,7 +52,8 @@ buttons: **Pixels**, **Airports**, and the **logo**.
   flight category and name, its METAR, and three big buttons: **Locate** (pulse
   it again), **AWOS** (read its METAR aloud) and **ATIS** (its real ATIS, where it
   publishes one). While one plays its button is **Stop**. Closing the card (✕, or
-  a tap beside it) stops it.
+  a tap beside it) stops it. For 2 s after a locate (opening the card, or
+  **Locate**) the card says "Pixel pulsing on the Chart", while the pixel pulses.
 - A tile also flashes, on its page, when the Chart pulses it from anywhere.
 - While Rainbow or Chase runs, the tiles are dimmed and the card says locating
   is paused.
@@ -241,8 +243,7 @@ again. The Copilot then starts in **Wi-Fi setup**: join the network it names fro
 your phone and pick your Wi-Fi (see *Wi-Fi setup*). Other options:
 `--port PORT`, `--file FILE` (a factory.bin you built), `--yes`.
 
-Releases made before v26.11.08 have no factory image, so until the next release
-use `--latest`.
+Releases from v26.11.08 on have a factory image; `install.py` skips older ones.
 
 To change the code, or build it yourself, use Setup below.
 
