@@ -180,6 +180,14 @@ Outcome findCard(const std::vector<std::string>& codes, int perPage, int shownPa
   return done();
 }
 
+Outcome checkOpenCard(bool open, int index, int count) {
+  if (!open || index < 0) return fail(409, "No airport's card is open: give airport= or position= to open one.");
+  if (index >= count) {
+    return fail(409, "The card's airport is gone from the Chart's airports: give airport= or position= to open one.");
+  }
+  return done();
+}
+
 std::string stateJson(const State& s) {
   JsonDocument doc;
   doc["remoteControl"] = s.remoteControl;

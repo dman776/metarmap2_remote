@@ -15,8 +15,9 @@ an @ (card:KHOU@card.png):
 
 A card, button:locate and visualizer: change what the Chart shows; button:awos and button:atis play on the
 Copilot's speaker. Needs "Remote control (for screenshots)" on in the Copilot's web page's Settings (this doesn't turn
-it on), and the web page's login: user metar, the password from COPILOT_PASSWORD or --password. Python 3, nothing to
-install.
+it on; it needs a web password of your own, not map), and the web page's login: user metar, the password from
+COPILOT_PASSWORD or --password. The host is the Copilot's IP address or metarmap-copilot.local: it refuses other
+names. Python 3, nothing to install.
 """
 
 import argparse
@@ -50,7 +51,10 @@ class Copilot:
 
     def request(self, path, data=None):
         body = urllib.parse.urlencode(data).encode() if data is not None else None
-        req = urllib.request.Request(self.base + path, data=body, headers=self.headers)
+        headers = dict(self.headers)
+        if body is not None:
+            headers["X-Copilot"] = "1"  # the Copilot refuses a POST without it (against other sites' pages)
+        req = urllib.request.Request(self.base + path, data=body, headers=headers)
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as r:
                 return r.read()

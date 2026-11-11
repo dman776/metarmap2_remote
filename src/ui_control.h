@@ -96,6 +96,12 @@ Outcome checkPage(int page, int pages);
 // the end (or no airports yet).
 Outcome findCard(const std::vector<std::string>& codes, int perPage, int shownPage, const CardRequest& req, int& index);
 
+// A button-only card request's card: the open one, tile `index` of `count`. 409 with none open (or the splash or the
+// update screen over it), and 409 when its airport is gone: the Airports panel's tiles are rebuilt when the Chart's
+// airports change, with the card left open, so its index can be past the end (or another airport's). Don't read
+// the tile unless this is done().
+Outcome checkOpenCard(bool open, int index, int count);
+
 // GET /api/ui/state
 struct State {
   bool remoteControl = false;

@@ -76,7 +76,7 @@ picker or let go of the splash's volume slider. Not the touch tick or the spoken
 <label class="chk"><input type="checkbox" id="remote"> Remote control (for screenshots)</label>
 <p class="note" id="remoteMsg">Lets a script with this page's login open the Copilot's screens over HTTP and take
 screenshots (tools/shoot.py). It can also switch the Chart's visualizer and press a card's Locate, AWOS and ATIS
-(the Chart pulses, the speaker talks). Off when you're done.</p>
+(the Chart pulses, the speaker talks). Needs a web password of your own, not map. Off when you're done.</p>
 <form id="pwForm"><label for="pw1">New web password (user metar)</label><input id="pw1" type="password" autocomplete="new-password" minlength="3">
 <label for="pw2">Again</label><input id="pw2" type="password" autocomplete="new-password" minlength="3">
 <p class="note err" id="pwDefault" hidden>The password is still the default (map), as on MetarMap2 Web.</p>
@@ -94,11 +94,14 @@ screenshots (tools/shoot.py). It can also switch the Chart's visualizer and pres
 <script>
 const $ = s => document.querySelector(s);
 async function post(url, data) {
-  const r = await fetch(url, {method: 'POST', body: new URLSearchParams(data)});
+  // X-Copilot: the Copilot refuses a POST without it (another site's page can't send it)
+  const r = await fetch(url, {method: 'POST', headers: {'X-Copilot': '1'}, body: new URLSearchParams(data)});
   const t = await r.text();
   if (!r.ok) throw new Error(t || r.statusText);
   return t;
 }
+const REMOTE_NEEDS_PASSWORD = "Change the web password first: it's still the default (map), and remote control "
+  + 'needs your own. It does nothing until then.';
 function say(el, text, bad) { el.textContent = text; el.className = 'note' + (bad ? ' err' : ''); }
 function dur(s) { const d = Math.floor(s / 86400), h = Math.floor(s / 3600) % 24, m = Math.floor(s / 60) % 60;
   return (d ? d + 'd ' : '') + (d || h ? h + 'h ' : '') + m + 'm'; }
@@ -146,6 +149,7 @@ async function poll() {
       $('#led').value = s.led; $('#ledVal').textContent = s.led + '%';
       $('#sounds').checked = s.sounds !== false;
       $('#remote').checked = !!s.remoteControl;
+      if (s.remoteControl && s.defaultPassword) say($('#remoteMsg'), REMOTE_NEEDS_PASSWORD, true);
     }
   } catch (e) {
     if (!offline) say($('#updMsg'), "The Copilot isn't answering (restarting?). Trying again...", true);

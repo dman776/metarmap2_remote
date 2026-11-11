@@ -3,6 +3,8 @@
 #include <ArduinoJson.h>
 #include <unity.h>
 
+#include <cstring>
+
 #include "ui_control.h"
 
 using ui_control::Arg;
@@ -221,6 +223,22 @@ void test_check_page() {
   TEST_ASSERT_EQUAL(409, ui_control::checkPage(0, 3).status);
 }
 
+// A button alone, to the open card: the card's tile can have gone (the tiles rebuilt, fewer airports) with the card
+// still open, and the request mustn't read past the end
+void test_check_open_card() {
+  TEST_ASSERT_TRUE(ui_control::checkOpenCard(true, 0, 1).ok());
+  TEST_ASSERT_TRUE(ui_control::checkOpenCard(true, 11, 12).ok());
+  Outcome closed = ui_control::checkOpenCard(false, 3, 12);
+  TEST_ASSERT_EQUAL(409, closed.status);
+  TEST_ASSERT_EQUAL_STRING("No airport's card is open: give airport= or position= to open one.", closed.text.c_str());
+  TEST_ASSERT_EQUAL(409, ui_control::checkOpenCard(true, -1, 12).status);
+  Outcome gone = ui_control::checkOpenCard(true, 12, 12);  // 12 airports were 13 when it opened
+  TEST_ASSERT_EQUAL(409, gone.status);
+  TEST_ASSERT_NOT_NULL(strstr(gone.text.c_str(), "gone"));
+  TEST_ASSERT_EQUAL(409, ui_control::checkOpenCard(true, 5, 0).status);  // no airports at all now
+  TEST_ASSERT_EQUAL(409, ui_control::checkOpenCard(false, -1, 0).status);
+}
+
 void test_state_json() {
   ui_control::State s;
   s.remoteControl = true;
@@ -285,6 +303,7 @@ int main() {
   RUN_TEST(test_find_card_by_position_on_the_page_shown_or_asked);
   RUN_TEST(test_find_card_past_the_end);
   RUN_TEST(test_check_page);
+  RUN_TEST(test_check_open_card);
   RUN_TEST(test_state_json);
   RUN_TEST(test_state_json_nothing_open);
   return UNITY_END();

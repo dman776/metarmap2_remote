@@ -113,8 +113,9 @@ buttons: **Pixels**, **Airports**, and the **logo**.
   pops (the picker's, the volume slider's), off for silence (the touch tick and the spoken weather stay). Both take effect at once and stay
   through restarts and firmware updates.
 - **Remote control (for screenshots)** (off at first): lets a script with the page's login open the Copilot's
-  screens and take screenshots over HTTP (see [Screenshots over HTTP](#screenshots-over-http)). It takes effect at
-  once and stays through restarts; turn it off when you're done.
+  screens and take screenshots over HTTP (see [Screenshots over HTTP](#screenshots-over-http)). It needs a web
+  password of your own: while it's still `map` the checkbox won't turn on, and says to change the password first.
+  It takes effect at once and stays through restarts; turn it off when you're done.
 - **Log**: the last 32 KB of the Copilot's log (what the serial console shows,
   each line with the seconds since startup), following new lines as they come,
   and **Download**.
@@ -125,7 +126,8 @@ buttons: **Pixels**, **Airports**, and the **logo**.
   state), and `POST /api/connection`, `/api/channel`, `/api/check`, `/api/install`, `/api/password`, `/api/led`
   (`brightness=0`-`100`), `/api/sounds` and `/api/remote-control` (each `on=1` or `0`). With remote control on,
   also `GET /api/ui/state` and `POST /api/ui/show`, `/api/ui/card` and `/api/ui/visualizer`
-  ([Screenshots over HTTP](#screenshots-over-http)).
+  ([Screenshots over HTTP](#screenshots-over-http)). Every `POST` needs the header `X-Copilot: 1`, and the address
+  has to be the Copilot's IP or `metarmap-copilot.local` ([Network and security](#network-and-security)).
 
 **Wi-Fi setup**
 
@@ -364,10 +366,20 @@ The Copilot's own web page and its endpoints are behind its login (user `metar`;
 With **Remote control (for screenshots)** on, anyone with that login can also open its screens, switch the Chart's
 visualizer, pulse an airport's pixel and play its spoken weather; it's off until you turn it on.
 
+Other web pages open in your browser can't use that login (`src/web_guard.h`). Every `POST` to the Copilot needs
+the header `X-Copilot: 1`, which its own page and `tools/shoot.py` send and a page from another site can't (the
+Copilot never answers the CORS preflight that would allow it); without it the answer is 403. Everything behind the
+login also needs the address in the request to be the Copilot's: an IP address, or `metarmap-copilot.local` (or
+`metarmap-copilot`). Any other name gets 403, so a page that points its own name at the Copilot (DNS rebinding)
+gets nowhere; use the IP if your router gives the Copilot another name. And remote control can't be turned on, or
+used, while the password is still `map`, which anyone could guess: change the password on the web page first (a
+Copilot that had remote control on before keeps the setting, but its controls answer 403 until you do).
+
 The Wi-Fi setup network is open and its page has no login, as anyone setting it
 up has to be at the Copilot: it comes up only on a Copilot that isn't set up yet,
 or from a tap on the Copilot's own screen, and closes after 10 minutes with
-nobody joined.
+nobody joined. Its page's `POST`s send `X-Copilot: 1` too. Its address isn't checked: the setup network answers
+every name with the Copilot (that's how a phone finds the page), and anyone on it can reach the page anyway.
 
 ## How it works
 
@@ -500,7 +512,8 @@ checks or build firmware. Tag pushes always do.
 
 The Copilot's screens can be opened over its web server, by name, so a script (or Claude) can take the README's
 screenshots without touching it. It's off until you turn on **Remote control (for screenshots)** in the web page's
-Settings; turn it off again when you're done.
+Settings; turn it off again when you're done. It needs a web password of your own first: change it from `map` on
+the web page, or the checkbox won't turn on.
 
 ```sh
 export COPILOT_PASSWORD=...   # the web page's password (user metar)
@@ -513,9 +526,11 @@ python3 tools/shoot.py metarmap-copilot.local --out docs chart@leds.png airports
 after `@`): a screen (`chart` (the Pixels panel), `airports`, `splash`, `update`, `picker`, `brightness`, `volume`
 (the splash's volume slider), `close`), `airports:N` (page N), `card:KHOU`, `card:N` (the Nth airport on the page
 shown), `card:P:N` (on page P), `button:locate|awos|atis|stop` (on the open card) and `visualizer:wind`. It doesn't
-turn remote control on: with it off it says so and stops.
+turn remote control on: with it off it says so and stops. Give it the Copilot's IP or `metarmap-copilot.local`; it
+sends the `X-Copilot: 1` header the Copilot wants on each `POST`.
 
-The endpoints (`src/remote_web.h`), all behind the web page's login. Parameters go as a form or in the URL:
+The endpoints (`src/remote_web.h`), all behind the web page's login. Parameters go as a form or in the URL; each
+`POST` needs the header `X-Copilot: 1` (curl: `-H 'X-Copilot: 1'`):
 
 | Endpoint | Parameters | Does |
 |---|---|---|
@@ -526,7 +541,7 @@ The endpoints (`src/remote_web.h`), all behind the web page's login. Parameters 
 | `POST /api/remote-control` | `on=1\|0` | The setting, as the web page's checkbox |
 
 ```sh
-C="curl -s -u metar:$COPILOT_PASSWORD http://metarmap-copilot.local"
+C="curl -s -u metar:$COPILOT_PASSWORD -H 'X-Copilot: 1' http://metarmap-copilot.local"
 $C/api/ui/state
 $C/api/ui/show -d screen=airports -d page=2
 $C/api/ui/card -d airport=KHOU
@@ -543,10 +558,12 @@ airports, position 1 first), `airports`, `visualizer` (the id) and `visualizers`
 /screen.png` straight after it shows the new screen. Otherwise:
 
 - **401** without the login (user `metar`, the web page's password);
-- **403** while remote control is off;
+- **403** while remote control is off or the web password is still `map`, for a `POST` without `X-Copilot: 1`, and
+  for an address that isn't the Copilot's IP or `metarmap-copilot.local`;
 - **400** for a screen, button or parameter it doesn't know (the text says which there are);
 - **404** for an airport or visualizer the Chart doesn't have;
-- **409** when it doesn't apply now: a button with no card open, a disabled button (Locate while Rainbow or Chase
+- **409** when it doesn't apply now: a button with no card open (or one whose airport has gone from the Chart's
+  list since it opened), a disabled button (Locate while Rainbow or Chase
   runs, AWOS or ATIS while the Chart's speech is off, ATIS for an airport without one, Stop with nothing playing), a
   page or position past the end, the startup splash or Wi-Fi setup on screen, an update installing, or (for a
   visualizer) the Chart not answering.

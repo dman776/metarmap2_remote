@@ -118,7 +118,7 @@ async function load() {
 }
 load();
 
-$('#rescan').onclick = async () => { await fetch('/setup/rescan', {method: 'POST'}); $('#rescan').disabled = true; setTimeout(load, 1500); };
+$('#rescan').onclick = async () => { await fetch('/setup/rescan', {method: 'POST', headers: {'X-Copilot': '1'}}); $('#rescan').disabled = true; setTimeout(load, 1500); };
 
 $('#form').onsubmit = async ev => {
   ev.preventDefault();
@@ -127,7 +127,7 @@ $('#form').onsubmit = async ev => {
   if (!name) { msg.className = 'note err'; msg.textContent = 'Choose a Wi-Fi network.'; return; }
   const pass = (other || secure) ? $('#pass').value : '';
   try {
-    const r = await fetch('/setup/save', {method: 'POST', body: new URLSearchParams({wifi_name: name, wifi_pass: pass,
+    const r = await fetch('/setup/save', {method: 'POST', headers: {'X-Copilot': '1'}, body: new URLSearchParams({wifi_name: name, wifi_pass: pass,
       map_host: $('#host').value.trim(), map_port: $('#port').value})});
     const t = await r.text();
     if (!r.ok) throw new Error(t);

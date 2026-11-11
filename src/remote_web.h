@@ -2,6 +2,10 @@
 // the update channel), firmware updates, the log, and screenshots. Behind a login: user metar, password map until
 // it's changed (on the page, or WEB_PASSWORD in secrets.h), the same as the map's own web UI.
 //
+// Against other web pages (web_guard.h): every POST needs the header X-Copilot: 1 (403 without), and everything
+// behind the login a Host that's an IPv4 address or metarmap-copilot.local (403 for any other name: DNS rebinding).
+// Remote control can't be turned on, or used, while the password is the default (403).
+//
 //   GET  /                     the page
 //   GET  /api/state            {version, ip, wifiName, mapHost, mapPort, led, sounds, remoteControl, update: {...}}
 //   POST /api/connection       wifi_name, wifi_pass ("" keeps it), map_host, map_port: saved, then a restart
@@ -28,7 +32,8 @@
 //
 // In Wi-Fi config mode (wifi_setup.h), without a login: / is the setup page, GET /setup/networks the networks found
 // and what is saved, POST /setup/rescan, POST /setup/save (wifi_name, wifi_pass, map_host, map_port: saved, then a
-// restart); anything else redirects to the page (the captive portal).
+// restart); anything else redirects to the page (the captive portal). Its POSTs need X-Copilot: 1 too; its Host isn't
+// checked: the portal's DNS answers every name with the Copilot, and anyone on its open network can reach it anyway.
 #pragma once
 
 class Updater;

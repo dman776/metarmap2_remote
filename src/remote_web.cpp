@@ -22,6 +22,7 @@
 #include "ui_control.h"
 #include "update_check.h"
 #include "updater.h"
+#include "web_guard.h"
 #include "wifi_setup.h"
 
 namespace {
@@ -67,12 +68,37 @@ std::vector<uint8_t> romDeflate(const std::vector<uint8_t>& raw) {
   return out;
 }
 
+// A POST carries X-Copilot: 1, which another site's page can't add (web_guard.h). Alone for the setup page's POSTs.
+bool headerSent() {
+  if (web_guard::headerOk(server.header(web_guard::kHeader).c_str())) return true;
+  LOGF("web: %s refused: no X-Copilot header\n", server.uri().c_str());
+  server.send(403, "text/plain", web_guard::kNoHeader);
+  return false;
+}
+
+// The Host names the Copilot (an IPv4 address, or metarmap-copilot.local), not a rebinding page's name
+bool hostAllowed() {
+  // collected per request (start()): WebServer's hostHeader() keeps the last request's when one has none
+  String host = server.header("Host");
+  if (web_guard::hostOk(host.c_str())) return true;
+  LOGF("web: %s refused: Host \"%s\"\n", server.uri().c_str(), host.c_str());
+  server.send(403, "text/plain", web_guard::kBadHost);
+  return false;
+}
+
 // The login: user metar, the password (map until it's changed, as the map's own web UI)
-bool allowed() {
+bool loggedIn() {
   if (server.authenticate(kUser, settings->webPassword.c_str())) return true;
   server.requestAuthentication(BASIC_AUTH, kRealm);
   return false;
 }
+
+// Every GET behind the login: the Host, then the login
+bool allowed() { return hostAllowed() && loggedIn(); }
+
+// Every POST behind the login: the Host, the X-Copilot header (before the login, so a forged one gets no login
+// prompt), then the login
+bool postAllowed() { return hostAllowed() && headerSent() && loggedIn(); }
 
 std::string arg(const char* name) {
   std::string v = server.hasArg(name) ? server.arg(name).c_str() : "";
@@ -108,7 +134,7 @@ void onState() {
   doc["mapHost"] = settings->mapHost;
   doc["mapPort"] = settings->mapPort;
   doc["uptime"] = millis() / 1000;
-  doc["defaultPassword"] = settings->webPassword == kDefaultWebPassword;
+  doc["defaultPassword"] = web_guard::isDefaultPassword(settings->webPassword);
   doc["led"] = settings->ledBrightness;
   doc["sounds"] = settings->sounds;
   doc["remoteControl"] = settings->remoteControl;
@@ -163,7 +189,7 @@ void saveConnection(bool keepPassword) {
 }
 
 void onConnection() {
-  if (!allowed()) return;
+  if (!postAllowed()) return;
   saveConnection(true);
 }
 
@@ -198,6 +224,7 @@ void onSetupRescan() {
     server.send(404, "text/plain", "not found");
     return;
   }
+  if (!headerSent()) return;
   wifi_setup_rescan();
   server.send(200, "text/plain", "OK");
 }
@@ -207,6 +234,7 @@ void onSetupSave() {
     server.send(404, "text/plain", "not found");
     return;
   }
+  if (!headerSent()) return;
   saveConnection(false);
 }
 
@@ -223,7 +251,7 @@ void onNotFound() {
 }
 
 void onChannel() {
-  if (!allowed()) return;
+  if (!postAllowed()) return;
   std::string channel = arg("channel"), branch = arg("branch");
   if (channel != "releases" && channel != "latest" && channel != "branch") {
     server.send(400, "text/plain", "channel: releases, latest or branch");
@@ -234,20 +262,20 @@ void onChannel() {
 }
 
 void onCheck() {
-  if (!allowed()) return;
+  if (!postAllowed()) return;
   updater->check();
   server.send(200, "text/plain", "OK");
 }
 
 void onInstall() {
-  if (!allowed()) return;
+  if (!postAllowed()) return;
   LOGF("web: install asked for\n");
   updater->install();
   server.send(200, "text/plain", "OK");
 }
 
 void onPassword() {
-  if (!allowed()) return;
+  if (!postAllowed()) return;
   std::string password = server.hasArg("password") ? server.arg("password").c_str() : "";
   if (password.size() < 3 || password.size() > 64) {
     server.send(400, "text/plain", "The password needs 3 to 64 characters.");
@@ -261,7 +289,7 @@ void onPassword() {
 
 // The status light's brightness, 0-100 (%): on at once (main.cpp reads it each loop), and saved
 void onLed() {
-  if (!allowed()) return;
+  if (!postAllowed()) return;
   std::string v = arg("brightness");
   char* end = nullptr;
   long pct = strtol(v.c_str(), &end, 10);
@@ -276,7 +304,7 @@ void onLed() {
 
 // The sounds (the chime, the picker's pops): on=1 or 0; at once (audio_set_sounds()), and saved
 void onSounds() {
-  if (!allowed()) return;
+  if (!postAllowed()) return;
   std::string v = arg("on");
   if (v != "0" && v != "1") {
     server.send(400, "text/plain", "on: 1 or 0.");
@@ -291,10 +319,15 @@ void onSounds() {
 
 // Remote control (for screenshots): on=1 or 0; at once, and saved. Off at first.
 void onRemoteControl() {
-  if (!allowed()) return;
+  if (!postAllowed()) return;
   std::string v = arg("on");
   if (v != "0" && v != "1") {
     server.send(400, "text/plain", "on: 1 or 0.");
+    return;
+  }
+  if (v == "1" && web_guard::isDefaultPassword(settings->webPassword)) {
+    LOGF("web: remote control not turned on: the password is the default\n");
+    server.send(403, "text/plain", web_guard::kDefaultPasswordRemote);
     return;
   }
   settings->remoteControl = v == "1";
@@ -315,14 +348,21 @@ ui_control::Arg param(const char* name) {
   return a;
 }
 
-// The login (401), then the setting (403)
+// A POST's guards and the login (403, 401), then the setting and a password that isn't the default (403): one turned
+// on before the default was refused (or the password set back to map) does nothing until the password is changed
 bool controlAllowed() {
-  if (!allowed()) return false;
-  if (settings->remoteControl) return true;
-  server.send(403, "text/plain",
-              "Remote control is off. Turn on \"Remote control (for screenshots)\" in the Copilot's web page's "
-              "Settings.");
-  return false;
+  if (!postAllowed()) return false;
+  if (!settings->remoteControl) {
+    server.send(403, "text/plain",
+                "Remote control is off. Turn on \"Remote control (for screenshots)\" in the Copilot's web page's "
+                "Settings.");
+    return false;
+  }
+  if (web_guard::isDefaultPassword(settings->webPassword)) {
+    server.send(403, "text/plain", web_guard::kDefaultPasswordRemote);
+    return false;
+  }
+  return true;
 }
 
 void sendState() {
@@ -424,6 +464,9 @@ void onLogFile() {
 }
 
 void start() {
+  // kept for each request (reset by the next): the POSTs' header, and the Host (web_guard.h)
+  static const char* collect[] = {web_guard::kHeader, "Host"};
+  server.collectHeaders(collect, 2);
   server.on("/", HTTP_GET, onPage);
   server.on("/api/state", HTTP_GET, onState);
   server.on("/api/connection", HTTP_POST, onConnection);

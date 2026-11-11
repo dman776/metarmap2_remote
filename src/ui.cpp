@@ -1180,8 +1180,11 @@ lv_obj_t *cardDot, *cardCode, *cardTag, *cardName, *cardStatus, *cardMetar;
 lv_obj_t *cardActions, *locateBtn, *awosBtn, *atisBtn;
 lv_obj_t *volRow, *volSlider, *volLabel;
 lv_obj_t* transcript = nullptr;  // the ATIS being read, line by line, in the FAA's text
-int cardTile = -1;               // the tile whose card is open
-uint32_t cardLocatedAt = 0;      // when the card last asked the Chart to pulse the pixel (0: not yet)
+// The tile whose card is open, or -1. Not always a tile: buildTiles() (showStations(), when the Chart's airports
+// change) rebuilds `tiles` with the card left open, so it can be past the end. Read it through cardAirport() (nullptr
+// then), never tiles[cardTile]; the remote control checks it with ui_control::checkOpenCard() first.
+int cardTile = -1;
+uint32_t cardLocatedAt = 0;  // when the card last asked the Chart to pulse the pixel (0: not yet)
 std::vector<lv_obj_t*> txRows;
 int txLit = -1;       // the line being said
 bool txOpen = false;  // the transcript is on screen (it stays after the end, to read; a tap closes it)
@@ -2437,9 +2440,9 @@ Outcome openSplash() {
   return done();
 }
 
-// Whether the card's button `b` would do anything for tile `index`'s card: not a disabled (or hidden) one
-Outcome canPress(int index, Button b) {
-  const Tile& t = tiles[index];
+// Whether the card's button `b` would do anything on tile `t`'s card (`open`: the card open now): not a disabled (or
+// hidden) one
+Outcome canPress(const Tile& t, bool open, Button b) {
   switch (b) {
     case Button::Locate:
       if (live.exclusive) return fail(409, "Locate can't show while Rainbow or Chase runs.");
@@ -2451,7 +2454,7 @@ Outcome canPress(int index, Button b) {
       if (b == Button::Atis && !t.atis) return fail(409, t.code + " has no ATIS.");
       break;
     case Button::Stop:
-      if (cardTile != index || !cardSpeaking()) return fail(409, t.code + " isn't saying anything.");
+      if (!open || !cardSpeaking()) return fail(409, t.code + " isn't saying anything.");
       break;
     case Button::None:
       break;
@@ -2534,13 +2537,17 @@ ui_control::Outcome ui_control_card(const ui_control::CardRequest& req) {
     std::vector<std::string> codes(tiles.size());
     std::transform(tiles.begin(), tiles.end(), codes.begin(), [](const Tile& t) { return t.code; });
     r = ui_control::findCard(codes, kPerPage, page, req, index);
-  } else if (!cardOpen() || index < 0 || updScr || splash) {
-    r = fail(409, "No airport's card is open: give airport= or position= to open one.");
+  } else {  // the open card's: cardTile can be past the end of tiles (see it)
+    r = ui_control::checkOpenCard(cardOpen() && !updScr && !splash, index, (int)tiles.size());
   }
   if (r.ok() && req.opens() && req.button == Button::Stop) {
     r = fail(409, "Opening a card stops what it's saying: send button=stop alone, to the open card.");
   }
-  if (r.ok() && req.button != Button::None) r = canPress(index, req.button);
+  if (r.ok() && req.button != Button::None) {
+    // in range: findCard()'s index is one of tiles, and checkOpenCard() checked cardTile
+    const Tile* t = req.opens() ? &tiles[index] : cardAirport();
+    r = t ? canPress(*t, !req.opens(), req.button) : fail(409, "The card's airport is gone from the Chart's airports.");
+  }
   if (!r.ok()) return r;
   if (req.opens()) {
     r = toPanels();

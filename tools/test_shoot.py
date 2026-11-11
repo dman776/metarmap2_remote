@@ -53,6 +53,7 @@ class FakeCopilot(BaseHTTPRequestHandler):
     password = "secret"
     remote_control = True
     posts = []
+    headers_seen = []
 
     def log_message(self, *args):
         pass
@@ -82,6 +83,10 @@ class FakeCopilot(BaseHTTPRequestHandler):
             self.send(404, b"not found")
 
     def do_POST(self):
+        FakeCopilot.headers_seen.append(self.headers.get("X-Copilot"))
+        if self.headers.get("X-Copilot") != "1":
+            self.send(403, b"This request needs the header X-Copilot: 1.")
+            return
         if not self.authed():
             return
         data = dict(urllib.parse.parse_qsl(self.rfile.read(int(self.headers["Content-Length"])).decode()))
@@ -98,6 +103,7 @@ class Shoot(unittest.TestCase):
     def setUp(self):
         FakeCopilot.remote_control = True
         FakeCopilot.posts = []
+        FakeCopilot.headers_seen = []
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), FakeCopilot)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.host = f"127.0.0.1:{self.server.server_address[1]}"
@@ -123,6 +129,28 @@ class Shoot(unittest.TestCase):
         self.assertEqual((pathlib.Path(self.dir.name) / "splash.png").read_bytes(), PNG)
         self.assertTrue((pathlib.Path(self.dir.name) / "card.png").exists())
         self.assertIn("pulses", out)  # the card's locate, said
+
+    def test_posts_send_the_x_copilot_header(self):
+        code, _, _ = self.run_shoot("splash", "picker")
+        self.assertEqual(code, 0)
+        self.assertEqual(FakeCopilot.headers_seen, ["1", "1"])
+
+    def test_the_header_goes_on_posts_only(self):
+        copilot = shoot.Copilot(self.host, "secret")
+        sent = []
+        real = shoot.urllib.request.urlopen
+
+        def spy(req, timeout):
+            sent.append((req.get_method(), req.get_header("X-copilot")))
+            return real(req, timeout=timeout)
+
+        shoot.urllib.request.urlopen = spy
+        try:
+            copilot.state()
+            copilot.post("/api/ui/show", screen="chart")
+        finally:
+            shoot.urllib.request.urlopen = real
+        self.assertEqual(sent, [("GET", None), ("POST", "1")])
 
     def test_says_remote_control_is_off_and_sends_nothing(self):
         FakeCopilot.remote_control = False
