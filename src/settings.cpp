@@ -63,6 +63,7 @@ Settings settings_load() {
   s.webPassword = getString(p, "web_pass", kDefaultWebPassword);
   s.ledBrightness = p.getUChar("led_pct", s.ledBrightness);
   s.sounds = p.getBool("sounds", s.sounds);
+  s.remoteControl = p.getBool("remote_ctl", s.remoteControl);
   p.remove("speech_server");  // a prototype's own speech server: spoken METARs come from the map now
   p.end();
   if (s.wifiName.empty()) s.wifiName = kSetupSsid;
@@ -112,6 +113,13 @@ void settings_save_sounds(bool on) {
   Preferences p;
   p.begin(kNamespace, false);
   if (!p.isKey("sounds") || p.getBool("sounds") != on) p.putBool("sounds", on);  // changes only
+  p.end();
+}
+
+void settings_save_remote_control(bool on) {
+  Preferences p;
+  p.begin(kNamespace, false);
+  if (!p.isKey("remote_ctl") || p.getBool("remote_ctl") != on) p.putBool("remote_ctl", on);  // changes only
   p.end();
 }
 

@@ -73,6 +73,10 @@ Red: the Chart isn't answering. Purple: Wi-Fi setup. Yellow: installing an updat
 <label class="chk"><input type="checkbox" id="sounds"> Sounds</label>
 <p class="note" id="soundsMsg">The chime when it reaches the Chart, and the pops when you hold a visualizer in the
 picker or let go of the splash's volume slider. Not the touch tick or the spoken weather.</p>
+<label class="chk"><input type="checkbox" id="remote"> Remote control (for screenshots)</label>
+<p class="note" id="remoteMsg">Lets a script with this page's login open the Copilot's screens over HTTP and take
+screenshots (tools/shoot.py). It can also switch the Chart's visualizer and press a card's Locate, AWOS and ATIS
+(the Chart pulses, the speaker talks). Off when you're done.</p>
 <form id="pwForm"><label for="pw1">New web password (user metar)</label><input id="pw1" type="password" autocomplete="new-password" minlength="3">
 <label for="pw2">Again</label><input id="pw2" type="password" autocomplete="new-password" minlength="3">
 <p class="note err" id="pwDefault" hidden>The password is still the default (map), as on MetarMap2 Web.</p>
@@ -141,6 +145,7 @@ async function poll() {
       $('#wifiName').value = s.wifiName; $('#mapHost').value = s.mapHost; $('#mapPort').value = s.mapPort;
       $('#led').value = s.led; $('#ledVal').textContent = s.led + '%';
       $('#sounds').checked = s.sounds !== false;
+      $('#remote').checked = !!s.remoteControl;
     }
   } catch (e) {
     if (!offline) say($('#updMsg'), "The Copilot isn't answering (restarting?). Trying again...", true);
@@ -185,6 +190,10 @@ $('#led').oninput = () => {
 $('#sounds').onchange = async () => {
   try { say($('#soundsMsg'), await post('/api/sounds', {on: $('#sounds').checked ? '1' : '0'})); }
   catch (e) { say($('#soundsMsg'), e.message, true); $('#sounds').checked = !$('#sounds').checked; }
+};
+$('#remote').onchange = async () => {
+  try { say($('#remoteMsg'), await post('/api/remote-control', {on: $('#remote').checked ? '1' : '0'})); }
+  catch (e) { say($('#remoteMsg'), e.message, true); $('#remote').checked = !$('#remote').checked; }
 };
 async function setPassword(a, b, msg) {
   if (a.value !== b.value) { say(msg, "The two don't match.", true); return false; }

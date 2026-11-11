@@ -3,7 +3,7 @@
 // it's changed (on the page, or WEB_PASSWORD in secrets.h), the same as the map's own web UI.
 //
 //   GET  /                     the page
-//   GET  /api/state            {version, ip, wifiName, mapHost, mapPort, led, sounds, update: {...}}
+//   GET  /api/state            {version, ip, wifiName, mapHost, mapPort, led, sounds, remoteControl, update: {...}}
 //   POST /api/connection       wifi_name, wifi_pass ("" keeps it), map_host, map_port: saved, then a restart
 //   POST /api/channel          channel (releases, latest, branch), branch
 //   POST /api/check            check GitHub now
@@ -11,6 +11,17 @@
 //   POST /api/password         password (3 to 64 characters)
 //   POST /api/led              brightness (0-100): the status light's
 //   POST /api/sounds           on (1 or 0): the chime and the picker's pops
+//   POST /api/remote-control   on (1 or 0): remote control of the screens, for screenshots (off at first)
+//   GET  /api/ui/state         what's on screen: {remoteControl, screen, panel, overlay, card, playing, page, pages,
+//                              pageAirports, airports, visualizer, visualizers, online} (with remote control off too)
+//   POST /api/ui/show          screen (chart, airports, splash, update, picker, brightness, volume, close); page
+//                              (with airports: 1 is the first)
+//   POST /api/ui/card          airport (a code) or position (on the page shown, or page=), and/or button (locate,
+//                              awos, atis, stop: pressed on the card)
+//   POST /api/ui/visualizer    id (an id, or a name or short name): switches the Chart to it, as a picker tile
+//                              The /api/ui/ controls: 403 while remote control is off; 400 a bad request, 404 no such
+//                              airport or visualizer, 409 it doesn't apply now; 200 with /api/ui/state's JSON once
+//                              it's done and on screen (ui_control.h)
 //   GET  /screen.png           the screen now (?download=1: as a file)
 //   GET  /log?from=N           the kept log after position N; X-Log-End: the position to ask from next
 //   GET  /log.txt              all of the kept log, as a file

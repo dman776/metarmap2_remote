@@ -18,6 +18,8 @@
 #include "remote_setup_page.h"
 #include "remote_web_page.h"
 #include "settings.h"
+#include "ui.h"
+#include "ui_control.h"
 #include "update_check.h"
 #include "updater.h"
 #include "wifi_setup.h"
@@ -109,6 +111,7 @@ void onState() {
   doc["defaultPassword"] = settings->webPassword == kDefaultWebPassword;
   doc["led"] = settings->ledBrightness;
   doc["sounds"] = settings->sounds;
+  doc["remoteControl"] = settings->remoteControl;
   JsonObject u = doc["update"].to<JsonObject>();
   u["phase"] = phaseName(st.phase);
   u["channel"] = update::channelName(st.channel);
@@ -286,8 +289,108 @@ void onSounds() {
   server.send(200, "text/plain", settings->sounds ? "Saved: sounds on." : "Saved: sounds off.");
 }
 
+// Remote control (for screenshots): on=1 or 0; at once, and saved. Off at first.
+void onRemoteControl() {
+  if (!allowed()) return;
+  std::string v = arg("on");
+  if (v != "0" && v != "1") {
+    server.send(400, "text/plain", "on: 1 or 0.");
+    return;
+  }
+  settings->remoteControl = v == "1";
+  settings_save_remote_control(settings->remoteControl);
+  LOGF("web: remote control %s\n", settings->remoteControl ? "on" : "off");
+  server.send(200, "text/plain", settings->remoteControl ? "Saved: remote control on." : "Saved: remote control off.");
+}
+
+// ---- remote control of the screens, for screenshots (ui_control.h): behind the login and the setting ----
+//
+// Each runs here, on loop()'s task, which LVGL runs on: ui_control_*() do what the tap does, let the screen settle
+// (up to a second) and draw it before the answer goes, so a GET /screen.png after it shows the result.
+
+ui_control::Arg param(const char* name) {
+  ui_control::Arg a;
+  a.given = server.hasArg(name);
+  if (a.given) a.value = arg(name);
+  return a;
+}
+
+// The login (401), then the setting (403)
+bool controlAllowed() {
+  if (!allowed()) return false;
+  if (settings->remoteControl) return true;
+  server.send(403, "text/plain",
+              "Remote control is off. Turn on \"Remote control (for screenshots)\" in the Copilot's web page's "
+              "Settings.");
+  return false;
+}
+
+void sendState() {
+  ui_control::State st = ui_control_state();
+  st.remoteControl = settings->remoteControl;
+  server.sendHeader("Cache-Control", "no-store");
+  server.send(200, "application/json", ui_control::stateJson(st).c_str());
+}
+
+// What a control did: the state after it (200), or why not, as text
+void answer(const ui_control::Outcome& r) {
+  if (r.ok()) {
+    sendState();
+    return;
+  }
+  LOGF("web: ui: %d %s\n", r.status, r.text.c_str());
+  server.send(r.status, "text/plain", r.text.c_str());
+}
+
+void onUiState() {
+  if (!allowed()) return;  // answers with remote control off too, so a script can say it's off
+  sendState();
+}
+
+void onUiShow() {
+  if (!controlAllowed()) return;
+  ui_control::ShowRequest req;
+  ui_control::Outcome r = ui_control::parseShow(param("screen"), param("page"), req);
+  if (r.ok()) {
+    std::string what = ui_control::screenName(req.screen);
+    if (req.page) what += " page " + std::to_string(req.page);
+    LOGF("web: ui show %s\n", what.c_str());
+    r = ui_control_show(req);
+  }
+  answer(r);
+}
+
+void onUiCard() {
+  if (!controlAllowed()) return;
+  ui_control::CardRequest req;
+  ui_control::Outcome r =
+      ui_control::parseCard(param("airport"), param("position"), param("page"), param("button"), req);
+  if (r.ok()) {
+    std::string what = req.airport;
+    if (req.position) what += "position " + std::to_string(req.position);
+    if (req.page) what += " page " + std::to_string(req.page);
+    if (req.button != ui_control::Button::None)
+      what += std::string(what.empty() ? "" : " ") + ui_control::buttonName(req.button);
+    LOGF("web: ui card %s\n", what.c_str());
+    r = ui_control_card(req);
+  }
+  answer(r);
+}
+
+void onUiVisualizer() {
+  if (!controlAllowed()) return;
+  std::string id;
+  ui_control::Outcome r = ui_control::parseVisualizer(param("id"), id);
+  if (r.ok()) {
+    LOGF("web: ui visualizer %s\n", id.c_str());
+    r = ui_control_visualizer(id);
+  }
+  answer(r);
+}
+
 void onScreen() {
   if (!allowed()) return;
+  lv_refr_now(nullptr);  // anything changed since the last frame drawn first
   static std::vector<uint16_t> pixels;
   int w = 0, h = 0;
   lvgl_port_capture(pixels, w, h);
@@ -330,6 +433,11 @@ void start() {
   server.on("/api/password", HTTP_POST, onPassword);
   server.on("/api/led", HTTP_POST, onLed);
   server.on("/api/sounds", HTTP_POST, onSounds);
+  server.on("/api/remote-control", HTTP_POST, onRemoteControl);
+  server.on("/api/ui/state", HTTP_GET, onUiState);
+  server.on("/api/ui/show", HTTP_POST, onUiShow);
+  server.on("/api/ui/card", HTTP_POST, onUiCard);
+  server.on("/api/ui/visualizer", HTTP_POST, onUiVisualizer);
   server.on("/screen.png", HTTP_GET, onScreen);
   server.on("/log", HTTP_GET, onLog);
   server.on("/log.txt", HTTP_GET, onLogFile);
