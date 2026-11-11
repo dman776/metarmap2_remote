@@ -22,6 +22,7 @@
 #include "stream.h"
 #include "timing.h"
 #include "updater.h"
+#include "volume_ui.h"
 #include "wifi_setup.h"
 
 extern "C" const lv_image_dsc_t logo;       // logo.c, from assets/logo.svg
@@ -70,9 +71,10 @@ constexpr uint32_t kSplashHoldMs = 2000;  // the splash stays this long after co
 // kWifiTimeoutMs (then the splash names the network it can't join) and kLostMs (the map unreachable this long: back
 // to the splash screen) are in timing.h: the status light on the back keeps the same time
 constexpr uint32_t kSplashShowMs = 30000;    // the logo's splash closes itself after this long
+constexpr uint32_t kVolumePopupMs = 4000;    // the logo's splash's volume slider closes this long after a touch
 constexpr uint32_t kPulseNoteMs = 2000;      // the card says "Pixel pulsing" this long after a locate (one pulse)
 constexpr uint32_t kPickedMs = 250;          // the picked visualizer shows lit this long before the picker closes
-constexpr uint32_t kToastMs = 1800;          // a message (the picker's "Wind: skipped") shows this long
+constexpr uint32_t kToastMs = 1800;          // a message (the picker's "Couldn't change Wind") shows this long
 constexpr uint32_t kLegendTickMs = 40;       // the legend's auto-scroll: a step this often,
 constexpr float kLegendPxPerSec = 24;        // this fast,
 constexpr uint32_t kLegendPauseMs = 2000;    // resting this long at the top and the bottom,
@@ -600,7 +602,7 @@ void buildLedsPanel(lv_obj_t* p) {
   setText(ledLabel, "Pixels");
 }
 
-// ---- a message at the bottom of the screen for a moment, over everything ("Wind: skipped") ----------------------
+// ---- a message at the bottom of the screen for a moment, over everything ("Couldn't change Wind") -----------------
 
 lv_obj_t* toast = nullptr;
 lv_timer_t* toastTimer = nullptr;
@@ -641,8 +643,9 @@ void say(const std::string& text) {
 
 // ---- the visualizer picker: every visualizer at once, a tile each (its icon and short name), and Close ---------
 // Press and hold a tile to leave that visualizer out of auto-rotate, or put it back (the Cockpit's hold); a skipped
-// one's icon is dimmed, with a SKIP badge. What's skipped is the Chart's (/api/live's autoRotate.skip): the Copilot
-// keeps nothing.
+// one's icon is dimmed, with a SKIP badge, and the hold plays a pop (up to skip, down to put back): that's all a hold
+// that works says. A message shows only for a problem. What's skipped is the Chart's (/api/live's autoRotate.skip): the
+// Copilot keeps nothing.
 
 lv_obj_t* picker = nullptr;
 std::vector<lv_obj_t*> pickTiles;   // by visualizer index
@@ -732,7 +735,7 @@ void onHold(lv_event_t* e) {
 }
 
 // The Chart's answer to a hold (or a dropped one's failure): the marks follow it, and while the picker is open a
-// message says what happened
+// message says what went wrong. One that worked says nothing: the marks (and the hold's pop) show it
 void showSkipAnswer() {
   const SkipAnswer& a = skipAnswer;
   skips::Said said = skipMarks.answered(a, millis());
@@ -740,11 +743,8 @@ void showSkipAnswer() {
   if (!pickerOpen()) return;
   std::string name = visShortName(a.id);
   switch (said) {
-    case skips::Said::Skipped:
-      say(name + ": skipped");
-      break;
-    case skips::Said::BackInRotation:
-      say(name + ": back in rotation");
+    case skips::Said::Skipped:         // the dimmed icon and SKIP badge show it
+    case skips::Said::BackInRotation:  // as does their going
       break;
     case skips::Said::Last:
       say("Can't skip the last one in rotation");
@@ -1399,6 +1399,15 @@ void onVolume(lv_event_t* e) {
   stream_set_volume(pct, lv_event_get_code(e) == LV_EVENT_RELEASED);  // heard at once; saved on release
 }
 
+// The card's slider follows a volume set elsewhere (the logo's splash), unless a finger is on it
+void syncCardVolume() {
+  if (!volSlider || lv_obj_has_state(volSlider, LV_STATE_PRESSED)) return;
+  int pct = stream_volume();
+  if (lv_slider_get_value(volSlider) == pct) return;
+  lv_slider_set_value(volSlider, pct, LV_ANIM_OFF);
+  lv_label_set_text_fmt(volLabel, "%d%%", pct);
+}
+
 lv_obj_t* cardAction(lv_obj_t* parent, const lv_image_dsc_t* src, const char* text, lv_event_cb_t cb, void* data) {
   lv_obj_t* b = button(parent, &stBtn);
   lv_obj_add_style(b, &stLit, LV_STATE_CHECKED);
@@ -1573,8 +1582,8 @@ lv_obj_t* panel(lv_obj_t* scr) {
 //
 // The logo, the name, the repo and the version, with the Wi-Fi and the map
 // connecting; once both are OK it stays a moment, then the remote fades in.
-// The rail's logo shows it again, with the map's address and the firmware
-// screen (Update when there's one), until Close. If the map is lost, it comes
+// The rail's logo shows it again, with the map's address, the firmware
+// screen (Update when there's one) and the speaker's volume, until Close. If the map is lost, it comes
 // back, retrying, until the map answers again.
 
 enum class SplashMode {
@@ -1590,6 +1599,11 @@ lv_obj_t* splashLogo = nullptr;
 lv_obj_t* wifiSetupBtn = nullptr;  // once the remote can't join its Wi-Fi: Wi-Fi config mode
 uint32_t splashStart = 0;
 uint32_t connectedAt = 0;
+// The logo's splash's volume: a speaker button at the top right; a tap opens a slider over the top of the splash
+// (a backdrop under it closes it on a tap beside it, and it closes kVolumePopupMs after the last touch)
+lv_obj_t *splashVolBtn = nullptr, *splashVolIcon = nullptr;
+lv_obj_t *splashVolPopup = nullptr, *splashVolSlider = nullptr, *splashVolPct = nullptr, *splashVolPopIcon = nullptr;
+lv_timer_t* splashVolTimer = nullptr;
 
 void showUpdate();
 
@@ -1623,6 +1637,137 @@ void forgetSplash() {
   updLabelSplash = nullptr;
   splashLogo = nullptr;
   wifiSetupBtn = nullptr;
+  if (splashVolTimer) {  // the volume slider goes with the splash: its timer mustn't fire on it
+    lv_timer_delete(splashVolTimer);
+    splashVolTimer = nullptr;
+  }
+  splashVolBtn = splashVolIcon = nullptr;
+  splashVolPopup = splashVolSlider = splashVolPct = splashVolPopIcon = nullptr;
+}
+
+const char* volumeSymbol(int pct) {
+  switch (volume_ui::icon(pct)) {
+    case volume_ui::Icon::Mute:
+      return LV_SYMBOL_MUTE;
+    case volume_ui::Icon::Mid:
+      return LV_SYMBOL_VOLUME_MID;
+    case volume_ui::Icon::Max:
+      break;
+  }
+  return LV_SYMBOL_VOLUME_MAX;
+}
+
+// The splash's speaker symbols and slider follow the volume (also when the card's slider set it)
+void syncSplashVolume() {
+  if (!splashVolIcon) return;
+  int pct = stream_volume();
+  setText(splashVolIcon, volumeSymbol(pct));
+  if (!splashVolSlider) return;
+  setText(splashVolPopIcon, volumeSymbol(pct));
+  if (!lv_obj_has_state(splashVolSlider, LV_STATE_PRESSED) && lv_slider_get_value(splashVolSlider) != pct) {
+    lv_slider_set_value(splashVolSlider, pct, LV_ANIM_OFF);
+  }
+  setText(splashVolPct, std::to_string(lv_slider_get_value(splashVolSlider)) + "%");
+}
+
+void closeSplashVolume(lv_event_t* = nullptr) {
+  if (splashVolTimer) {
+    lv_timer_delete(splashVolTimer);
+    splashVolTimer = nullptr;
+  }
+  if (splashVolPopup) lv_obj_add_flag(splashVolPopup, LV_OBJ_FLAG_HIDDEN);
+}
+
+// A touch on the slider: it stays open kVolumePopupMs more, and so does the splash (kSplashShowMs)
+void keepSplashVolume() {
+  splashStart = millis();
+  if (splashVolTimer) {
+    lv_timer_reset(splashVolTimer);
+    return;
+  }
+  splashVolTimer = lv_timer_create(
+      [](lv_timer_t*) {
+        splashVolTimer = nullptr;  // a one-shot: LVGL deletes it after this
+        closeSplashVolume();
+      },
+      kVolumePopupMs, nullptr);
+  lv_timer_set_repeat_count(splashVolTimer, 1);
+}
+
+void openSplashVolume(lv_event_t*) {
+  if (!splashVolPopup) return;
+  lv_slider_set_value(splashVolSlider, stream_volume(), LV_ANIM_OFF);
+  syncSplashVolume();
+  lv_obj_remove_flag(splashVolPopup, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_move_foreground(splashVolPopup);
+  keepSplashVolume();
+}
+
+// Heard at once (on a stream playing too); saved on release, with a quiet pop at the new level so it's heard (not at
+// 0%, not with Sounds off, not over a stream: audio_play() leaves those out)
+void onSplashVolume(lv_event_t* e) {
+  lv_event_code_t code = lv_event_get_code(e);
+  keepSplashVolume();
+  if (code == LV_EVENT_PRESSED || code == LV_EVENT_PRESSING) return;
+  int pct = lv_slider_get_value(splashVolSlider);
+  bool released = code == LV_EVENT_RELEASED;
+  stream_set_volume(pct, released);
+  syncSplashVolume();
+  if (released && volume_ui::popOnRelease(pct)) audio_play(sound_hi_pop, pct);
+}
+
+// The speaker button at the splash's top right, and its slider (hidden till a tap)
+void buildSplashVolume(lv_obj_t* scr) {
+  splashVolBtn = button(scr, &stBtn);
+  lv_obj_set_size(splashVolBtn, 40, 40);
+  lv_obj_add_flag(splashVolBtn, LV_OBJ_FLAG_IGNORE_LAYOUT);
+  lv_obj_align(splashVolBtn, LV_ALIGN_TOP_RIGHT, -8, 8);
+  splashVolIcon = label(splashVolBtn, "", &lv_font_montserrat_16, kText2);
+  lv_obj_center(splashVolIcon);
+  lv_obj_add_event_cb(splashVolBtn, openSplashVolume, LV_EVENT_CLICKED, nullptr);
+
+  splashVolPopup = lv_obj_create(scr);  // the backdrop: a tap on it closes the slider
+  lv_obj_remove_style_all(splashVolPopup);
+  lv_obj_add_flag(splashVolPopup, LV_OBJ_FLAG_IGNORE_LAYOUT);
+  lv_obj_set_pos(splashVolPopup, 0, 0);
+  lv_obj_set_size(splashVolPopup, kW, kH);
+  lv_obj_set_style_bg_color(splashVolPopup, lv_color_black(), 0);
+  lv_obj_set_style_bg_opa(splashVolPopup, LV_OPA_60, 0);
+  lv_obj_add_flag(splashVolPopup, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_remove_flag(splashVolPopup, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_event_cb(splashVolPopup, closeSplashVolume, LV_EVENT_CLICKED, nullptr);
+
+  lv_obj_t* c = box(splashVolPopup, LV_FLEX_FLOW_ROW);  // over the top of the splash, the button included
+  lv_obj_set_pos(c, 8, 8);
+  lv_obj_set_size(c, kW - 16, 48);
+  lv_obj_set_flex_align(c, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_hor(c, 14, 0);
+  lv_obj_set_style_pad_column(c, 12, 0);
+  lv_obj_set_style_bg_color(c, hex(kSurface), 0);
+  lv_obj_set_style_bg_opa(c, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_width(c, 1, 0);
+  lv_obj_set_style_border_color(c, hex(kControl), 0);
+  lv_obj_set_style_radius(c, 14, 0);
+  lv_obj_add_flag(c, LV_OBJ_FLAG_CLICKABLE);  // a tap on it isn't a tap on the backdrop
+  splashVolPopIcon = label(c, "", &lv_font_montserrat_16, kText2);
+  lv_obj_set_width(splashVolPopIcon, 20);
+  splashVolSlider = lv_slider_create(c);  // as the card's
+  lv_obj_set_flex_grow(splashVolSlider, 1);
+  lv_obj_set_height(splashVolSlider, 8);
+  lv_slider_set_range(splashVolSlider, 0, 100);
+  lv_obj_set_style_bg_color(splashVolSlider, hex(kControl), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(splashVolSlider, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_set_style_bg_color(splashVolSlider, hex(kAccent), LV_PART_INDICATOR);
+  lv_obj_set_style_bg_opa(splashVolSlider, LV_OPA_COVER, LV_PART_INDICATOR);
+  lv_obj_set_style_pad_all(splashVolSlider, 6, LV_PART_KNOB);
+  lv_obj_set_ext_click_area(splashVolSlider, 14);
+  for (lv_event_code_t code : {LV_EVENT_PRESSED, LV_EVENT_PRESSING, LV_EVENT_VALUE_CHANGED, LV_EVENT_RELEASED}) {
+    lv_obj_add_event_cb(splashVolSlider, onSplashVolume, code, nullptr);
+  }
+  splashVolPct = label(c, "", &lv_font_montserrat_12, kMuted);
+  lv_obj_set_width(splashVolPct, 34);
+  lv_obj_add_flag(splashVolPopup, LV_OBJ_FLAG_HIDDEN);
+  syncSplashVolume();
 }
 
 void hideSplash() {
@@ -1716,6 +1861,8 @@ void showSplash(SplashMode mode) {
     lv_obj_set_style_text_align(updLabelSplash, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_add_event_cb(updButtonSplash, [](lv_event_t*) { showUpdate(); }, LV_EVENT_CLICKED, nullptr);
     showSplashUpdate();
+
+    buildSplashVolume(splash);  // the speaker's volume, at the top right
   }
 
   if (mode != SplashMode::Startup) {
@@ -2160,6 +2307,8 @@ void ui_tick() {
   if (setupScr) tickSetupScreen();
   checkMapLost();
   tickSplash();
+  syncSplashVolume();  // the volume as the card's slider (or the splash's) left it
+  syncCardVolume();
   if (updater->get(upd, updRev)) {
     showHidden(starIcon, upd.available);
     showSplashUpdate();

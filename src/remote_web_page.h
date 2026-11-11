@@ -72,7 +72,7 @@ dl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:0}dt{color:va
 Red: the Chart isn't answering. Purple: Wi-Fi setup. Yellow: installing an update. 0 turns it off.</p>
 <label class="chk"><input type="checkbox" id="sounds"> Sounds</label>
 <p class="note" id="soundsMsg">The chime when it reaches the Chart, and the pops when you hold a visualizer in the
-picker. Not the touch tick or the spoken weather.</p>
+picker or let go of the splash's volume slider. Not the touch tick or the spoken weather.</p>
 <form id="pwForm"><label for="pw1">New web password (user metar)</label><input id="pw1" type="password" autocomplete="new-password" minlength="3">
 <label for="pw2">Again</label><input id="pw2" type="password" autocomplete="new-password" minlength="3">
 <p class="note err" id="pwDefault" hidden>The password is still the default (map), as on MetarMap2 Web.</p>

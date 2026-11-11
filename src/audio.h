@@ -21,8 +21,8 @@ void audio_click();
 // stream is playing (the two would mix into noise). Silent while the sounds are off (audio_set_sounds()).
 void audio_play(const Sound& sound, int volume);
 
-// The web page's Sounds setting: whether audio_play() plays (the chime and the picker's pops). Off stops one playing.
-// The touch tick and the spoken weather don't follow it. Any task.
+// The web page's Sounds setting: whether audio_play() plays (the chime, the picker's and the splash volume's pops).
+// Off stops one playing. The touch tick and the spoken weather don't follow it. Any task.
 void audio_set_sounds(bool on);
 
 // Whether audio_begin() found the codec.

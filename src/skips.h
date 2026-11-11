@@ -32,11 +32,11 @@ enum class Hold {
   Exclusive,  // "<name>: always left out" (Rainbow, Chase)
 };
 
-// What to say about an answer, or a hold whose answer didn't come
+// What an answer was, so what to say about it (a problem only), or a hold whose answer didn't come
 enum class Said {
   Nothing,         // an answer to a hold given up on already (or a late failure): no message
-  Skipped,         // "<name>: skipped"
-  BackInRotation,  // "<name>: back in rotation"
+  Skipped,         // it's skipped now: no message (the marks show it)
+  BackInRotation,  // it's back in rotation: no message (the marks show it)
   Last,            // "Can't skip the last one in rotation"
   Exclusive,       // "<name>: always left out"
   Failed,          // "Couldn't change <name>"

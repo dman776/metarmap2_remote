@@ -30,15 +30,15 @@ buttons: **Pixels**, **Airports**, and the **logo**.
   take the whole strip, have a purple border.
 - **Press and hold** a tile (about half a second) to leave that visualizer out of auto-rotate, and hold it again to
   put it back, as on the Cockpit. A skipped visualizer's icon is dimmed, with a small **SKIP** badge; a tap still
-  switches the Chart to it, and the hold doesn't. A message at the bottom confirms it for a moment ("Wind: skipped",
-  "Wind: back in rotation"). Rainbow and Chase are always left out ("Rainbow: always left out"), and the last
-  visualizer still in rotation can't be skipped ("Can't skip the last one in rotation"). The skip list is the
-  Chart's (Config > Visualizers), so a change made there or on the Cockpit shows here within a couple of seconds;
-  the Copilot keeps none of it. Needs a Chart newer than 26.11.10; with an older one there are no marks, and a hold
-  says "Update the Chart to skip visualizers". Hold several quickly and each keeps its mark until the Chart answers.
-  If the Chart doesn't answer within 30 s (the Wi-Fi went), the mark is undone ("Couldn't change Wind"), and a
-  hold still waiting to be sent after 20 s is dropped rather than done later. The messages show only while the
-  picker is open.
+  switches the Chart to it, and the hold doesn't. The mark and a pop (high to skip, low to put back; with **Sounds**
+  on) are all a hold that works shows; a message at the bottom shows for a moment only when something's wrong.
+  Rainbow and Chase are always left out ("Rainbow: always left out"), and the last visualizer still in rotation
+  can't be skipped ("Can't skip the last one in rotation"). The skip list is the Chart's (Config > Visualizers), so
+  a change made there or on the Cockpit shows here within a couple of seconds; the Copilot keeps none of it. Needs a
+  Chart newer than 26.11.10; with an older one there are no marks, and a hold says "Update the Chart to skip
+  visualizers". Hold several quickly and each keeps its mark until the Chart answers. If the Chart doesn't answer
+  within 30 s (the Wi-Fi went), the mark is undone ("Couldn't change Wind"), and a hold still waiting to be sent
+  after 20 s is dropped rather than done later. The messages show only while the picker is open.
 - **Flight Category Forecast** and **Precipitation Forecast** step every airport through Now, +3h, +6h and +12h, so a
   row of four chips under the name shows which step the Chart is on, the current one lit. The row only appears for a visualizer that steps
   (needs a Chart newer than 26.11.08); with an older one it's left out.
@@ -73,9 +73,10 @@ buttons: **Pixels**, **Airports**, and the **logo**.
 
 - Its dot is the Chart's connection: green, or red while the Chart doesn't answer
   (and the screen dims). A yellow star on it: a firmware update.
-- A tap shows the splash screen with the versions and the Chart's address, and two
+- A tap shows the splash screen with the versions and the Chart's address, two
   buttons: **Close**, and **Firmware** (**Update v...** when there's one), the
-  firmware update screen. It closes on its own after 30 s.
+  firmware update screen, and a speaker button at the top right for the volume
+  (see **Splash screen**). It closes on its own after 30 s.
 
 **Status light**
 
@@ -107,7 +108,7 @@ buttons: **Pixels**, **Airports**, and the **logo**.
   **Wi-Fi setup** on its screen (below). A USB build's `secrets.h` applies only
   when it changes, so what you save on the page stays.
   Also the **status light**'s brightness (0-100%, 0 for off), and **Sounds** (on at first): the chime and the
-  picker's pops, off for silence (the touch tick and the spoken weather stay). Both take effect at once and stay
+  pops (the picker's, the volume slider's), off for silence (the touch tick and the spoken weather stay). Both take effect at once and stay
   through restarts and firmware updates.
 - **Log**: the last 32 KB of the Copilot's log (what the serial console shows,
   each line with the seconds since startup), following new lines as they come,
@@ -150,6 +151,13 @@ buttons: **Pixels**, **Airports**, and the **logo**.
 - If the Chart stops answering (or Wi-Fi drops) for 5 s, the Copilot goes back to it:
   "Reconnecting to the Chart... retrying" until the Chart answers, then the Copilot fades
   back in. Not while the update screen is open.
+- The logo's splash (not the one at startup) has a speaker button at its top
+  right: the speaker's volume. Its symbol shows the level, crossed out (muted) at
+  0%. A tap opens a volume slider across the top of the screen, the same volume
+  as the airport card's slider; letting go plays a short pop at the new level
+  (none at 0%, with **Sounds** off, or while audio plays). A tap beside the
+  slider, or 4 s without a touch, closes it; using it keeps the splash open
+  another 30 s.
 
 **Firmware updates**
 
@@ -168,6 +176,12 @@ buttons: **Pixels**, **Airports**, and the **logo**.
 - While the speaker plays, the airport's card has a volume slider above its
   buttons: heard at once, and kept through restarts. It hides when the audio
   stops.
+- Any time, the logo's splash has the same volume on its speaker button (top
+  right): a tap opens a slider, heard at once and kept through restarts, with a
+  short pop at the new level when you let go. Slide it to 0% to mute: the
+  button shows a muted speaker. The two sliders follow each other. The volume
+  is for everything the speaker plays: the spoken weather, the radio, the
+  chime and the pops (not the touch tick).
 
 **Spoken weather**
 
@@ -210,7 +224,8 @@ buttons: **Pixels**, **Airports**, and the **logo**.
 - A short tick from the speaker on each touch.
 - A two-second airplane chime when it reaches the Chart (not again within a minute, so a flaky Wi-Fi doesn't
   ring on and on), and a short high pop when you hold a visualizer to leave it out of auto-rotate, a low pop when you
-  hold it to put it back. They play at the speaker's volume (the slider), and not while the radio plays. **Sounds**
+  hold it to put it back, and one when you let go of the splash's volume slider. They play at the speaker's volume
+  (the slider), and not while the radio plays. **Sounds**
   on the web page's Settings turns them off (the tick and the spoken weather stay); a tick during one is mixed in.
 - A touch has to move 16 px before it scrolls rather than taps, so a finger
   that drifts a little still taps.
@@ -350,7 +365,8 @@ its legend), the same split the `/remote` page uses. The touch screen runs on
 the other core, so a slow answer never freezes it. Controls are queued to the
 background task and the next `/api/live` shows their result. A skip from the
 picker is marked at once; the Chart's answer (`{"id", "skipped", "skip"}`, or a
-400 with a `reason`) then sets the marks and the message, and after that
+400 with a `reason`) then sets the marks (and, for a 400 or a failure, the
+message; a skip that worked has none), and after that
 `/api/live`'s `visualizer.autoRotate.skip` keeps them up to date. Each skip
 command has a number its answer carries back, so an answer ends its own hold
 and the marks of holds still waiting stay on top of the Chart's list
