@@ -3,7 +3,8 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
-include/secrets.h
+include/secrets*.h
+!include/secrets.example.h
 include/firmware_version.h
 .DS_Store
 __pycache__/
