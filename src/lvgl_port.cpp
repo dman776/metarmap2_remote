@@ -67,6 +67,8 @@ void lvgl_port_init(LGFX& lcd) {
   lv_indev_set_read_cb(indev, readTouch);
   // A finger drifts: a touch has to move 16 px (not 10) before it scrolls instead of tapping
   lv_indev_set_scroll_limit(indev, 16);
+  // A hold (the picker's skip) is 600 ms, as on the Cockpit, not LVGL's 400: a slow tap stays a tap
+  lv_indev_set_long_press_time(indev, 600);
 }
 
 void lvgl_port_screenshot() {

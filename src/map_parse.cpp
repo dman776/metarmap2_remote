@@ -66,6 +66,7 @@ void statusFilter(JsonDocument& filter) {
   vis["shortName"] = true;
   vis["icon"] = true;
   vis["exclusive"] = true;
+  vis["skipped"] = true;
   JsonObject airport = filter["airports"].add<JsonObject>();
   airport["code"] = true;
   airport["text"] = true;
@@ -84,6 +85,10 @@ MapLive parseLive(JsonVariantConst doc) {
   live.autoRotate = v["autoRotate"]["enabled"] | false;
   live.autoSeconds = v["autoRotate"]["seconds"] | 0;
   live.autoNext = numberOrNan(v["autoRotate"]["next"]);
+  if (v["autoRotate"]["skip"].is<JsonArrayConst>()) {  // a Chart before it doesn't say
+    live.hasSkip = true;
+    for (JsonVariantConst id : v["autoRotate"]["skip"].as<JsonArrayConst>()) live.skip.push_back(id | "");
+  }
   live.strip = !doc["strip"].isNull();
   live.speech = doc["speech"] | false;
   if (v["legendInUse"].is<JsonArrayConst>()) {
@@ -155,6 +160,8 @@ MapStatus parseStatus(JsonVariantConst doc) {
     v.shortName = vis["shortName"] | v.name.c_str();
     v.icon = vis["icon"] | "";
     v.exclusive = vis["exclusive"] | false;
+    if (vis["skipped"].is<bool>()) status.hasSkip = true;  // a Chart before it doesn't say
+    v.skipped = vis["skipped"] | false;
     status.visualizers.push_back(v);
   }
   for (JsonVariantConst a : doc["airports"].as<JsonArrayConst>()) {
@@ -165,6 +172,19 @@ MapStatus parseStatus(JsonVariantConst doc) {
     if (!info.code.empty()) status.airports.push_back(info);
   }
   return status;
+}
+
+SkipAnswer parseSkip(JsonVariantConst doc, int httpCode) {
+  SkipAnswer a;
+  a.httpCode = httpCode;
+  a.id = doc["id"] | "";
+  a.reason = doc["reason"] | "";
+  if (httpCode == 200 && doc["skip"].is<JsonArrayConst>()) {
+    a.ok = true;
+    a.skipped = doc["skipped"] | false;
+    for (JsonVariantConst id : doc["skip"].as<JsonArrayConst>()) a.skip.push_back(id | "");
+  }
+  return a;
 }
 
 void atisFilter(JsonDocument& filter) {

@@ -62,6 +62,7 @@ Settings settings_load() {
   s.volume = p.getUChar("volume", s.volume);
   s.webPassword = getString(p, "web_pass", kDefaultWebPassword);
   s.ledBrightness = p.getUChar("led_pct", s.ledBrightness);
+  s.sounds = p.getBool("sounds", s.sounds);
   p.remove("speech_server");  // a prototype's own speech server: spoken METARs come from the map now
   p.end();
   if (s.wifiName.empty()) s.wifiName = kSetupSsid;
@@ -104,6 +105,13 @@ void settings_save_led(int brightness) {
   Preferences p;
   p.begin(kNamespace, false);
   if (p.getUChar("led_pct", 255) != brightness) p.putUChar("led_pct", (uint8_t)brightness);  // changes only
+  p.end();
+}
+
+void settings_save_sounds(bool on) {
+  Preferences p;
+  p.begin(kNamespace, false);
+  if (!p.isKey("sounds") || p.getBool("sounds") != on) p.putBool("sounds", on);  // changes only
   p.end();
 }
 

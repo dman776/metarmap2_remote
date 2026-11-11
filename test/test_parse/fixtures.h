@@ -434,3 +434,32 @@ static const char* kStatusJson = R"json({
   }
  ]
 })json";
+
+// A Chart that says which visualizers auto-rotate skips (after 26.11.10, B83): /api/live's visualizer.autoRotate.skip
+// and /api/status's visualizers[].skipped, trimmed as in metarmap2's API.md. kLiveJson and kStatusJson above are
+// from a Chart before them.
+static const char* kLiveSkipJson = R"json({
+ "now": 1792854523.9,
+ "brightness": 0.5,
+ "visualizer": {"active": 0, "id": "flight_category", "name": "Flight Category", "shortName": "Flight Cat",
+  "icon": "plane", "exclusive": false, "areas": null,
+  "autoRotate": {"enabled": true, "seconds": 60, "next": 1792854560.0, "skip": ["wind", "wind_gusts"],
+   "skipDark": false, "later": {"x": 1}},
+  "legendInUse": ["VFR"], "legendInUseOnly": false},
+ "strip": null,
+ "leds": []
+})json";
+
+static const char* kStatusSkipJson = R"json({
+ "version": "26.11.10",
+ "visualizer": {"active": 0, "legend": []},
+ "visualizers": [
+  {"index": 0, "id": "flight_category", "name": "Flight Category", "shortName": "Flight Cat", "icon": "plane",
+   "exclusive": false, "skipped": false},
+  {"index": 1, "id": "wind", "name": "Wind", "shortName": "Wind", "icon": "wind", "exclusive": false,
+   "skipped": true},
+  {"index": 2, "id": "rainbow", "name": "Rainbow", "shortName": "Rainbow", "icon": "rainbow", "exclusive": true,
+   "skipped": false, "newKey": [1, 2]}
+ ],
+ "config": {"visualizer.auto_rotate.skip": ["wind"]}
+})json";

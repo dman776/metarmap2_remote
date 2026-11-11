@@ -17,6 +17,7 @@ struct Visualizer {
   std::string shortName;  // the name where there's little room (the picker); the name from a map without it
   std::string icon;       // what its icon shows (icons.h vis_icon()); "" from a map without it
   bool exclusive = false;
+  bool skipped = false;  // auto-rotate leaves it out (visualizer.auto_rotate.skip); false for an exclusive one
 };
 
 // An airport's details from /api/status, for its card
@@ -45,6 +46,7 @@ struct MapStatus {
   int activeIndex = -1;  // the visualizer the legend is for
   std::vector<LegendItem> legend;
   std::vector<Visualizer> visualizers;
+  bool hasSkip = false;  // the visualizers say whether auto-rotate skips them (a Chart after 26.11.10, B83)
   std::vector<AirportInfo> airports;  // in LED order
 };
 
@@ -84,7 +86,10 @@ struct MapLive {
   bool autoRotate = false;
   int autoSeconds = 0;
   double autoNext = NAN;  // map clock; NAN while auto-rotate is off
-  bool strip = false;     // one effect (rainbow, chase) drives the whole strip
+  // the visualizer ids auto-rotate leaves out (autoRotate.skip); hasSkip is false for a map that doesn't say
+  bool hasSkip = false;
+  std::vector<std::string> skip;
+  bool strip = false;  // one effect (rainbow, chase) drives the whole strip
   // the legend entries (keys) the LEDs show now, as the map works them out; hasLegendInUse is false for a map
   // that doesn't say (older ones), or while a whole-strip effect runs
   bool hasLegendInUse = false;
@@ -97,6 +102,17 @@ struct MapLive {
   int locatePixel = -1;
   double locateAt = NAN;
   bool speech = false;  // the map reads METARs aloud (/api/speak) now: on, with a server; false from an older map
+};
+
+// The answer to GET /visualizer/<id>/skip or /unskip: {"id", "skipped", "skip"} (200), or {"error", "reason"} (400)
+struct SkipAnswer {
+  uint32_t seq = 0;  // the command's number (MapClient::requestSkip()'s)
+  std::string id;    // the visualizer asked about
+  int httpCode = 0;  // 200, 400, anything else (negative for HTTPClient errors)
+  bool ok = false;   // a 200 with the answer's JSON
+  bool skipped = false;
+  std::vector<std::string> skip;  // the whole list after the change (ok only)
+  std::string reason;             // a 400's: "unknown", "exclusive", "last", "invalid"; "" without one
 };
 
 struct Connection {

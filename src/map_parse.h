@@ -17,6 +17,10 @@ MapLive parseLive(JsonVariantConst doc);
 MapStatus parseStatus(JsonVariantConst doc);
 AtisTranscript parseAtis(JsonVariantConst doc);
 
+// /visualizer/<id>/skip or /unskip's answer, its JSON (null if it had none) and HTTP status; ok only for a 200 with
+// the skip list. id is left for the caller when the answer has none (a 400, or an older Chart).
+SkipAnswer parseSkip(JsonVariantConst doc, int httpCode);
+
 // The line being said `playedMs` into `totalMs` of an ATIS read aloud, worked out from how long each line's words
 // are (the voice doesn't say when it reaches one): -1 before it's known (totalMs 0) or with no lines.
 int atisLineAt(const std::vector<AtisLine>& lines, uint32_t playedMs, uint32_t totalMs);
