@@ -9,9 +9,9 @@ The Chart stays in charge. The Copilot reads the Chart's state over its HTTP API
 sends it the same controls the Cockpit does; it never fetches weather or
 drives pixels itself.
 
-| Pixels | Airports | An airport's card |
+| Chart | Airports | An airport's card |
 |---|---|---|
-| ![The Pixels panel: the visualizer, its steps, its legend, Auto and Pixels](docs/leds.png) | ![The Airports panel: a page of airports and the page strip](docs/airports.png) | ![An airport's card: its METAR, and Locate, AWOS and ATIS](docs/card.png) |
+| ![The Chart panel: the visualizer, its steps, its legend, Auto and Pixels](docs/leds.png) | ![The Airports panel: a page of airports and the page strip](docs/airports.png) | ![An airport's card: its METAR, and Locate, AWOS and ATIS](docs/card.png) |
 | **Brightness** | **Splash** | **Update** |
 | ![The brightness sheet](docs/brightness.png) | ![The logo's splash: versions, addresses, Close and Firmware, and the volume button at the top right](docs/splash.png) | ![The firmware update screen](docs/update.png) |
 | **Visualizer picker** | | |
@@ -20,9 +20,9 @@ drives pixels itself.
 ## What it does
 
 Everything is a tap, with big targets and as little scrolling as possible. A rail down the left side has three
-buttons: **Pixels**, **Airports**, and the **logo**.
+buttons: **Chart**, **Airports**, and the **logo**.
 
-**Pixels**
+**Chart**
 
 - The running visualizer, big, with ◀ and ▶ either side to step through them. It follows the Chart when something
   else changes the visualizer (auto-rotate, the web UI, Home Assistant). A name too long for the header shows its
@@ -488,7 +488,7 @@ checks or build firmware. Tag pushes always do.
 
 At 115200 baud the console logs the version, the connection and each control
 sent, and the update checks. It also takes one-letter commands: `1` and `2`
-open the Pixels and Airports panels, `3` shows the splash screen, `4` the
+open the Chart and Airports panels, `3` shows the splash screen, `4` the
 update screen, `5` the visualizer picker, `6` the brightness sheet, `7` the
 card of the Airports page's first airport, `H` logs the free memory, `W` starts Wi-Fi setup, and `S` sends a screenshot, which
 `tools/screenshot.py` saves as a PNG (it needs pyserial):

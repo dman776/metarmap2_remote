@@ -1533,7 +1533,7 @@ void buildRail(lv_obj_t* scr) {
   lv_obj_set_flex_align(rail, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
   const lv_image_dsc_t* icons[2] = {&icon_leds, &icon_pin};
-  const char* names[2] = {"Pixels", "Airports"};
+  const char* names[2] = {"Chart", "Airports"};
   for (int i = 0; i < 2; i++) {
     lv_obj_t* b = button(rail, &stRail);
     lv_obj_add_style(b, &stRailOn, LV_STATE_CHECKED);
