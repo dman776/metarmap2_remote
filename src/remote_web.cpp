@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "audio.h"
 #include "firmware_version.h"
 #include "log.h"
 #include "lvgl_port.h"
@@ -107,6 +108,7 @@ void onState() {
   doc["uptime"] = millis() / 1000;
   doc["defaultPassword"] = settings->webPassword == kDefaultWebPassword;
   doc["led"] = settings->ledBrightness;
+  doc["sounds"] = settings->sounds;
   JsonObject u = doc["update"].to<JsonObject>();
   u["phase"] = phaseName(st.phase);
   u["channel"] = update::channelName(st.channel);
@@ -269,6 +271,21 @@ void onLed() {
   server.send(200, "text/plain", pct ? "Saved." : "Saved: the status light is off.");
 }
 
+// The sounds (the chime, the picker's pops): on=1 or 0; at once (audio_set_sounds()), and saved
+void onSounds() {
+  if (!allowed()) return;
+  std::string v = arg("on");
+  if (v != "0" && v != "1") {
+    server.send(400, "text/plain", "on: 1 or 0.");
+    return;
+  }
+  settings->sounds = v == "1";
+  audio_set_sounds(settings->sounds);
+  settings_save_sounds(settings->sounds);
+  LOGF("web: sounds %s\n", settings->sounds ? "on" : "off");
+  server.send(200, "text/plain", settings->sounds ? "Saved: sounds on." : "Saved: sounds off.");
+}
+
 void onScreen() {
   if (!allowed()) return;
   static std::vector<uint16_t> pixels;
@@ -312,6 +329,7 @@ void start() {
   server.on("/api/install", HTTP_POST, onInstall);
   server.on("/api/password", HTTP_POST, onPassword);
   server.on("/api/led", HTTP_POST, onLed);
+  server.on("/api/sounds", HTTP_POST, onSounds);
   server.on("/screen.png", HTTP_GET, onScreen);
   server.on("/log", HTTP_GET, onLog);
   server.on("/log.txt", HTTP_GET, onLogFile);

@@ -18,6 +18,7 @@
 #include "map_parse.h"
 #include "pages.h"
 #include "remote_web.h"
+#include "skips.h"
 #include "stream.h"
 #include "timing.h"
 #include "updater.h"
@@ -71,6 +72,7 @@ constexpr uint32_t kSplashHoldMs = 2000;  // the splash stays this long after co
 constexpr uint32_t kSplashShowMs = 30000;    // the logo's splash closes itself after this long
 constexpr uint32_t kPulseNoteMs = 2000;      // the card says "Pixel pulsing" this long after a locate (one pulse)
 constexpr uint32_t kPickedMs = 250;          // the picked visualizer shows lit this long before the picker closes
+constexpr uint32_t kToastMs = 1800;          // a message (the picker's "Wind: skipped") shows this long
 constexpr uint32_t kLegendTickMs = 40;       // the legend's auto-scroll: a step this often,
 constexpr float kLegendPxPerSec = 24;        // this fast,
 constexpr uint32_t kLegendPauseMs = 2000;    // resting this long at the top and the bottom,
@@ -598,12 +600,60 @@ void buildLedsPanel(lv_obj_t* p) {
   setText(ledLabel, "Pixels");
 }
 
+// ---- a message at the bottom of the screen for a moment, over everything ("Wind: skipped") ----------------------
+
+lv_obj_t* toast = nullptr;
+lv_timer_t* toastTimer = nullptr;
+
+void hideToast() {
+  if (toast) lv_obj_add_flag(toast, LV_OBJ_FLAG_HIDDEN);
+}
+
+// One line, at most about 270 px of 14 px text ("Can't skip the last one in rotation"); longer wraps.
+void say(const std::string& text) {
+  if (!toast) {
+    toast = lv_label_create(lv_layer_top());
+    lv_obj_set_style_bg_color(toast, hex(kSurface2), 0);
+    lv_obj_set_style_bg_opa(toast, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(toast, 1, 0);
+    lv_obj_set_style_border_color(toast, hex(kAccentLine), 0);
+    lv_obj_set_style_radius(toast, 10, 0);
+    lv_obj_set_style_pad_hor(toast, 12, 0);
+    lv_obj_set_style_pad_ver(toast, 7, 0);
+    lv_obj_set_style_text_font(toast, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(toast, hex(kText), 0);
+    lv_obj_set_style_text_align(toast, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_max_width(toast, kW - 24, 0);
+    lv_label_set_long_mode(toast, LV_LABEL_LONG_WRAP);
+    lv_obj_align(toast, LV_ALIGN_BOTTOM_MID, 0, -10);
+  }
+  setText(toast, text);
+  lv_obj_remove_flag(toast, LV_OBJ_FLAG_HIDDEN);
+  if (toastTimer) lv_timer_delete(toastTimer);
+  toastTimer = lv_timer_create(
+      [](lv_timer_t*) {
+        toastTimer = nullptr;
+        hideToast();
+      },
+      kToastMs, nullptr);
+  lv_timer_set_repeat_count(toastTimer, 1);
+}
+
 // ---- the visualizer picker: every visualizer at once, a tile each (its icon and short name), and Close ---------
+// Press and hold a tile to leave that visualizer out of auto-rotate, or put it back (the Cockpit's hold); a skipped
+// one's icon is dimmed, with a SKIP badge. What's skipped is the Chart's (/api/live's autoRotate.skip): the Copilot
+// keeps nothing.
 
 lv_obj_t* picker = nullptr;
-std::vector<lv_obj_t*> pickTiles;  // by visualizer index
-std::string pickerKey;             // the visualizers the tiles were built for
+std::vector<lv_obj_t*> pickTiles;   // by visualizer index
+std::vector<lv_obj_t*> pickBadges;  // by visualizer index: SKIP, while auto-rotate leaves it out
+std::string pickerKey;              // the visualizers the tiles were built for
 lv_timer_t* pickerTimer = nullptr;
+
+skips::Marks skipMarks;   // what's marked skipped: the Chart's list, and holds waiting for its answer (skips.h)
+uint32_t skipMarked = 0;  // skipMarks.revision() the tiles show
+SkipAnswer skipAnswer;
+uint32_t skipRev = 0;
 
 void closePicker(lv_event_t* = nullptr) {
   if (pickerTimer) {
@@ -611,6 +661,111 @@ void closePicker(lv_event_t* = nullptr) {
     pickerTimer = nullptr;
   }
   lv_obj_add_flag(picker, LV_OBJ_FLAG_HIDDEN);
+  hideToast();
+}
+
+bool pickerOpen() { return picker && !lv_obj_has_flag(picker, LV_OBJ_FLAG_HIDDEN); }
+
+// The tiles' marks, as skipMarks has them. An exclusive one (Rainbow, Chase) is never marked: auto-rotate leaves it
+// out anyway, whatever the list says.
+void markSkipped() {
+  skipMarked = skipMarks.revision();
+  for (size_t i = 0; i < pickTiles.size() && i < status.visualizers.size(); i++) {
+    const Visualizer& v = status.visualizers[i];
+    bool skipped = skipMarks.known() && !v.exclusive && skipMarks.isSkipped(v.id);
+    lv_obj_set_style_image_opa(lv_obj_get_child(pickTiles[i], 0), skipped ? LV_OPA_40 : LV_OPA_COVER, 0);
+    showHidden(pickBadges[i], skipped);
+  }
+}
+
+void showMarks() {
+  if (skipMarks.revision() != skipMarked) markSkipped();
+}
+
+// What the Chart says is skipped: /api/live's autoRotate.skip (every 1.5 s), else /api/status's skipped; neither
+// from a Chart before them, and no marks then
+void showSkips() {
+  bool known = live.valid && live.hasSkip;
+  std::vector<std::string> ids;
+  if (known) {
+    ids = live.skip;
+  } else if (status.hasSkip) {
+    known = true;
+    for (const Visualizer& v : status.visualizers) {
+      if (v.skipped) ids.push_back(v.id);
+    }
+  }
+  skipMarks.polled(known, ids, millis());
+  showMarks();
+}
+
+std::string visShortName(const std::string& id) {
+  for (const Visualizer& v : status.visualizers) {
+    if (v.id == id) return v.shortName.empty() ? v.name : v.shortName;
+  }
+  return id;
+}
+
+void onHold(lv_event_t* e) {
+  int i = (int)(intptr_t)lv_event_get_user_data(e);
+  if (i < 0 || i >= (int)status.visualizers.size()) return;
+  const Visualizer& v = status.visualizers[i];
+  switch (skipMarks.hold(v.exclusive)) {
+    case skips::Hold::OldChart:
+      say("Update the Chart to skip visualizers");
+      return;
+    case skips::Hold::Exclusive:
+      say(visShortName(v.id) + ": always left out");
+      return;
+    case skips::Hold::Ask:
+      break;
+  }
+  bool skip = !skipMarks.isSkipped(v.id);
+  uint32_t seq = client->requestSkip(v.id, skip);
+  if (!seq) {  // not queued: nothing to wait for, nothing marked
+    say("Couldn't change auto-rotate");
+    return;
+  }
+  audio_play(skip ? sound_hi_pop : sound_lo_pop, stream_volume());
+  skipMarks.asked(seq, v.id, skip, millis());  // marked at once; the Chart's answer says what it is
+  showMarks();
+}
+
+// The Chart's answer to a hold (or a dropped one's failure): the marks follow it, and while the picker is open a
+// message says what happened
+void showSkipAnswer() {
+  const SkipAnswer& a = skipAnswer;
+  skips::Said said = skipMarks.answered(a, millis());
+  showMarks();
+  if (!pickerOpen()) return;
+  std::string name = visShortName(a.id);
+  switch (said) {
+    case skips::Said::Skipped:
+      say(name + ": skipped");
+      break;
+    case skips::Said::BackInRotation:
+      say(name + ": back in rotation");
+      break;
+    case skips::Said::Last:
+      say("Can't skip the last one in rotation");
+      break;
+    case skips::Said::Exclusive:
+      say(name + ": always left out");
+      break;
+    case skips::Said::Failed:
+      say("Couldn't change " + name);
+      break;
+    case skips::Said::Nothing:
+      break;
+  }
+}
+
+// Holds whose answer never came (the Wi-Fi went): their marks undone, and said while the picker is open
+void expireSkips() {
+  if (!skipMarks.waiting()) return;
+  std::vector<std::string> late = skipMarks.expire(millis());
+  showMarks();
+  if (!late.empty() && pickerOpen()) say("Couldn't change " + visShortName(late.back()));
 }
 
 void markPicked(int index) {
@@ -657,6 +812,7 @@ lv_obj_t* pickTile(const lv_image_dsc_t* src, const char* text, int tileW) {
 void buildPicker() {
   lv_obj_clean(picker);
   pickTiles.clear();
+  pickBadges.clear();
   int tiles = (int)status.visualizers.size() + 1;  // and Close
   int rows = std::max(1, (tiles + 3) / 4);
   int tileW = (kW - 2 * 4 - 3 * kTileGap) / 4;
@@ -666,8 +822,20 @@ void buildPicker() {
     lv_obj_t* t = pickTile(vis_icon(v.icon.c_str()), v.shortName.c_str(), tileW);
     lv_obj_set_size(t, tileW, tileH);
     if (v.exclusive) lv_obj_set_style_border_color(t, hex(kEffect), 0);  // it takes the whole strip
-    lv_obj_add_event_cb(t, onPick, LV_EVENT_CLICKED, (void*)(intptr_t)i);
+    // a tap picks it; a hold skips it instead: LVGL sends SHORT_CLICKED only for a release before the hold
+    // (CLICKED comes after a hold's release too)
+    lv_obj_add_event_cb(t, onPick, LV_EVENT_SHORT_CLICKED, (void*)(intptr_t)i);
+    lv_obj_add_event_cb(t, onHold, LV_EVENT_LONG_PRESSED, (void*)(intptr_t)i);
+    lv_obj_t* badge = label(t, "SKIP", &lv_font_montserrat_10, kText);
+    lv_obj_add_flag(badge, LV_OBJ_FLAG_IGNORE_LAYOUT);
+    lv_obj_set_style_bg_color(badge, hex(kOffLed), 0);
+    lv_obj_set_style_bg_opa(badge, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(badge, 4, 0);
+    lv_obj_set_style_pad_hor(badge, 3, 0);
+    lv_obj_align(badge, LV_ALIGN_TOP_RIGHT, 0, 3);
+    lv_obj_add_flag(badge, LV_OBJ_FLAG_HIDDEN);
     pickTiles.push_back(t);
+    pickBadges.push_back(badge);
   }
   lv_obj_t* close = pickTile(&icon_close, "Close", tileW);
   lv_obj_set_size(close, tileW, tileH);
@@ -675,6 +843,7 @@ void buildPicker() {
   lv_obj_set_style_border_color(close, hex(kLine), 0);
   lv_obj_add_event_cb(close, closePicker, LV_EVENT_CLICKED, nullptr);
   markPicked(shownIndex);
+  markSkipped();
 }
 
 void showPickerTiles() {
@@ -2004,6 +2173,7 @@ void ui_tick() {
 
   if (client->getStatus(status, statusRev)) {
     showPickerTiles();
+    showSkips();
     showVisualizer(live.valid ? live.activeIndex : status.activeIndex);
     showLegend();
     showCard();  // the airports' names and METARs
@@ -2012,11 +2182,15 @@ void ui_tick() {
   if (client->getLive(live, liveRev)) {
     if (live.activeIndex != shownIndex) showVisualizer(live.activeIndex);
     showRotation();
+    showSkips();
     showBrightness();
     showStations();
     showSteps();
     if (legendInUse() != legendUsed) showLegend();
   }
+  // after /api/live, so its answer wins over a poll from before it
+  if (client->getSkip(skipAnswer, skipRev)) showSkipAnswer();
+  expireSkips();
 
   static uint32_t lastTick = 0;
   if (millis() - lastTick >= 250) {

@@ -51,6 +51,30 @@ void test_live_visualizer_and_auto_rotate() {
   TEST_ASSERT_FALSE(live.strip);
 }
 
+// what auto-rotate leaves out: a list from a Chart after 26.11.10; none from an older one, and hasSkip false
+void test_live_auto_rotate_skip() {
+  MapLive live = parseLive(filtered(kLiveSkipJson, liveFilter).as<JsonVariantConst>());
+  TEST_ASSERT_TRUE(live.hasSkip);
+  TEST_ASSERT_EQUAL_UINT(2, live.skip.size());
+  TEST_ASSERT_EQUAL_STRING("wind", live.skip[0].c_str());
+  TEST_ASSERT_EQUAL_STRING("wind_gusts", live.skip[1].c_str());
+  TEST_ASSERT_TRUE(live.autoRotate);  // the keys beside it don't get in the way
+  TEST_ASSERT_EQUAL_INT(60, live.autoSeconds);
+
+  MapLive none =
+      parseLive(filtered(R"({"visualizer": {"autoRotate": {"enabled": false, "skip": []}}, "leds": []})", liveFilter)
+                    .as<JsonVariantConst>());
+  TEST_ASSERT_TRUE(none.hasSkip);  // an empty list still says
+  TEST_ASSERT_TRUE(none.skip.empty());
+
+  MapLive older = parseLive(filtered(kLiveJson, liveFilter).as<JsonVariantConst>());
+  TEST_ASSERT_FALSE(older.hasSkip);
+  TEST_ASSERT_TRUE(older.skip.empty());
+  MapLive odd = parseLive(
+      filtered(R"({"visualizer": {"autoRotate": {"skip": "wind"}}, "leds": []})", liveFilter).as<JsonVariantConst>());
+  TEST_ASSERT_FALSE(odd.hasSkip);  // not a list: as if it didn't say
+}
+
 void test_live_locate() {
   MapLive live = parseLive(filtered(kLiveJson, liveFilter).as<JsonVariantConst>());
   TEST_ASSERT_EQUAL_INT(5, live.locatePixel);
@@ -217,6 +241,62 @@ void test_status() {
   TEST_ASSERT_EQUAL_STRING("", status.visualizers[2].icon.c_str());
 }
 
+void test_status_skipped() {
+  MapStatus status = parseStatus(filtered(kStatusSkipJson, statusFilter).as<JsonVariantConst>());
+  TEST_ASSERT_TRUE(status.hasSkip);
+  TEST_ASSERT_EQUAL_UINT(3, status.visualizers.size());
+  TEST_ASSERT_FALSE(status.visualizers[0].skipped);
+  TEST_ASSERT_TRUE(status.visualizers[1].skipped);
+  TEST_ASSERT_FALSE(status.visualizers[2].skipped);  // Rainbow: always left out, but not in the list
+  TEST_ASSERT_TRUE(status.visualizers[2].exclusive);
+  TEST_ASSERT_EQUAL_STRING("rainbow", status.visualizers[2].id.c_str());  // an unknown key beside it is ignored
+
+  MapStatus older = parseStatus(filtered(kStatusJson, statusFilter).as<JsonVariantConst>());
+  TEST_ASSERT_FALSE(older.hasSkip);
+  for (const Visualizer& v : older.visualizers) TEST_ASSERT_FALSE(v.skipped);
+}
+
+// /visualizer/<id>/skip and /unskip's answers
+void test_skip_answer() {
+  JsonDocument doc;
+  deserializeJson(doc, R"({"id": "wind", "skipped": true, "skip": ["wind_gusts", "wind"]})");
+  SkipAnswer a = parseSkip(doc.as<JsonVariantConst>(), 200);
+  TEST_ASSERT_TRUE(a.ok);
+  TEST_ASSERT_EQUAL_STRING("wind", a.id.c_str());
+  TEST_ASSERT_TRUE(a.skipped);
+  TEST_ASSERT_EQUAL_UINT(2, a.skip.size());
+  TEST_ASSERT_EQUAL_STRING("wind_gusts", a.skip[0].c_str());
+  TEST_ASSERT_EQUAL_STRING("", a.reason.c_str());
+
+  deserializeJson(doc, R"({"id": "wind", "skipped": false, "skip": []})");
+  a = parseSkip(doc.as<JsonVariantConst>(), 200);
+  TEST_ASSERT_TRUE(a.ok);
+  TEST_ASSERT_FALSE(a.skipped);
+  TEST_ASSERT_TRUE(a.skip.empty());
+
+  // a 400: its reason, and not ok
+  for (const char* reason : {"last", "exclusive", "unknown", "invalid"}) {
+    std::string json = std::string(R"({"error": "No", "reason": ")") + reason + R"("})";
+    deserializeJson(doc, json);
+    a = parseSkip(doc.as<JsonVariantConst>(), 400);
+    TEST_ASSERT_FALSE(a.ok);
+    TEST_ASSERT_EQUAL_STRING(reason, a.reason.c_str());
+    TEST_ASSERT_EQUAL_INT(400, a.httpCode);
+  }
+
+  // no JSON (a 404 from an older Chart, or no answer): not ok, no reason, no id
+  doc.clear();
+  a = parseSkip(doc.as<JsonVariantConst>(), 404);
+  TEST_ASSERT_FALSE(a.ok);
+  TEST_ASSERT_EQUAL_STRING("", a.reason.c_str());
+  TEST_ASSERT_EQUAL_STRING("", a.id.c_str());
+  a = parseSkip(doc.as<JsonVariantConst>(), -1);
+  TEST_ASSERT_FALSE(a.ok);
+  // a 200 without the list isn't the answer
+  deserializeJson(doc, R"({"id": "wind"})");
+  TEST_ASSERT_FALSE(parseSkip(doc.as<JsonVariantConst>(), 200).ok);
+}
+
 void test_status_airports() {
   MapStatus status = parseStatus(filtered(kStatusJson, statusFilter).as<JsonVariantConst>());
   TEST_ASSERT_TRUE(status.airports.size() >= 2);
@@ -303,6 +383,7 @@ int main() {
   UNITY_BEGIN();
   RUN_TEST(test_parse_color);
   RUN_TEST(test_live_visualizer_and_auto_rotate);
+  RUN_TEST(test_live_auto_rotate_skip);
   RUN_TEST(test_live_locate);
   RUN_TEST(test_live_stations);
   RUN_TEST(test_live_nulls);
@@ -315,6 +396,8 @@ int main() {
   RUN_TEST(test_live_without_legend_in_use);
   RUN_TEST(test_live_filter_drops_the_rest);
   RUN_TEST(test_status);
+  RUN_TEST(test_status_skipped);
+  RUN_TEST(test_skip_answer);
   RUN_TEST(test_status_airports);
   RUN_TEST(test_version_text);
   RUN_TEST(test_status_legend);

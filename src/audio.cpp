@@ -3,8 +3,12 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <driver/i2s.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
+#include <freertos/task.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <iterator>
 
@@ -25,6 +29,20 @@ constexpr float kClickLevel = 0.25f;  // of full scale
 int16_t clickPcm[kClickFrames * 2];
 
 bool ready = false;
+
+// audio_play() and audio_click(): one task writes them to the speaker, so the two never interleave. A request is
+// handed over whole, through a one-place queue a newer one overwrites (from any task or core, never waiting).
+constexpr size_t kPlayChunk = 128;        // frames per write: 8 ms
+constexpr uint32_t kStreamQuietMs = 300;  // a stream wrote this recently: it has the speaker
+struct Request {
+  const Sound* sound;
+  int volume;
+};
+QueueHandle_t requests = nullptr;
+TaskHandle_t playTask = nullptr;
+std::atomic<bool> clickAsked{false};
+std::atomic<bool> soundsOn{true};
+std::atomic<uint32_t> lastStreamWrite{0};
 
 bool codecWrite(uint8_t reg, uint8_t value) {
   Wire1.beginTransmission(kCodecAddr);
@@ -114,6 +132,56 @@ void makeClick() {
   }
 }
 
+bool streamPlaying() {
+  uint32_t at = lastStreamWrite.load();
+  return at && millis() - at < kStreamQuietMs;
+}
+
+// Plays the latest sound, a chunk at a time, as mono turned stereo with its volume, and the tick mixed in when a
+// touch asks for one; a newer sound replaces the one playing. Gives way to a stream (it would mix into noise).
+void playLoop(void*) {
+  int16_t out[kPlayChunk * 2];
+  const Sound* sound = nullptr;
+  size_t at = 0;     // frames of the sound played
+  int gain = 0;      // of 256
+  int clickAt = -1;  // frames of the tick played; -1: none
+  for (;;) {
+    Request r;
+    if (xQueueReceive(requests, &r, 0) == pdTRUE) {
+      sound = r.sound;
+      at = 0;
+      gain = r.volume < 0 ? 0 : (r.volume > 100 ? 256 : r.volume * 256 / 100);
+    }
+    if (clickAsked.exchange(false)) clickAt = 0;
+    if (!soundsOn.load()) sound = nullptr;  // turned off: stops at once
+    if (streamPlaying()) {                  // the stream has the speaker: drop what's playing
+      sound = nullptr;
+      clickAt = -1;
+    }
+    if (sound && at >= sound->frames) sound = nullptr;
+    if (clickAt >= kClickFrames) clickAt = -1;
+    if (!sound && clickAt < 0) {
+      ulTaskNotifyTake(pdTRUE, portMAX_DELAY);  // nothing to play: audio_play() and audio_click() wake it
+      continue;
+    }
+
+    size_t n = kPlayChunk;
+    if (sound) n = std::min(n, sound->frames - at);
+    if (!sound) n = std::min(n, (size_t)(kClickFrames - clickAt));
+    for (size_t i = 0; i < n; i++) {
+      int v = sound ? (sound->pcm[at + i] * gain) >> 8 : 0;
+      if (clickAt >= 0 && clickAt + (int)i < kClickFrames) v += clickPcm[2 * (clickAt + i)];
+      int16_t c = (int16_t)std::max(-32768, std::min(32767, v));
+      out[2 * i] = c;
+      out[2 * i + 1] = c;
+    }
+    if (sound) at += n;
+    if (clickAt >= 0) clickAt += (int)n;
+    size_t written;
+    i2s_write(kPort, out, n * 2 * sizeof(int16_t), &written, pdMS_TO_TICKS(100));
+  }
+}
+
 }  // namespace
 
 bool audio_begin() {
@@ -146,6 +214,8 @@ bool audio_begin() {
   }
 
   makeClick();
+  requests = xQueueCreate(1, sizeof(Request));
+  if (requests) xTaskCreate(playLoop, "sounds", 3072, nullptr, 1, &playTask);
   delay(10);
   digitalWrite(AUDIO_EN, LOW);  // amplifier on
   ready = true;
@@ -154,15 +224,25 @@ bool audio_begin() {
 }
 
 void audio_click() {
-  if (!ready) return;
-  size_t written;
-  i2s_write(kPort, clickPcm, sizeof(clickPcm), &written, 0);
+  if (!ready || !playTask || streamPlaying()) return;  // over a stream: nothing to hear it over, and no pop
+  clickAsked.store(true);
+  xTaskNotifyGive(playTask);
 }
+
+void audio_play(const Sound& sound, int volume) {
+  if (!ready || !playTask || !soundsOn.load()) return;
+  Request r{&sound, volume};
+  xQueueOverwrite(requests, &r);
+  xTaskNotifyGive(playTask);
+}
+
+void audio_set_sounds(bool on) { soundsOn.store(on); }
 
 bool audio_ready() { return ready; }
 
 size_t audio_write(const int16_t* stereo, size_t frames, uint32_t waitMs) {
   if (!ready) return 0;
+  lastStreamWrite.store(millis() | 1);
   size_t written = 0;
   i2s_write(kPort, stereo, frames * 2 * sizeof(int16_t), &written, pdMS_TO_TICKS(waitMs));
   return written / (2 * sizeof(int16_t));

@@ -3,9 +3,12 @@
 #include <HTTPClient.h>
 #include <WiFi.h>
 
+#include "audio.h"
 #include "log.h"
 #include "map_parse.h"
+#include "skips.h"
 #include "spiram.h"
+#include "stream.h"
 
 namespace {
 
@@ -34,6 +37,29 @@ void MapClient::requestAtis(const std::string& code) {
   Cmd cmd{};
   strlcpy(cmd.atis, code.c_str(), sizeof(cmd.atis));
   if (xQueueSend(queue_, &cmd, 0) != pdTRUE) LOGF("map: command queue full, dropped %s's ATIS\n", cmd.atis);
+}
+
+uint32_t MapClient::requestSkip(const std::string& id, bool skip) {
+  Cmd cmd{};
+  strlcpy(cmd.skipId, id.c_str(), sizeof(cmd.skipId));
+  cmd.skipOn = skip;
+  if (++skipSeq_ == 0) skipSeq_ = 1;  // never 0, wrapping round: 0 is "not queued"
+  cmd.skipSeq = skipSeq_;
+  cmd.queuedAt = millis();
+  if (xQueueSend(queue_, &cmd, 0) == pdTRUE) return cmd.skipSeq;
+  LOGF("map: command queue full, dropped %s's skip\n", cmd.skipId);
+  return 0;
+}
+
+bool MapClient::getSkip(SkipAnswer& out, uint32_t& rev) {
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  bool changed = rev != skipRev_;
+  if (changed) {
+    out = skip_;
+    rev = skipRev_;
+  }
+  xSemaphoreGive(mutex_);
+  return changed;
 }
 
 bool MapClient::getAtis(AtisTranscript& out, uint32_t& rev) {
@@ -97,6 +123,9 @@ void MapClient::run() {
     if (xQueueReceive(queue_, &cmd, pdMS_TO_TICKS(50)) == pdTRUE) {
       if (cmd.atis[0]) {
         fetchAtis(cmd.atis);
+      } else if (cmd.skipId[0]) {
+        sendSkip(cmd);
+        lastLive = 0;  // the marks from the Chart now
       } else {
         int code = get(cmd.path, kTimeoutMs, nullptr, nullptr);
         LOGF("map: %s -> %d\n", cmd.path, code);
@@ -125,7 +154,7 @@ void MapClient::run() {
   }
 }
 
-int MapClient::get(const char* path, uint32_t timeoutMs, JsonDocument* doc, JsonDocument* filter) {
+int MapClient::get(const char* path, uint32_t timeoutMs, JsonDocument* doc, JsonDocument* filter, bool errorBody) {
   WiFiClient tcp;
   HTTPClient http;
   http.useHTTP10(true);  // no chunked encoding, so the body can be streamed
@@ -133,8 +162,12 @@ int MapClient::get(const char* path, uint32_t timeoutMs, JsonDocument* doc, Json
   http.setTimeout(timeoutMs);
   if (!http.begin(tcp, host_, port_, path)) return HTTPC_ERROR_CONNECTION_REFUSED;
   int code = http.GET();
-  if (code == HTTP_CODE_OK && doc) {
-    DeserializationError err = deserializeJson(*doc, http.getStream(), DeserializationOption::Filter(*filter));
+  if (doc && code == HTTP_CODE_BAD_REQUEST && errorBody) {
+    // a 400's reason, if it has one: no JSON is still a 400
+    if (deserializeJson(*doc, http.getStream())) doc->clear();
+  } else if (code == HTTP_CODE_OK && doc) {
+    DeserializationError err = filter ? deserializeJson(*doc, http.getStream(), DeserializationOption::Filter(*filter))
+                                      : deserializeJson(*doc, http.getStream());
     if (err) {
       LOGF("map: %s: bad JSON (%s)\n", path, err.c_str());
       code = -100;
@@ -186,6 +219,27 @@ void MapClient::fetchAtis(const char* code) {
   xSemaphoreGive(mutex_);
 }
 
+void MapClient::sendSkip(const Cmd& cmd) {
+  std::string path = std::string("/visualizer/") + cmd.skipId + (cmd.skipOn ? "/skip" : "/unskip");
+  SkipAnswer a;
+  if (millis() - cmd.queuedAt >= skips::kQueuedMs) {
+    // it waited out a Wi-Fi outage or slow requests: done now it would surprise; answered as failed, not sent
+    LOGF("map: %s waited %u s, dropped\n", path.c_str(), (unsigned)((millis() - cmd.queuedAt) / 1000));
+  } else {
+    JsonDocument doc(spiram());  // a few ids: no filter needed
+    int code = get(path.c_str(), kTimeoutMs, &doc, nullptr, true);
+    a = parseSkip(doc.as<JsonVariantConst>(), code);
+    LOGF("map: %s -> %d%s%s\n", path.c_str(), code, a.reason.empty() ? "" : " ", a.reason.c_str());
+  }
+  a.seq = cmd.skipSeq;
+  if (a.id.empty()) a.id = cmd.skipId;
+
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  skip_ = std::move(a);
+  skipRev_++;
+  xSemaphoreGive(mutex_);
+}
+
 void MapClient::pollStatus() {
   static JsonDocument filter(spiram());
   if (filter.isNull()) statusFilter(filter);
@@ -205,10 +259,19 @@ void MapClient::pollStatus() {
   xSemaphoreGive(mutex_);
 }
 
+// the least time between two chimes
+constexpr uint32_t kChimeEveryMs = 60000;
+
 void MapClient::setConnection(bool wifi, bool online, int httpCode) {
   xSemaphoreTake(mutex_, portMAX_DELAY);
   if (conn_.wifi != wifi || conn_.online != online || conn_.httpCode != httpCode) {
     if (conn_.online != online) LOGF("map: %s (%d)\n", online ? "online" : "offline", httpCode);
+    // the chime when it reaches the Chart; not again within a minute, so a flaky Wi-Fi doesn't ring on and on
+    static uint32_t chimed = 0;
+    if (online && !conn_.online && (chimed == 0 || millis() - chimed >= kChimeEveryMs)) {
+      chimed = millis() | 1;
+      audio_play(sound_chime, stream_volume());
+    }
     conn_.wifi = wifi;
     conn_.online = online;
     conn_.httpCode = httpCode;
