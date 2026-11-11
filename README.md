@@ -13,7 +13,9 @@ drives pixels itself.
 |---|---|---|
 | ![The Pixels panel: the visualizer, its steps, its legend, Auto and Pixels](docs/leds.png) | ![The Airports panel: a page of airports and the page strip](docs/airports.png) | ![An airport's card: its METAR, and Locate, AWOS and ATIS](docs/card.png) |
 | **Brightness** | **Splash** | **Update** |
-| ![The brightness sheet](docs/brightness.png) | ![The splash screen](docs/splash.png) | ![The firmware update screen](docs/update.png) |
+| ![The brightness sheet](docs/brightness.png) | ![The logo's splash: versions, addresses, Close and Firmware, and the volume button at the top right](docs/splash.png) | ![The firmware update screen](docs/update.png) |
+| **Visualizer picker** | | |
+| ![The visualizer picker: a tile for each visualizer; Gusts, Wind Dir and TFR are skipped (dimmed, with a SKIP badge)](docs/picker.png) | | |
 
 ## What it does
 
