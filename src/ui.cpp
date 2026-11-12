@@ -2043,15 +2043,19 @@ void hideSetupScreen() {
 // ---- the update screen ---------------------------------------------------------------------------------------
 //
 // From the splash's Firmware (or Update) button: the installed firmware, the
-// newest on the chosen channel (Releases, Latest commit, Branch: metarmap2's),
-// and UPDATE.
+// newest on the chosen channel (Releases, Latest commit, Branch: metarmap2's;
+// or Pick release, one release older or newer), and UPDATE (INSTALL on Pick release).
 
+constexpr int kChannels = 4;  // update::Channel's, in its order
 lv_obj_t* updScr = nullptr;
-lv_obj_t* updChips[3];
-lv_obj_t *updBranchRow, *updBranch, *updAvailable, *updButton, *updProgressRow, *updBar, *updStatus, *updBack;
-std::string updBranchOptions;  // what the branch menu holds
+lv_obj_t* updChips[kChannels];
+lv_obj_t *updBranchRow, *updBranch, *updReleaseRow, *updRelease, *updAvailable, *updButton, *updButtonLabel,
+    *updProgressRow, *updBar, *updStatus, *updBack;
+std::string updBranchOptions;   // what the branch menu holds
+std::string updReleaseOptions;  // what the release menu holds
 
-const char* const kChannelLabels[3] = {"Releases", "Latest commit", "Branch"};
+const char* const kChannelLabels[kChannels] = {"Releases", "Latest commit", "Branch", "Pick release"};
+constexpr const char* kPickRelease = "Pick a release";  // the release menu's first line until one is picked
 
 void hideUpdate() {
   lv_screen_load_anim(remoteScreen, LV_SCR_LOAD_ANIM_FADE_IN, 300, 0, true);  // then deletes it
@@ -2065,19 +2069,38 @@ void onChannel(lv_event_t* e) {
       std::find(upd.branches.begin(), upd.branches.end(), branch) == upd.branches.end()) {
     branch = upd.branches[0];  // the saved branch has no build: one that has
   }
-  updater->setChannel(channel, branch);
+  updater->setChannel(channel, branch, upd.release);  // Pick release: the saved one, or the menu says Pick a release
 }
 
 void onBranch(lv_event_t*) {
   char name[64];
   lv_dropdown_get_selected_str(updBranch, name, sizeof(name));
-  updater->setChannel(update::Channel::Branch, name);
+  updater->setChannel(update::Channel::Branch, name, upd.release);
+}
+
+void onRelease(lv_event_t*) {
+  char tag[32];
+  lv_dropdown_get_selected_str(updRelease, tag, sizeof(tag));
+  if (update::versionParts(tag).empty()) return;  // Pick a release
+  updater->setChannel(update::Channel::Release, upd.branch, tag);
+}
+
+// A menu's lines, set only when they change (setting them closes an open menu), and the chosen one selected.
+void setMenu(lv_obj_t* menu, std::string& held, const std::vector<std::string>& names, const std::string& chosen) {
+  std::string options;
+  for (const std::string& n : names) options += (options.empty() ? "" : "\n") + n;
+  if (options != held) {
+    held = options;
+    lv_dropdown_set_options(menu, options.c_str());
+  }
+  auto at = std::find(names.begin(), names.end(), chosen);
+  if (at != names.end()) lv_dropdown_set_selected(menu, at - names.begin());
 }
 
 void refreshUpdate() {
   if (!updScr) return;
   bool busy = upd.phase == UpdateState::Installing || upd.phase == UpdateState::Restarting;
-  for (int i = 0; i < 3; i++) {
+  for (int i = 0; i < kChannels; i++) {
     setChecked(updChips[i], i == (int)upd.channel);
     enable(updChips[i], !busy);
   }
@@ -2090,18 +2113,25 @@ void refreshUpdate() {
     if (!upd.branch.empty() && std::find(names.begin(), names.end(), upd.branch) == names.end()) {
       names.push_back(upd.branch);  // the chosen one, even before (or without) a build
     }
-    std::string options;
-    for (const std::string& n : names) options += (options.empty() ? "" : "\n") + n;
-    if (options != updBranchOptions) {
-      updBranchOptions = options;
-      lv_dropdown_set_options(updBranch, options.c_str());
-    }
-    auto at = std::find(names.begin(), names.end(), upd.branch);
-    if (at != names.end()) lv_dropdown_set_selected(updBranch, at - names.begin());
+    setMenu(updBranch, updBranchOptions, names, upd.branch);
     enable(updBranch, !busy);
   }
 
-  // What's available on that channel.
+  // The release menu: the newest releases with the firmware file.
+  bool releaseChannel = upd.channel == update::Channel::Release;
+  showHidden(updReleaseRow, releaseChannel);
+  if (releaseChannel) {
+    std::vector<std::string> tags = upd.releases;
+    if (upd.release.empty()) {
+      tags.insert(tags.begin(), kPickRelease);
+    } else if (std::find(tags.begin(), tags.end(), upd.release) == tags.end()) {
+      tags.push_back(upd.release);  // the saved one, even if it's no longer listed
+    }
+    setMenu(updRelease, updReleaseOptions, tags, upd.release.empty() ? kPickRelease : upd.release);
+    enable(updRelease, !busy);
+  }
+
+  // What's available on that channel; on Pick release, the picked one against the installed.
   std::string text;
   uint32_t color = kMuted;
   if (upd.phase == UpdateState::Checking) {
@@ -2111,8 +2141,13 @@ void refreshUpdate() {
     color = kIfr;
   } else if (!upd.checked) {
     text = "";
+  } else if (releaseChannel && upd.release.empty()) {
+    text = kPickRelease;
   } else if (upd.candidate.empty()) {
-    text = "None published";
+    text = releaseChannel ? "Not on GitHub" : "None published";
+  } else if (releaseChannel) {
+    text = upd.candidate + " (" + update::ageText(upd.age) + ")";
+    if (upd.installable) color = kVfr;
   } else if (upd.available) {
     text = upd.candidate;
     color = kVfr;
@@ -2125,7 +2160,8 @@ void refreshUpdate() {
   // UPDATE, or how the install is going.
   showHidden(updButton, !busy);
   showHidden(updProgressRow, busy);
-  enable(updButton, upd.available && upd.phase == UpdateState::Idle);
+  enable(updButton, upd.installable && upd.phase == UpdateState::Idle);
+  lv_label_set_text(updButtonLabel, releaseChannel ? "INSTALL, KEEPING SETTINGS" : "UPDATE");
   enable(updBack, !busy);
   if (busy) {
     lv_bar_set_value(updBar, upd.progress, LV_ANIM_OFF);
@@ -2159,10 +2195,10 @@ void showUpdate() {
   lv_obj_set_style_bg_opa(updScr, LV_OPA_COVER, 0);
   lv_obj_set_flex_flow(updScr, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_style_pad_all(updScr, 8, 0);
-  lv_obj_set_style_pad_row(updScr, 8, 0);
+  lv_obj_set_style_pad_row(updScr, 6, 0);  // with a menu row it's 240 px: the screen's height
 
   lv_obj_t* head = box(updScr, LV_FLEX_FLOW_ROW);
-  lv_obj_set_size(head, LV_PCT(100), 38);
+  lv_obj_set_size(head, LV_PCT(100), 36);
   lv_obj_set_flex_align(head, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
   label(head, "Firmware update", &lv_font_montserrat_16, kText);
   updBack = button(head, &stBtn);
@@ -2173,7 +2209,7 @@ void showUpdate() {
   lv_obj_t* chips = box(updScr, LV_FLEX_FLOW_ROW);
   lv_obj_set_size(chips, LV_PCT(100), 40);
   lv_obj_set_style_pad_column(chips, 6, 0);
-  for (int i = 0; i < 3; i++) {
+  for (int i = 0; i < kChannels; i++) {
     lv_obj_t* chip = button(chips, &stBtn);
     lv_obj_add_style(chip, &stLit, LV_STATE_CHECKED);
     lv_obj_set_style_text_font(chip, &lv_font_montserrat_12, 0);
@@ -2181,6 +2217,9 @@ void showUpdate() {
     lv_obj_set_flex_grow(chip, 1);
     lv_obj_t* l = lv_label_create(chip);
     lv_label_set_text(l, kChannelLabels[i]);
+    lv_obj_set_width(l, LV_PCT(100));  // four to a row: Latest commit and Pick release take two lines
+    lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_center(l);
     lv_obj_add_event_cb(chip, onChannel, LV_EVENT_CLICKED, (void*)(intptr_t)i);
     updChips[i] = chip;
@@ -2198,6 +2237,18 @@ void showUpdate() {
   lv_obj_add_event_cb(updBranch, onBranch, LV_EVENT_VALUE_CHANGED, nullptr);
   updBranchOptions.clear();
 
+  updReleaseRow = box(updScr, LV_FLEX_FLOW_ROW);
+  lv_obj_set_size(updReleaseRow, LV_PCT(100), LV_SIZE_CONTENT);
+  lv_obj_set_flex_align(updReleaseRow, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_column(updReleaseRow, 8, 0);
+  lv_obj_set_width(label(updReleaseRow, "Release", &lv_font_montserrat_14, kMuted), 74);
+  updRelease = lv_dropdown_create(updReleaseRow);
+  lv_obj_set_flex_grow(updRelease, 1);
+  lv_obj_set_height(updRelease, 36);
+  lv_obj_set_style_pad_ver(updRelease, 8, 0);
+  lv_obj_add_event_cb(updRelease, onRelease, LV_EVENT_VALUE_CHANGED, nullptr);
+  updReleaseOptions.clear();
+
   infoRow(updScr, "Installed", FIRMWARE_VERSION);
   infoRow(updScr, "Available", "", &updAvailable);
 
@@ -2208,7 +2259,8 @@ void showUpdate() {
   lv_obj_set_size(updButton, LV_PCT(100), 44);
   lv_obj_set_style_bg_color(updButton, hex(kAccent), 0);
   lv_obj_set_style_border_width(updButton, 0, 0);
-  lv_obj_center(label(updButton, "UPDATE", &lv_font_montserrat_16, kBg));
+  updButtonLabel = label(updButton, "UPDATE", &lv_font_montserrat_16, kBg);
+  lv_obj_center(updButtonLabel);
   lv_obj_add_event_cb(updButton, [](lv_event_t*) { updater->install(); }, LV_EVENT_CLICKED, nullptr);
 
   updProgressRow = box(updScr, LV_FLEX_FLOW_ROW);
