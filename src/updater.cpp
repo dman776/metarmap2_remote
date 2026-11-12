@@ -76,6 +76,7 @@ void Updater::begin(Settings& settings) {
   settings_ = &settings;
   state_.channel = update::channelFromName(settings.updateChannel);
   state_.branch = settings.updateBranch;
+  state_.release = settings.updateRelease;
   queue_ = xQueueCreate(4, sizeof(Cmd));
   mutex_ = xSemaphoreCreateMutex();
   // Core 0 beside Wi-Fi; TLS needs a deep stack.
@@ -101,18 +102,28 @@ bool Updater::get(UpdateState& out, uint32_t& rev) {
   return changed;
 }
 
-void Updater::setChannel(update::Channel channel, const std::string& branch) {
+void Updater::setChannel(update::Channel channel, const std::string& branch, const std::string& release) {
   change([&](UpdateState& s) {
     s.channel = channel;
     s.branch = branch;
-    s.checked = s.available = false;
+    s.release = release;
+    s.checked = s.available = s.installable = false;
+    s.age = update::Age::Unknown;
     s.candidate.clear();
     s.error.clear();
   });
   settings_->updateChannel = update::channelName(channel);
   settings_->updateBranch = branch;
+  settings_->updateRelease = release;
   settings_save_update(*settings_);
   check();
+}
+
+void Updater::choice(std::string& branch, std::string& release) {
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  branch = state_.branch;
+  release = state_.release;
+  xSemaphoreGive(mutex_);
 }
 
 void Updater::check() {
@@ -153,16 +164,17 @@ void Updater::run() {
 
 void Updater::doCheck() {
   update::Channel channel;
-  std::string branch;
+  std::string branch, release;
   change([&](UpdateState& s) {
     s.phase = UpdateState::Checking;
     s.error.clear();
     channel = s.channel;
     branch = s.branch;
+    release = s.release;
   });
 
-  // One request answers every channel: the releases, and the builds (with
-  // the branches that have one).
+  // One request answers every channel: the releases (and the ones Pick
+  // release offers), and the builds (with the branches that have one).
   JsonDocument filter(spiram()), doc(spiram());
   update::releaseListFilter(filter);
   int code = getJson(apiUrl("/releases?per_page=100"), doc, filter);
@@ -183,6 +195,8 @@ void Updater::doCheck() {
       if (r.prerelease || v.empty() || r.url.empty()) continue;
       if (candidate.tag.empty() || v > update::versionParts(candidate.tag)) candidate = r;
     }
+  } else if (channel == update::Channel::Release) {
+    candidate = update::findRelease(releases, release);  // exactly that one, older or newer
   } else {
     std::string tag = update::buildTag(channel == update::Channel::Latest ? update::kMainBranch : branch);
     for (const update::Release& r : releases) {
@@ -190,19 +204,29 @@ void Updater::doCheck() {
     }
   }
   bool available = update::isUpdate(channel, candidate, FIRMWARE_TAG, FIRMWARE_COMMIT);
-  LOGF("update: %s%s%s: %s%s\n", update::channelName(channel), channel == update::Channel::Branch ? " " : "",
-       channel == update::Channel::Branch ? branch.c_str() : "",
-       candidate.version.empty() ? "none published" : candidate.version.c_str(), available ? " (update)" : "");
+  bool installable = update::canInstall(channel, candidate, FIRMWARE_TAG, FIRMWARE_VERSION, FIRMWARE_COMMIT);
+  update::Age age = channel == update::Channel::Release && !candidate.tag.empty()
+                        ? update::ageOf(candidate.tag, FIRMWARE_TAG, FIRMWARE_VERSION)
+                        : update::Age::Unknown;
+  const std::string& pick = channel == update::Channel::Branch ? branch : release;
+  bool picked = channel == update::Channel::Branch || channel == update::Channel::Release;
+  LOGF("update: %s%s%s: %s%s%s%s\n", update::channelName(channel), picked ? " " : "", picked ? pick.c_str() : "",
+       candidate.version.empty() ? "none published" : candidate.version.c_str(), available ? " (update)" : "",
+       age != update::Age::Unknown ? ", " : "", update::ageText(age));
 
   xSemaphoreTake(mutex_, portMAX_DELAY);
-  bool stillWanted = state_.channel == channel && state_.branch == branch;  // not changed meanwhile
+  // not changed meanwhile
+  bool stillWanted = state_.channel == channel && state_.branch == branch && state_.release == release;
   if (stillWanted) {
     candidate_ = candidate;
     state_.checked = true;
     state_.available = available;
+    state_.installable = installable;
+    state_.age = age;
     state_.candidate = candidate.version;
   }
   state_.branches = update::buildBranches(releases);
+  state_.releases = update::releaseTags(releases);
   state_.phase = UpdateState::Idle;
   rev_++;
   xSemaphoreGive(mutex_);
@@ -211,7 +235,7 @@ void Updater::doCheck() {
 void Updater::doInstall() {
   xSemaphoreTake(mutex_, portMAX_DELAY);
   update::Release r = candidate_;
-  bool ok = state_.available;
+  bool ok = state_.installable;  // an update; or on Release, the picked release, older ones too
   xSemaphoreGive(mutex_);
   auto fail = [&](const std::string& why) {
     LOGF("update: install failed: %s\n", why.c_str());

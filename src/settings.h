@@ -16,8 +16,9 @@ struct Settings {
   std::string wifiPassword;
   std::string mapHost;
   uint16_t mapPort = 80;
-  std::string updateChannel = "releases";  // releases, latest, branch (update_check.h)
+  std::string updateChannel = "releases";  // releases, latest, branch, release (update_check.h)
   std::string updateBranch;                // "" until one is picked
+  std::string updateRelease;               // the Pick release channel's tag (v26.11.07); "" until one is picked
   std::string streamUrl;                   // the MP3 stream the Radio plays; "" for none
   int volume = 63;                         // the speaker's, 0-100 (%): the volume slider while audio plays
   std::string webPassword;                 // the web page's login password (user metar); map until it's changed
@@ -35,7 +36,7 @@ void settings_save_stream(const std::string& url);
 // Saves the speaker's volume (0-100), as set on the volume slider. Writes only a change.
 void settings_save_volume(int volume);
 
-// Saves the update channel and branch.
+// Saves the update channel, branch and picked release.
 void settings_save_update(const Settings& settings);
 
 // Saves the Wi-Fi network and password, and the map's address and port (the web page; used after a restart).
