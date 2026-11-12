@@ -48,6 +48,28 @@ static void tickStatusLight() {
   }
 }
 
+// Wi-Fi's ups and downs in the log, with their times (the Wi-Fi task logs them): a disconnect once per reason in a
+// row, not each retry's.
+static int lastDisconnect = -1;  // its reason; -1 when connected (only the Wi-Fi event task uses it)
+
+static void logWifiEvents() {
+  WiFi.onEvent(
+      [](arduino_event_id_t, arduino_event_info_t info) {
+        lastDisconnect = -1;
+        LOGF("wifi: got %s\n", IPAddress(info.got_ip.ip_info.ip.addr).toString().c_str());
+      },
+      ARDUINO_EVENT_WIFI_STA_GOT_IP);
+  WiFi.onEvent(
+      [](arduino_event_id_t, arduino_event_info_t info) {
+        int reason = info.wifi_sta_disconnected.reason;
+        if (reason != lastDisconnect) LOGF("wifi: disconnected (reason %d)\n", reason);
+        lastDisconnect = reason;
+      },
+      ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+  WiFi.onEvent([](arduino_event_id_t, arduino_event_info_t) { LOGF("wifi: lost the IP address\n"); },
+               ARDUINO_EVENT_WIFI_STA_LOST_IP);
+}
+
 void setup() {
   Serial.begin(115200);
   log_begin();  // the log the web page shows
@@ -69,6 +91,11 @@ void setup() {
   lvgl_port_init(lcd);
   ui_init(mapClient, updater);
 
+  // The Copilot keeps the network and password in its own settings and gives them to WiFi.begin() each time, so the
+  // Wi-Fi driver needn't keep a copy in flash too: not persistent, each begin() (while not connected, e.g. Wi-Fi
+  // setup's retry every 30 s) would write the station config to NVS. Before the first WiFi.mode(), which applies it.
+  WiFi.persistent(false);
+  logWifiEvents();
   WiFi.mode(WIFI_STA);
   WiFi.setHostname("metarmap-copilot");
   wifi_setup_begin(settings);

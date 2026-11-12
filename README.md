@@ -125,7 +125,20 @@ buttons: **Chart**, **Airports**, and the **logo**.
   `~/.platformio/packages/toolchain-xtensa-esp32s3/bin`). That names the crashing code for a crash in our code;
   for a task watchdog it may not: the watchdog's interrupt aborts, so the PC and the first frames are the
   panic, abort and interrupt handlers, and the code that was spinning shows deeper in the backtrace, if it's
-  within the 16 frames at all.
+  within the 16 frames at all. A task watchdog reads `PC ..., cause 29, address 0x00000000` (abort's deliberate
+  write to address 0) with `panic_abort`, `esp_system_abort`, `abort` and `task_wdt_isr` as the first frames.
+- The dump stays in flash until a firmware that reads it starts, so it can be from **before an update** (a firmware
+  without these `last crash` lines never cleared it): the line ends `(this firmware)` or `(an earlier firmware, not this
+  one)`, by its ELF sha256. Decode an earlier one with that build's ELF: a release's or branch build's
+  `metarmap_remote-es3c28p.bin` holds its ELF sha256 (the app description at offset 32: bytes 144-175), and a
+  local build of the same commit (without a `secrets.h`, as CI builds) has the same addresses even though its own
+  sha256 differs. After an update `last run ended` says `software restart`: the restart into the new firmware, not
+  the crash.
+- Also in the log, each with its time: settings written to flash (`settings: saved the volume (12 ms)`, only when
+  a value changed), Wi-Fi (`wifi: got 192.168.x.x`, `wifi: disconnected (reason N)` once per reason in a row,
+  `wifi: lost the IP address`), and the speaker (`stream: speaking KIAH's ATIS`, `stream: play; free internal heap
+  ..., N older readers closing`, `stream: stop; free internal heap ...`). An older reader still closing holds its
+  stack for a moment, so the heap at `play` is lower then than once it has gone.
 - Live control of the Chart stays on the touchscreen, MetarMap2 Web and the Cockpit.
 - The page works through the Copilot's own endpoints (all behind the same login), listed in
   `src/remote_web.h`: `GET /api/state` (the versions, settings, `led`, `sounds` and the update's state), and
@@ -218,6 +231,10 @@ buttons: **Chart**, **Airports**, and the **logo**.
 - A Chart that is slow to answer, or never does, ends in "no answer" on the card (after 2 minutes, or at once if
   it closes the connection) instead of restarting the Copilot. **Stop**, closing the card, or another AWOS or
   ATIS ends the wait at once.
+- While it's being got or playing, the button that started it says **Stop** (with the stop symbol), and a press
+  stops it. A press counts once: a second press of the same button within 0.7 s is taken for the same touch, so a
+  finger the touch screen loses for a moment can't stop and start it again. If older requests to a slow Chart are
+  still closing, a new one waits a moment for them (the card says to try again if they don't close).
 - Always from the Copilot's Chart (`MAP_HOST`).
 
 **Spoken ATIS**
@@ -241,7 +258,7 @@ buttons: **Chart**, **Airports**, and the **logo**.
 
 **Everywhere**
 
-- A short tick from the speaker on each touch.
+- A short tick from the speaker on each touch: one per touch (not again within 0.12 s), as the finger lands.
 - A two-second airplane chime when it reaches the Chart (not again within a minute, so a flaky Wi-Fi doesn't
   ring on and on), and a short high pop when you hold a visualizer to leave it out of auto-rotate, a low pop when you
   hold it to put it back, and one when you let go of the splash's volume slider. They play at the speaker's volume
@@ -434,6 +451,7 @@ for the endpoints.
 | `src/map_state.h` | The Chart's state as the Copilot knows it |
 | `src/lvgl_port.cpp` | Display and touch for LVGL, screenshots |
 | `src/audio.cpp` | The codec, the touch tick, the short sounds and the I2S output |
+| `src/debounce.h` | One action per press: the touch tick's and the card buttons' debounce |
 | `src/sounds.c`, `src/sounds.h` | The sounds, generated from `assets/sounds/*.mp3` |
 | `src/stream.cpp` | The speaker's player: the spoken weather from the Chart, on two tasks |
 | `src/stream_dsp.cpp` | The player's ring buffer, resampler and URL parsing |
@@ -459,7 +477,7 @@ The firmware uses the Arduino framework with [LVGL](https://lvgl.io/) 9,
 
 ### Tests and lint
 
-The parsing, legend, paging, skip marks, update-check, network-wait and audio (buffer, resampler, URL) code is plain C++ with unit tests that
+The parsing, legend, paging, skip marks, update-check, network-wait, debounce and audio (buffer, resampler, URL) code is plain C++ with unit tests that
 run on your computer (PlatformIO's Unity framework). The JSON fixtures in
 `test/test_parse` are real, trimmed answers from a Chart.
 

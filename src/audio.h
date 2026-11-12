@@ -13,7 +13,9 @@
 bool audio_begin();
 
 // A short tick, for touch feedback. Returns at once: the task that plays audio_play()'s sounds writes it too (mixed
-// into one playing), so the two never interleave. (Dropped while a stream plays: nothing to hear a tick over.)
+// into one playing), so the two never interleave. (Dropped while a stream plays: nothing to hear a tick over; and
+// within 120 ms of the last one, which is the same touch.) The touch driver (lvgl_port.cpp) asks for it as a finger
+// lands: buttons don't ask again.
 void audio_click();
 
 // Plays a short sound from sounds.h (mono, 16 kHz) at volume 0-100 (%), the speaker's own volume setting. Returns at

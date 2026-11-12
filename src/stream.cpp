@@ -58,6 +58,10 @@ std::atomic<bool> wanted{false};
 // Play starts a generation; a task from an older one stops without touching anything shared.
 std::atomic<uint32_t> generation{0};
 std::atomic<int> players{0};  // player tasks still running (one, or for a moment two)
+// Reader tasks still running, the Play's own and older ones closing: each holds its 12 KB stack (and a socket) until
+// it sees it isn't wanted, which is moments, unless it's inside a connect() or a send that waits up to kTimeoutMs.
+std::atomic<int> readers{0};
+constexpr int kMaxClosingReaders = 2;  // older readers still closing: past this a new Play waits for them (presses)
 // Readers between their last look at the generation and the end of their connection: they share the ring, the epoch
 // and the answer's length with the player, so a new Play waits for them (moments: they look every few ms). A reader
 // still connecting, or waiting for an answer, isn't one of them, and stops at its next look.
@@ -340,8 +344,9 @@ std::string readOnce(uint32_t gen, bool once, uint32_t answerMs) {
   return "";
 }
 
-void readerTask(void* arg) {
-  uint32_t gen = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(arg));
+// The reader's whole Play. Returns when it's over: the task ends after it, with nothing of it left on the stack (a
+// vTaskDelete() inside here would skip the destructors, and leak a long error's string each time).
+void readPlay(uint32_t gen) {
   const bool once = oneShot;  // a spoken METAR or ATIS: once, no retrying, and the map may take long to answer
   const uint32_t answerMs = once ? kSpeakTimeoutMs : kTimeoutMs;
   while (current(gen)) {
@@ -356,13 +361,18 @@ void readerTask(void* arg) {
         LOGF("stream: speaking failed: %s\n", why.c_str());
         finish(gen, StreamState::Failed, why.c_str());
       }
-      vTaskDelete(nullptr);
+      return;
     }
     LOGF("stream: %s; trying again\n", why.c_str());
     publishIfCurrent(gen, StreamState::Retrying, why.c_str());
     for (uint32_t waited = 0; current(gen) && waited < kRetryMs; waited += 100) delay(100);
   }
   finish(gen, StreamState::Off);
+}
+
+void readerTask(void* arg) {
+  readPlay(static_cast<uint32_t>(reinterpret_cast<uintptr_t>(arg)));
+  readers--;
   vTaskDelete(nullptr);
 }
 
@@ -642,10 +652,16 @@ void start(const std::string& url, bool once, const std::string& speaking, bool 
   // A player from the last Play may still be finishing a write to the speaker (up to 100 ms), and its reader a write
   // to the buffer (moments); two of either would share it. An old reader still connecting or waiting for an answer
   // touches nothing shared, and stops at its next look (every 20 ms while waiting).
-  auto busy = [] { return players.load() > 0 || feeding.load() > 0; };
+  auto busy = [] { return players.load() > 0 || feeding.load() > 0 || readers.load() > kMaxClosingReaders; };
   for (int waited = 0; busy() && waited < 500; waited += 10) delay(10);
   if (busy()) {
-    LOGF("stream: the last %s hasn't stopped; not starting\n", players.load() > 0 ? "player" : "reader");
+    const char* who = players.load() > 0 ? "player" : (feeding.load() > 0 ? "reader" : "requests");
+    LOGF("stream: the last %s hasn't stopped (%d readers); not starting\n", who, readers.load());
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    state.speaking = speaking;  // the card that asked says why
+    state.atis = atis;
+    publishLocked(StreamState::Failed, "still closing the last requests; try again in a moment");
+    xSemaphoreGive(mutex);
     return;
   }
   xSemaphoreTake(mutex, portMAX_DELAY);  // with the generation: an old reader's finish() is before or after, whole
@@ -660,9 +676,10 @@ void start(const std::string& url, bool once, const std::string& speaking, bool 
   wanted = true;
   publishLocked(StreamState::Connecting, "");
   xSemaphoreGive(mutex);
-  LOGF("stream: play; free internal heap %u, largest block %u\n",
+  // (an older reader still closing holds its stack: the heap is back up once it has gone)
+  LOGF("stream: play; free internal heap %u, largest block %u; %d older reader%s closing\n",
        (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-       (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+       (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL), readers.load(), readers.load() == 1 ? "" : "s");
   // Core 0, beside Wi-Fi, as the map client and the updater; LVGL runs in the Arduino loop on core 1. The player is
   // above them (priority 2): it spends nearly all its time waiting on the speaker.
   players++;
@@ -673,8 +690,10 @@ void start(const std::string& url, bool once, const std::string& speaking, bool 
     publish(StreamState::Failed, "no memory for the player; try again");
     return;
   }
+  readers++;
   if (xTaskCreatePinnedToCore(readerTask, "stream_net", kReaderStack,
                               reinterpret_cast<void*>(static_cast<uintptr_t>(gen)), 1, nullptr, 0) != pdPASS) {
+    readers--;
     wanted = false;
     publish(StreamState::Failed, "no memory for the reader; try again");
   }
@@ -688,6 +707,7 @@ void stream_set_playing(bool on) {
     if (!wanted) return;
     wanted = false;  // the tasks see it and stop, giving back their memory
     publish(StreamState::Off);
+    LOGF("stream: stop; free internal heap %u\n", (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
     return;
   }
   if (wanted && !oneShot) return;  // already playing the Radio

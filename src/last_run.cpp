@@ -3,9 +3,11 @@
 #include <esp_core_dump.h>
 #include <esp_err.h>
 #include <esp_heap_caps.h>
+#include <esp_ota_ops.h>
 #include <esp_system.h>
 
 #include <cstdio>
+#include <cstring>
 
 #include "log.h"
 
@@ -38,6 +40,17 @@ const char* resetWord(esp_reset_reason_t why) {
   }
 }
 
+// Whether a crash's ELF sha256 (the hex string a core dump keeps) is this firmware's. A dump stays in flash until a
+// firmware that reads it erases it: one from before an update (e.g. 4809a10's first start found fecf3ab's) is not this
+// firmware's crash, and its addresses need that firmware's ELF.
+const char* whose(const char* crashSha) {
+  char mine[sizeof(esp_core_dump_summary_t::app_elf_sha256)] = "";
+  esp_ota_get_app_elf_sha256(mine, sizeof(mine));
+  size_t n = strnlen(crashSha, sizeof(mine) - 1);
+  if (n == 0 || mine[0] == '\0') return "";
+  return strncmp(mine, crashSha, n) == 0 ? " (this firmware)" : " (an earlier firmware, not this one)";
+}
+
 // The core dump a crash left in flash (the coredump partition), summed up, then erased.
 void logCoreDump() {
   constexpr size_t kBlank = 0xFFFFFFFF;  // the size word of an erased (empty) partition
@@ -63,9 +76,9 @@ void logCoreDump() {
   if (sum && esp_core_dump_get_summary(sum) == ESP_OK) {
     sum->exc_task[sizeof(sum->exc_task) - 1] = '\0';
     sum->app_elf_sha256[sizeof(sum->app_elf_sha256) - 1] = '\0';
-    LOGF("last crash: task %s, PC 0x%08x, cause %u, address 0x%08x, ELF sha256 %s\n", sum->exc_task,
-         (unsigned)sum->exc_pc, (unsigned)sum->ex_info.exc_cause, (unsigned)sum->ex_info.exc_vaddr,
-         reinterpret_cast<const char*>(sum->app_elf_sha256));
+    const char* sha = reinterpret_cast<const char*>(sum->app_elf_sha256);
+    LOGF("last crash: task %s, PC 0x%08x, cause %u, address 0x%08x, ELF sha256 %s%s\n", sum->exc_task,
+         (unsigned)sum->exc_pc, (unsigned)sum->ex_info.exc_cause, (unsigned)sum->ex_info.exc_vaddr, sha, whose(sha));
     char bt[16 * 11 + 1] = "";  // up to 16 " 0x%08x"
     size_t used = 0;
     uint32_t depth = sum->exc_bt_info.depth;
