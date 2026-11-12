@@ -32,7 +32,7 @@ static void readTouch(lv_indev_t*, lv_indev_data_t* data) {
   int32_t x, y;
   if (g_lcd->getTouch(&x, &y)) {
     if (!touchDown) {
-      audio_click();  // a tick as the finger lands
+      audio_click();  // a tick as the finger lands: the only one a press makes (debounced there)
     }
     touchDown = true;
     lastSeen = millis();

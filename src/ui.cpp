@@ -9,6 +9,7 @@
 #include <string>
 
 #include "audio.h"
+#include "debounce.h"
 #include "firmware_version.h"
 #include "icons.h"
 #include "legend.h"
@@ -1186,6 +1187,9 @@ AtisTranscript atis;  // the lines, from the map
 uint32_t atisRev = 0;
 StreamState radio;
 uint32_t radioRev = 0;
+// The card's buttons: one action per press (a finger the touch controller loses for a moment makes a second press:
+// it would stop what the first started, or start again what it stopped)
+debounce::Gate locateGate(debounce::kButtonMs), awosGate(debounce::kButtonMs), atisGate(debounce::kButtonMs);
 
 bool cardOpen() { return card.backdrop && !lv_obj_has_flag(card.backdrop, LV_OBJ_FLAG_HIDDEN); }
 
@@ -1373,23 +1377,33 @@ void closeCard(lv_event_t* e = nullptr) {
 }
 
 void onLocate(lv_event_t*) {
+  if (!locateGate.accept(millis())) return;  // the same press
   const Tile* t = cardAirport();
   if (t) locate(*t);
   showCard();
 }
 
+// The speaker's state now, not as the last tick saw it: a press right after another acts on what that one did.
+void refreshRadio() {
+  if (stream_get(radio, radioRev)) followTranscript();
+}
+
+// AWOS or ATIS; while it's being got ("Getting the ATIS...") or playing, the same button is Stop. (The tick came from
+// the touch driver as the finger landed.)
 void onSpeak(lv_event_t* e) {
+  bool wantAtis = (bool)(intptr_t)lv_event_get_user_data(e);
+  if (!(wantAtis ? atisGate : awosGate).accept(millis())) return;  // the same press
   const Tile* t = cardAirport();
   if (!t) return;
-  bool wantAtis = (bool)(intptr_t)lv_event_get_user_data(e);
-  if (cardSpeaking() == (wantAtis ? 2 : 1)) {  // the one playing: stop
+  refreshRadio();
+  if (cardSpeaking() == (wantAtis ? 2 : 1)) {  // the one being got or playing: stop
     stream_set_playing(false);
-    return;
+  } else {
+    closeTranscript();
+    stream_speak(t->code, wantAtis);
+    if (wantAtis) client->requestAtis(t->code);  // its lines, ready for when the sound starts
   }
-  audio_click();
-  closeTranscript();
-  stream_speak(t->code, wantAtis);
-  if (wantAtis) client->requestAtis(t->code);  // its lines, ready for when the sound starts
+  refreshRadio();  // so the button says Stop (or AWOS/ATIS again) at once
   showCard();
 }
 

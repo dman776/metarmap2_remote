@@ -12,6 +12,7 @@
 #include "firmware_version.h"
 #include "github_roots.h"
 #include "log.h"
+#include "net_client.h"
 #include "spiram.h"
 
 namespace {
@@ -46,7 +47,10 @@ int getJson(const std::string& url, JsonDocument& doc, JsonDocument& filter) {
   http.addHeader("X-GitHub-Api-Version", "2022-11-28");
   int code = http.GET();
   if (code == HTTP_CODE_OK) {
-    DeserializationError err = deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
+    // in turns: deserializeJson() on the stream itself would spin on core 0 if GitHub stalled (the watchdog's 5 s)
+    ClientSource src(http.getStream());
+    PatientReader body(src, kTimeoutMs);
+    DeserializationError err = deserializeJson(doc, body, DeserializationOption::Filter(filter));
     if (err) {
       LOGF("update: %s: bad JSON (%s)\n", url.c_str(), err.c_str());
       code = -100;
@@ -263,7 +267,10 @@ void Updater::doInstall() {
       continue;
     }
     int n = stream->readBytes(buf, std::min({avail, sizeof(buf), size - done}));
-    if (n <= 0) continue;
+    if (n <= 0) {
+      delay(5);  // never spin on core 0
+      continue;
+    }
     lastData = millis();
     if (Update.write(buf, n) != (size_t)n) break;
     mbedtls_sha256_update_ret(&sha, buf, n);

@@ -1,11 +1,12 @@
 #include "map_client.h"
 
-#include <HTTPClient.h>
+#include <HTTPClient.h>  // its HTTPC_ERROR_* codes, kept for the connection state
 #include <WiFi.h>
 
 #include "audio.h"
 #include "log.h"
 #include "map_parse.h"
+#include "net_client.h"
 #include "skips.h"
 #include "spiram.h"
 #include "stream.h"
@@ -14,7 +15,27 @@ namespace {
 
 constexpr uint32_t kLiveMs = 1500;         // the /remote page polls every 1 s
 constexpr uint32_t kStatusMs = 60 * 1000;  // and /api/status every minute
+// How long the Chart has to start answering, and then between parts of the answer. Waited in turns, so a slow
+// Chart (a Pi Zero busy sending an ATIS) can't hold core 0 and set off the task watchdog.
 constexpr uint32_t kTimeoutMs = 5000;
+constexpr uint32_t kConnectMs = 3000;
+// What's left of an answer is read and dropped before closing (closing with it unread sends a reset): up to this
+// much, and only what has already come, so it never waits.
+constexpr size_t kDrainBytes = 4096;
+constexpr uint32_t kDrainMs = 5;
+
+// Closes `tcp` after reading and dropping what has already come of the answer (bounded; never waits).
+void drainAndStop(WiFiClient& tcp) {
+  uint8_t junk[128];
+  size_t dropped = 0;
+  uint32_t start = millis();
+  while (dropped < kDrainBytes && millis() - start < kDrainMs) {
+    int n = tcp.read(junk, sizeof(junk));
+    if (n <= 0) break;
+    dropped += static_cast<size_t>(n);
+  }
+  tcp.stop();
+}
 
 }  // namespace
 
@@ -154,26 +175,53 @@ void MapClient::run() {
   }
 }
 
+// A GET to the Chart, its JSON into `doc`. Not HTTPClient: its header lines and deserializeJson() on its stream read
+// with Stream's timed reads, which spin on core 0 while the Chart is slow (the watchdog restarts the board at 5 s).
+// The status code, or HTTPClient's negative codes for what went wrong.
 int MapClient::get(const char* path, uint32_t timeoutMs, JsonDocument* doc, JsonDocument* filter, bool errorBody) {
   WiFiClient tcp;
-  HTTPClient http;
-  http.useHTTP10(true);  // no chunked encoding, so the body can be streamed
-  http.setConnectTimeout(3000);
-  http.setTimeout(timeoutMs);
-  if (!http.begin(tcp, host_, port_, path)) return HTTPC_ERROR_CONNECTION_REFUSED;
-  int code = http.GET();
+  if (!tcp.connect(host_, port_, kConnectMs)) return HTTPC_ERROR_CONNECTION_REFUSED;
+  tcp.setTimeout(kConnectMs / 1000);  // sending the request
+  // HTTP/1.0: no chunked encoding, so the body can be streamed; the Chart closes it after the answer
+  std::string request = std::string("GET ") + path + " HTTP/1.0\r\nHost: " + host_ + ":" + std::to_string(port_) +
+                        "\r\nUser-Agent: metarmap-remote\r\nConnection: close\r\n\r\n";
+  if (tcp.write(reinterpret_cast<const uint8_t*>(request.data()), request.size()) != request.size()) {
+    tcp.stop();
+    return HTTPC_ERROR_SEND_HEADER_FAILED;
+  }
+  ClientSource src(tcp);
+  std::string line;
+  NetResult got = readLine(src, millis() + timeoutMs, line);
+  if (got != NetResult::Ok) {
+    drainAndStop(tcp);
+    return got == NetResult::TimedOut ? HTTPC_ERROR_READ_TIMEOUT : HTTPC_ERROR_CONNECTION_LOST;
+  }
+  int code = httpStatusCode(line);
+  if (!code) {
+    drainAndStop(tcp);
+    return HTTPC_ERROR_NO_HTTP_SERVER;
+  }
+  for (int i = 0; i < 40; i++) {  // the headers: nothing in them is needed
+    got = readLine(src, millis() + timeoutMs, line);
+    if (got != NetResult::Ok) {
+      drainAndStop(tcp);
+      return got == NetResult::TimedOut ? HTTPC_ERROR_READ_TIMEOUT : HTTPC_ERROR_CONNECTION_LOST;
+    }
+    if (line.empty()) break;
+  }
+  PatientReader body(src, timeoutMs);
   if (doc && code == HTTP_CODE_BAD_REQUEST && errorBody) {
     // a 400's reason, if it has one: no JSON is still a 400
-    if (deserializeJson(*doc, http.getStream())) doc->clear();
+    if (deserializeJson(*doc, body)) doc->clear();
   } else if (code == HTTP_CODE_OK && doc) {
-    DeserializationError err = filter ? deserializeJson(*doc, http.getStream(), DeserializationOption::Filter(*filter))
-                                      : deserializeJson(*doc, http.getStream());
+    DeserializationError err =
+        filter ? deserializeJson(*doc, body, DeserializationOption::Filter(*filter)) : deserializeJson(*doc, body);
     if (err) {
       LOGF("map: %s: bad JSON (%s)\n", path, err.c_str());
       code = -100;
     }
   }
-  http.end();
+  drainAndStop(tcp);  // src's read-ahead, if any, is dropped with it
   return code;
 }
 

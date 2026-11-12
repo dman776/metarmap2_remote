@@ -115,6 +115,30 @@ buttons: **Chart**, **Airports**, and the **logo**.
 - **Log**: the last 32 KB of the Copilot's log (what the serial console shows,
   each line with the seconds since startup), following new lines as they come,
   and **Download**.
+- The log starts with why the last run ended: `last run ended: task watchdog (reset reason 6)` (power-on,
+  software restart, panic, task watchdog, brownout, ...). After a crash it also shows the crash, once (it's
+  then cleared from flash, which adds a fraction of a second to that one startup): `last crash: task
+  stream_net, PC 0x..., cause ..., ELF sha256 ...` and `last crash: backtrace 0x... 0x...` (up to 16 frames).
+  A crash dump that can't be read is cleared too (`unreadable crash dump ..., erased`). The addresses can be
+  given to `addr2line` with the `firmware.elf` of the same build: `xtensa-esp32s3-elf-addr2line -pfiaC -e
+  .pio/build/es3c28p/firmware.elf 0x... 0x...` (the toolchain is in
+  `~/.platformio/packages/toolchain-xtensa-esp32s3/bin`). That names the crashing code for a crash in our code;
+  for a task watchdog it may not: the watchdog's interrupt aborts, so the PC and the first frames are the
+  panic, abort and interrupt handlers, and the code that was spinning shows deeper in the backtrace, if it's
+  within the 16 frames at all. A task watchdog reads `PC ..., cause 29, address 0x00000000` (abort's deliberate
+  write to address 0) with `panic_abort`, `esp_system_abort`, `abort` and `task_wdt_isr` as the first frames.
+- The dump stays in flash until a firmware that reads it starts, so it can be from **before an update** (a firmware
+  without these `last crash` lines never cleared it): the line ends `(this firmware)` or `(an earlier firmware, not this
+  one)`, by its ELF sha256. Decode an earlier one with that build's ELF: a release's or branch build's
+  `metarmap_remote-es3c28p.bin` holds its ELF sha256 (the app description at offset 32: bytes 144-175), and a
+  local build of the same commit (without a `secrets.h`, as CI builds) has the same addresses even though its own
+  sha256 differs. After an update `last run ended` says `software restart`: the restart into the new firmware, not
+  the crash.
+- Also in the log, each with its time: settings written to flash (`settings: saved the volume (12 ms)`, only when
+  a value changed), Wi-Fi (`wifi: got 192.168.x.x`, `wifi: disconnected (reason N)` once per reason in a row,
+  `wifi: lost the IP address`), and the speaker (`stream: speaking KIAH's ATIS`, `stream: play; free internal heap
+  ..., N older readers closing`, `stream: stop; free internal heap ...`). An older reader still closing holds its
+  stack for a moment, so the heap at `play` is lower then than once it has gone.
 - Live control of the Chart stays on the touchscreen, MetarMap2 Web and the Cockpit.
 - The page works through the Copilot's own endpoints (all behind the same login), listed in
   `src/remote_web.h`: `GET /api/state` (the versions, settings, `led`, `sounds` and the update's state), and
@@ -153,6 +177,9 @@ buttons: **Chart**, **Airports**, and the **logo**.
 - If the Chart stops answering (or Wi-Fi drops) for 5 s, the Copilot goes back to it:
   "Reconnecting to the Chart... retrying" until the Chart answers, then the Copilot fades
   back in. Not while the update screen is open.
+- A slow Chart (a Pi Zero busy sending an ATIS, say) is waited for without holding up the Copilot: each poll
+  waits up to 5 s for it to answer and 5 s between parts of the answer, then counts as no answer. (Before, a
+  Chart that stalled mid-answer could restart the Copilot.)
 - The logo's splash (not the one at startup) has a speaker button at its top
   right: the speaker's volume. Its symbol shows the level, crossed out (muted) at
   0%. A tap opens a volume slider across the top of the screen, the same volume
@@ -201,6 +228,13 @@ buttons: **Chart**, **Airports**, and the **logo**.
   a few seconds; it keeps it until the next METAR.
 - If the Chart can't, the Copilot shows why, in the Chart's words (e.g. spoken
   weather is off, or the speech server can't be reached).
+- A Chart that is slow to answer, or never does, ends in "no answer" on the card (after 2 minutes, or at once if
+  it closes the connection) instead of restarting the Copilot. **Stop**, closing the card, or another AWOS or
+  ATIS ends the wait at once.
+- While it's being got or playing, the button that started it says **Stop** (with the stop symbol), and a press
+  stops it. A press counts once: a second press of the same button within 0.7 s is taken for the same touch, so a
+  finger the touch screen loses for a moment can't stop and start it again. If older requests to a slow Chart are
+  still closing, a new one waits a moment for them (the card says to try again if they don't close).
 - Always from the Copilot's Chart (`MAP_HOST`).
 
 **Spoken ATIS**
@@ -217,13 +251,14 @@ buttons: **Chart**, **Airports**, and the **logo**.
   stays to read, and a tap goes back to the METAR.
 - The Chart makes the whole ATIS before answering, about half a minute on a
   Kokoro server, so "Getting the ATIS..." shows until it starts; the Copilot
-  waits up to 2 minutes. After that it's kept until the ATIS changes.
+  waits up to 2 minutes (then the card says "no answer"; Stop ends the wait). Once made, the Chart keeps it
+  until the ATIS changes.
 - Needs metarmap2 with spoken ATIS (after 26.11.07). How a word is said is set
   on MetarMap2 Web's Pronunciation page.
 
 **Everywhere**
 
-- A short tick from the speaker on each touch.
+- A short tick from the speaker on each touch: one per touch (not again within 0.12 s), as the finger lands.
 - A two-second airplane chime when it reaches the Chart (not again within a minute, so a flaky Wi-Fi doesn't
   ring on and on), and a short high pop when you hold a visualizer to leave it out of auto-rotate, a low pop when you
   hold it to put it back, and one when you let go of the splash's volume slider. They play at the speaker's volume
@@ -416,9 +451,12 @@ for the endpoints.
 | `src/map_state.h` | The Chart's state as the Copilot knows it |
 | `src/lvgl_port.cpp` | Display and touch for LVGL, screenshots |
 | `src/audio.cpp` | The codec, the touch tick, the short sounds and the I2S output |
+| `src/debounce.h` | One action per press: the touch tick's and the card buttons' debounce |
 | `src/sounds.c`, `src/sounds.h` | The sounds, generated from `assets/sounds/*.mp3` |
 | `src/stream.cpp` | The speaker's player: the spoken weather from the Chart, on two tasks |
 | `src/stream_dsp.cpp` | The player's ring buffer, resampler and URL parsing |
+| `src/net_wait.cpp`, `src/net_client.h` | Waiting on the network in turns, so a slow server can't trip core 0's watchdog: HTTP lines, status codes, JSON bodies |
+| `src/last_run.cpp` | At startup: why the last run ended, and a crash's summary from flash, into the log |
 | `src/third_party/minimp3.h` | The MP3 decoder (public domain); one marked change: its scratch can live in PSRAM |
 | `src/updater.cpp` | Checking GitHub and installing firmware, on its own task |
 | `src/update_check.cpp` | GitHub's release JSON, versions, what's an update |
@@ -439,7 +477,7 @@ The firmware uses the Arduino framework with [LVGL](https://lvgl.io/) 9,
 
 ### Tests and lint
 
-The parsing, legend, paging, skip marks, update-check and audio (buffer, resampler, URL) code is plain C++ with unit tests that
+The parsing, legend, paging, skip marks, update-check, network-wait, debounce and audio (buffer, resampler, URL) code is plain C++ with unit tests that
 run on your computer (PlatformIO's Unity framework). The JSON fixtures in
 `test/test_parse` are real, trimmed answers from a Chart.
 
