@@ -40,12 +40,43 @@ void drainAndStop(WiFiClient& tcp) {
 }  // namespace
 
 void MapClient::begin(const char* host, uint16_t port) {
-  host_ = host;
-  port_ = port;
+  strlcpy(host_, host, sizeof(host_));
+  strlcpy(pendingHost_, host, sizeof(pendingHost_));
+  port_ = pendingPort_ = port;
   queue_ = xQueueCreate(8, sizeof(Cmd));
   mutex_ = xSemaphoreCreateMutex();
   // Core 0, beside Wi-Fi; LVGL runs in the Arduino loop on core 1.
   xTaskCreatePinnedToCore(taskEntry, "map_client", 12 * 1024, this, 1, nullptr, 0);
+}
+
+void MapClient::setMap(const char* host, uint16_t port) {
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  strlcpy(pendingHost_, host, sizeof(pendingHost_));
+  pendingPort_ = port;
+  pending_ = true;
+  bool wifi = conn_.wifi;
+  xSemaphoreGive(mutex_);
+  setConnection(wifi, false, 0);  // offline until the new Chart answers
+  LOGF("map: switching to %s:%u\n", host, (unsigned)port);
+}
+
+std::string MapClient::host() {
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  std::string h = pendingHost_;
+  xSemaphoreGive(mutex_);
+  return h;
+}
+
+bool MapClient::applySwitch() {
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  bool p = pending_;
+  if (p) {
+    strlcpy(host_, pendingHost_, sizeof(host_));
+    port_ = pendingPort_;
+    pending_ = false;
+  }
+  xSemaphoreGive(mutex_);
+  return p;
 }
 
 void MapClient::command(const std::string& path) {
@@ -133,6 +164,11 @@ void MapClient::run() {
   uint32_t lastLive = 0, lastStatus = 0;
   bool haveStatus = false;
   for (;;) {
+    if (applySwitch()) {  // another Chart: everything from it, the status first
+      LOGF("map: now %s:%u\n", host_, (unsigned)port_);
+      lastLive = 0;
+      haveStatus = false;
+    }
     if (WiFi.status() != WL_CONNECTED) {
       setConnection(false, false, 0);
       haveStatus = false;
@@ -240,6 +276,10 @@ void MapClient::pollLive() {
   live.rxMillis = millis();
 
   xSemaphoreTake(mutex_, portMAX_DELAY);
+  if (pending_) {  // the old Chart's: the switch comes first
+    xSemaphoreGive(mutex_);
+    return;
+  }
   live_ = std::move(live);
   liveRev_++;
   xSemaphoreGive(mutex_);
@@ -302,6 +342,10 @@ void MapClient::pollStatus() {
   MapStatus status = parseStatus(doc.as<JsonVariantConst>());
 
   xSemaphoreTake(mutex_, portMAX_DELAY);
+  if (pending_) {  // the old Chart's
+    xSemaphoreGive(mutex_);
+    return;
+  }
   status_ = std::move(status);
   statusRev_++;
   xSemaphoreGive(mutex_);
@@ -312,6 +356,10 @@ constexpr uint32_t kChimeEveryMs = 60000;
 
 void MapClient::setConnection(bool wifi, bool online, int httpCode) {
   xSemaphoreTake(mutex_, portMAX_DELAY);
+  if (online && pending_) {  // the old Chart answered after setMap(): offline till the new one does
+    xSemaphoreGive(mutex_);
+    return;
+  }
   if (conn_.wifi != wifi || conn_.online != online || conn_.httpCode != httpCode) {
     if (conn_.online != online) LOGF("map: %s (%d)\n", online ? "online" : "offline", httpCode);
     // the chime when it reaches the Chart; not again within a minute, so a flaky Wi-Fi doesn't ring on and on

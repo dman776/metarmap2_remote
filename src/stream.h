@@ -27,6 +27,10 @@ struct StreamState {
 // Sets up the Radio if the speaker works, with `url` ("" for none yet). Call after audio_begin().
 void stream_begin(const std::string& url, const std::string& mapServer, int volume);
 
+// Another Chart's address for spoken METARs and ATIS, "http://host:port" (the map picker); from the screen's task, as
+// stream_speak(). What's being read aloud now plays on.
+void stream_set_map(const std::string& mapServer);
+
 // Whether the Radio is set up (the speaker works).
 bool stream_available();
 

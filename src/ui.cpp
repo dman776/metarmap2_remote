@@ -16,9 +16,12 @@
 #include "log.h"
 #include "lvgl_port.h"
 #include "map_client.h"
+#include "map_list.h"
 #include "map_parse.h"
+#include "map_scan.h"
 #include "pages.h"
 #include "remote_web.h"
+#include "settings.h"
 #include "skips.h"
 #include "stream.h"
 #include "timing.h"
@@ -84,6 +87,7 @@ constexpr const char* kRepo = "github.com/dman776/metarmap2";
 
 MapClient* client = nullptr;
 Updater* updater = nullptr;
+Settings* settings = nullptr;  // main.cpp's: the map picker changes the Chart's address in it
 UpdateState upd;
 uint32_t updRev = 0;
 MapStatus status;
@@ -1613,7 +1617,7 @@ lv_obj_t* panel(lv_obj_t* scr) {
 // The logo, the name, the repo and the version, with the Wi-Fi and the map
 // connecting; once both are OK it stays a moment, then the remote fades in.
 // The rail's logo shows it again, with the map's address, the firmware
-// screen (Update when there's one) and the speaker's volume, until Close. If the map is lost, it comes
+// screen (Update when there's one), the speaker's volume and the map picker, until Close. If the map is lost, it comes
 // back, retrying, until the map answers again.
 
 enum class SplashMode {
@@ -1623,7 +1627,7 @@ enum class SplashMode {
 };
 lv_obj_t* splash = nullptr;
 SplashMode splashMode = SplashMode::Startup;
-lv_obj_t *wifiStep, *wifiState, *mapState, *mapVersion, *mapAddress, *updButtonSplash, *updLabelSplash;
+lv_obj_t *wifiStep, *wifiState, *mapStep, *mapState, *mapVersion, *mapAddress, *updButtonSplash, *updLabelSplash;
 lv_obj_t* repoLabel;  // the repo; on the logo's splash, the remote's web page once it's up
 lv_obj_t* splashLogo = nullptr;
 lv_obj_t* wifiSetupBtn = nullptr;  // once the remote can't join its Wi-Fi: Wi-Fi config mode
@@ -1634,8 +1638,16 @@ uint32_t connectedAt = 0;
 lv_obj_t *splashVolBtn = nullptr, *splashVolIcon = nullptr;
 lv_obj_t *splashVolPopup = nullptr, *splashVolSlider = nullptr, *splashVolPct = nullptr, *splashVolPopIcon = nullptr;
 lv_timer_t* splashVolTimer = nullptr;
+// The map picker: a globe button at the splash's top left; a tap opens the Charts on the network over the splash
+lv_obj_t *mapsBtn = nullptr, *mapsBackdrop = nullptr, *mapsList = nullptr, *mapsRescan = nullptr;
+std::vector<map_list::Row> mapRows;  // the rows on screen, by index
+MapScan mapScan;
+uint32_t mapScanRev = 0;
+std::string switchingTo;  // the Chart just picked, by name, till the splash it brought up hides
+debounce::Gate mapPickGate(debounce::kButtonMs);
 
 void showUpdate();
+void showSplash(SplashMode mode);
 
 // The network the remote is set to join (secrets.h), from the Wi-Fi driver.
 std::string wifiName() {
@@ -1673,6 +1685,8 @@ void forgetSplash() {
   }
   splashVolBtn = splashVolIcon = nullptr;
   splashVolPopup = splashVolSlider = splashVolPct = splashVolPopIcon = nullptr;
+  mapsBtn = mapsBackdrop = mapsList = mapsRescan = nullptr;  // the map picker goes with it too
+  mapRows.clear();
 }
 
 const char* volumeSymbol(int pct) {
@@ -1800,9 +1814,175 @@ void buildSplashVolume(lv_obj_t* scr) {
   syncSplashVolume();
 }
 
+// ---- the map picker: the Charts on the network (zeroconf), from the globe at the splash's top left --------------
+//
+// A tap on the globe asks the network (map_scan.h: 3 s) and lists what answered, a row each: its name, address and
+// version, the one in use marked (and always there: an older Chart doesn't announce itself). A tap on another row
+// switches to it at once, no restart: it's saved as the Chart's address (the web page's Chart address shows it), and
+// the splash says "Connecting to <name>..." until it answers.
+
+bool mapsOpen() { return mapsBackdrop && !lv_obj_has_flag(mapsBackdrop, LV_OBJ_FLAG_HIDDEN); }
+
+void closeMaps(lv_event_t* = nullptr) {
+  if (mapsBackdrop) lv_obj_add_flag(mapsBackdrop, LV_OBJ_FLAG_HIDDEN);
+}
+
+// The map in use, as the list marks it: as saved, and what its /api/status said
+map_list::Current currentMap() {
+  map_list::Current c;
+  c.host = settings->mapHost;
+  c.port = settings->mapPort;
+  if (status.valid) {
+    c.ip = status.ip;
+    c.name = status.name;
+    c.version = status.versionText;
+  }
+  return c;
+}
+
+// A line in the list: "Scanning...", or why there's nothing
+lv_obj_t* mapsNote(const char* text, uint32_t color) {
+  lv_obj_t* l = label(mapsList, text, &lv_font_montserrat_12, color);
+  lv_obj_set_width(l, LV_PCT(100));
+  lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
+  return l;
+}
+
+void switchMap(const map_list::Row& r) {
+  LOGF("ui: map picked: %s (%s:%u)\n", r.name.c_str(), r.host.c_str(), (unsigned)r.port);
+  settings->mapHost = r.host;  // the web page's Chart address shows it; kept through restarts
+  settings->mapPort = r.port;
+  settings_save_map(r.host, r.port);
+  client->setMap(r.host.c_str(), r.port);
+  stream_set_map("http://" + r.host + ":" + std::to_string(r.port));  // spoken METARs and ATIS
+  // what the splash shows of the old Chart, till the new one's /api/status comes
+  status.ip.clear();
+  status.name.clear();
+  status.versionText.clear();
+  // the splash again, connecting to it (and the panels once it answers); the old one goes after its fade
+  switchingTo = r.name;
+  lv_obj_t* old = splash;
+  showSplash(SplashMode::Reconnect);
+  lv_obj_delete_delayed(old, 400);
+}
+
+void onMapRow(lv_event_t* e) {
+  size_t i = (size_t)(intptr_t)lv_event_get_user_data(e);
+  if (i >= mapRows.size() || !mapPickGate.accept(millis())) return;
+  if (mapRows[i].current) {
+    closeMaps();  // already this one
+    return;
+  }
+  map_list::Row r = mapRows[i];  // switchMap() deletes the rows
+  switchMap(r);
+}
+
+// The list, as the scan has it
+void showMaps() {
+  if (!mapsList) return;
+  lv_obj_clean(mapsList);
+  mapRows.clear();
+  if (mapScan.scanning) {
+    mapsNote("Scanning the network...", kText2);
+  } else {
+    mapRows = map_list::rows(mapScan.found, currentMap());
+  }
+  if (mapsRescan) enable(mapsRescan, !mapScan.scanning);
+  for (size_t i = 0; i < mapRows.size(); i++) {
+    const map_list::Row& r = mapRows[i];
+    lv_obj_t* row = button(mapsList, &stBtn);
+    lv_obj_add_style(row, &stLit, LV_STATE_CHECKED);
+    setChecked(row, r.current);
+    lv_obj_set_size(row, LV_PCT(100), 48);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_hor(row, 10, 0);
+    lv_obj_set_style_pad_column(row, 8, 0);
+    lv_obj_t* text = box(row, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_grow(text, 1);
+    lv_obj_set_height(text, LV_SIZE_CONTENT);
+    lv_obj_remove_flag(text, LV_OBJ_FLAG_CLICKABLE);  // a press anywhere on the row is the row's
+    lv_obj_t* name = label(text, r.name.c_str(), &lv_font_montserrat_16, r.current ? kAccent : kText);
+    lv_obj_set_width(name, LV_PCT(100));
+    lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
+    std::string detail = r.address + (r.version.empty() ? "" : "  " + r.version);
+    if (!r.announced) detail += "  (not announced)";
+    lv_obj_t* sub = label(text, detail.c_str(), &lv_font_montserrat_12, kMuted);
+    lv_obj_set_width(sub, LV_PCT(100));
+    lv_label_set_long_mode(sub, LV_LABEL_LONG_DOT);
+    if (r.current) label(row, "In use", &lv_font_montserrat_12, kAccent);
+    lv_obj_add_event_cb(row, onMapRow, LV_EVENT_CLICKED, (void*)(intptr_t)i);
+  }
+  if (!mapScan.scanning && !mapScan.error.empty()) {
+    mapsNote((mapScan.error + ": no scan. Tap " LV_SYMBOL_REFRESH " to try again.").c_str(), 0xff8a8a);
+  } else if (!mapScan.scanning && mapRows.size() <= 1) {
+    // the one in use only (or not even that): a Chart needs the zeroconf package to announce itself
+    mapsNote(mapRows.empty() ? "No maps found." : "No other maps found.", kText2);
+    mapsNote("Not listed? On that Chart's Home page, tap Install network discovery.", kMuted);
+  }
+}
+
+void scanMaps(lv_event_t* = nullptr) {
+  splashStart = millis();  // the splash stays its 30 s from now
+  map_scan_start();        // one already running: its answer comes
+}
+
+void openMaps(lv_event_t* = nullptr) {
+  if (!mapsBackdrop) return;
+  closeSplashVolume();
+  lv_obj_remove_flag(mapsBackdrop, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_move_foreground(mapsBackdrop);
+  scanMaps();
+  map_scan_get(mapScan, mapScanRev);  // "Scanning..." now
+  showMaps();
+}
+
+// The globe button at the splash's top left, and its list (hidden till a tap)
+void buildMaps(lv_obj_t* scr) {
+  mapsBtn = button(scr, &stBtn);
+  lv_obj_set_size(mapsBtn, 40, 40);
+  lv_obj_add_flag(mapsBtn, LV_OBJ_FLAG_IGNORE_LAYOUT);
+  lv_obj_align(mapsBtn, LV_ALIGN_TOP_LEFT, 8, 8);
+  lv_obj_center(icon(mapsBtn, &icon_globe, kText2));
+  lv_obj_add_event_cb(mapsBtn, openMaps, LV_EVENT_CLICKED, nullptr);
+  if (splashMode != SplashMode::OnDemand) lv_obj_add_flag(mapsBtn, LV_OBJ_FLAG_HIDDEN);  // till it's on Wi-Fi
+
+  Sheet sh = sheet(scr, 8, 8, kW - 16, kH - 16, closeMaps);  // over the whole splash, its buttons included
+  mapsBackdrop = sh.backdrop;
+  lv_obj_add_flag(mapsBackdrop, LV_OBJ_FLAG_IGNORE_LAYOUT);
+  lv_obj_set_pos(mapsBackdrop, 0, 0);
+  lv_obj_set_flex_flow(sh.card, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_style_pad_all(sh.card, 8, 0);
+  lv_obj_set_style_pad_row(sh.card, 6, 0);
+
+  lv_obj_t* head = box(sh.card, LV_FLEX_FLOW_ROW);
+  lv_obj_set_size(head, LV_PCT(100), 38);
+  lv_obj_set_flex_align(head, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_column(head, 6, 0);
+  icon(head, &icon_globe, kAccent);
+  lv_obj_t* title = label(head, "Maps on the network", &lv_font_montserrat_16, kText);
+  lv_obj_set_flex_grow(title, 1);
+  mapsRescan = button(head, &stBtn);  // scan again
+  lv_obj_set_size(mapsRescan, 44, 38);
+  lv_obj_center(label(mapsRescan, LV_SYMBOL_REFRESH, &lv_font_montserrat_16, kText2));
+  lv_obj_add_event_cb(mapsRescan, scanMaps, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t* close = button(head, &stBtn);
+  lv_obj_set_size(close, 44, 38);
+  lv_obj_center(icon(close, &icon_close, kMuted));
+  lv_obj_add_event_cb(close, closeMaps, LV_EVENT_CLICKED, nullptr);
+
+  mapsList = box(sh.card, LV_FLEX_FLOW_COLUMN);  // scrolls, past 3 rows
+  lv_obj_set_width(mapsList, LV_PCT(100));
+  lv_obj_set_flex_grow(mapsList, 1);
+  lv_obj_set_style_pad_row(mapsList, 6, 0);
+  lv_obj_add_flag(mapsList, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scroll_dir(mapsList, LV_DIR_VER);
+}
+
 void hideSplash() {
   lv_screen_load_anim(remoteScreen, LV_SCR_LOAD_ANIM_FADE_IN, 400, 0, true);  // then deletes the splash
   forgetSplash();
+  switchingTo.clear();
 }
 
 void showSplashUpdate() {
@@ -1843,8 +2023,12 @@ void showSplash(SplashMode mode) {
   lv_obj_add_flag(mapAddress, LV_OBJ_FLAG_HIDDEN);
   lv_obj_set_style_margin_bottom(onDemand ? mapAddress : mapVersion, 10, 0);
   wifiState = splashStep(splash, "Connecting to Wi-Fi...", &wifiStep);
-  mapState =
-      splashStep(splash, mode == SplashMode::Reconnect ? "Reconnecting to the Chart..." : "Connecting to the Chart...");
+  std::string mapText = !switchingTo.empty()            ? "Connecting to " + switchingTo + "..."
+                        : mode == SplashMode::Reconnect ? "Reconnecting to the Chart..."
+                                                        : "Connecting to the Chart...";
+  mapState = splashStep(splash, mapText.c_str(), &mapStep);
+  lv_label_set_long_mode(mapStep, LV_LABEL_LONG_DOT);  // a long map name
+  lv_obj_set_style_max_width(mapStep, kW - 80, 0);
 
   if (!onDemand) {  // shown once it can't join the Wi-Fi (tickSplash)
     wifiSetupBtn = button(splash, &stBtn);
@@ -1894,6 +2078,7 @@ void showSplash(SplashMode mode) {
 
     buildSplashVolume(splash);  // the speaker's volume, at the top right
   }
+  buildMaps(splash);  // the map picker, at the top left (on the startup and reconnecting splash once on Wi-Fi)
 
   if (mode != SplashMode::Startup) {
     // A touch that's down began on the remote: forget it, so lifting the
@@ -1915,8 +2100,8 @@ void tickSplash() {
   if (!splash) return;
   if (status.valid && !status.versionText.empty()) setText(mapVersion, "Chart " + status.versionText);
   if (splashMode == SplashMode::OnDemand) {
-    const char* host = status.ip.length() ? status.ip.c_str() : client->host();
-    setText(mapAddress, std::string("Chart at ") + host + (conn.online ? "" : " - not answering"));
+    std::string host = status.ip.length() ? status.ip : client->host();
+    setText(mapAddress, "Chart at " + host + (conn.online ? "" : " - not answering"));
     if (*remote_web_address()) setText(repoLabel, std::string("Settings: ") + remote_web_address());
     lv_obj_set_style_text_color(mapAddress, hex(conn.online ? kMuted : 0xff8a8a), 0);
     if (millis() - splashStart >= kSplashShowMs) hideSplash();
@@ -1943,6 +2128,7 @@ void tickSplash() {
   bool stuck = !wifi && millis() - splashStart >= kWifiTimeoutMs;
   if (wifiSetupBtn) showHidden(wifiSetupBtn, stuck);
   if (splashLogo) showHidden(splashLogo, !stuck);
+  if (mapsBtn) showHidden(mapsBtn, wifi);  // another Chart can be picked here too, if this one doesn't answer
   if (conn.online) {
     setStep(mapState, "OK", kVfr);
   } else if (wifi && conn.wifi && conn.httpCode != 0) {
@@ -1956,7 +2142,7 @@ void tickSplash() {
     return;
   }
   if (!connectedAt) connectedAt = millis() ? millis() : 1;
-  if (millis() - connectedAt >= kSplashHoldMs) hideSplash();
+  if (millis() - connectedAt >= kSplashHoldMs && !mapsOpen()) hideSplash();  // not from under the map picker
 }
 
 // ---- Wi-Fi config mode -----------------------------------------------------------------------------------------
@@ -2322,10 +2508,11 @@ void checkMapLost() {
 
 }  // namespace
 
-void ui_init(MapClient& c, Updater& u) {
+void ui_init(MapClient& c, Updater& u, Settings& s) {
   uiTask = xTaskGetCurrentTaskHandle();
   client = &c;
   updater = &u;
+  settings = &s;
   lv_display_t* disp = lv_display_get_default();
   lv_theme_t* theme = lv_theme_default_init(disp, hex(kAccent), hex(kMvfr), true, &lv_font_montserrat_14);
   lv_display_set_theme(disp, theme);
@@ -2402,6 +2589,7 @@ void ui_tick() {
     showCard();
   }
   if (client->getAtis(atis, atisRev)) followTranscript();
+  if (map_scan_get(mapScan, mapScanRev)) showMaps();
 
   if (client->getStatus(status, statusRev)) {
     showPickerTiles();
@@ -2507,6 +2695,7 @@ Outcome openSplash() {
   closeOverlays();
   if (splash) {
     closeSplashVolume();
+    closeMaps();
     splashStart = millis();
   } else {
     showSplash(SplashMode::OnDemand);
@@ -2586,9 +2775,11 @@ ui_control::Outcome ui_control_show(const ui_control::ShowRequest& req) {
       break;
     case Screen::Splash:
     case Screen::Volume:
+    case Screen::Maps:
       r = openSplash();
       if (!r.ok()) return r;
       if (req.screen == Screen::Volume) openSplashVolume(nullptr);
+      if (req.screen == Screen::Maps) openMaps();  // a scan: the rows come about 3 s later
       break;
     case Screen::Update:
       r = reachable();
@@ -2667,6 +2858,8 @@ ui_control::State ui_control_state() {
   s.panel = shown(panels[1]) ? "airports" : "chart";
   if (splash && shown(splashVolPopup)) {
     s.overlay = "volume";
+  } else if (splash && mapsOpen()) {
+    s.overlay = "maps";
   } else if (cardOpen()) {
     s.overlay = "card";
   } else if (pickerOpen()) {

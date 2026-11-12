@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24">
+  <!-- white: the remote recolors it. A globe: the maps on the network (the logo's splash) -->
+  <g fill="none" stroke="#ffffff" stroke-width="2">
+    <circle cx="12" cy="12" r="9.5"/>
+    <ellipse cx="12" cy="12" rx="4" ry="9.5"/>
+    <path d="M2.5 12h19M4 7h16M4 17h16"/>
+  </g>
+</svg>

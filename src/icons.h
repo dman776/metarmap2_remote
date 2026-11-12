@@ -9,6 +9,7 @@ extern "C" {
 #endif
 
 extern const lv_image_dsc_t icon_close;
+extern const lv_image_dsc_t icon_globe;
 extern const lv_image_dsc_t icon_grid;
 extern const lv_image_dsc_t icon_leds;
 extern const lv_image_dsc_t icon_left;

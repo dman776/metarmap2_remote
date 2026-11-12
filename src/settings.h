@@ -42,6 +42,9 @@ void settings_save_update(const Settings& settings);
 // Saves the Wi-Fi network and password, and the map's address and port (the web page; used after a restart).
 void settings_save_connection(const Settings& settings);
 
+// Saves the map's address and port (the map picker's choice; used at once, and after a restart). Writes only a change.
+void settings_save_map(const std::string& host, uint16_t port);
+
 // Saves the status light's brightness (0-100). Writes only a change.
 void settings_save_led(int brightness);
 

@@ -1,14 +1,16 @@
 // The remote's screens: a small version of the map's /remote page. A rail at the left: LEDs (the visualizer, its
 // legend, auto-rotate and brightness), Airports (a page of airports; a tap opens its card), and the logo (the
-// splash screen, and from it the firmware update screen).
+// splash screen, and from it the firmware update screen and the map picker).
 #pragma once
 
 #include "ui_control.h"
 
 class MapClient;
 class Updater;
+struct Settings;
 
-void ui_init(MapClient& client, Updater& updater);
+// `settings`: the map picker (the splash's globe) saves the Chart it switches to there
+void ui_init(MapClient& client, Updater& updater, Settings& settings);
 
 // 0: LEDs, 1: Airports.
 void ui_show_tab(int tab);

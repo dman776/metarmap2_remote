@@ -17,9 +17,9 @@ struct ScreenName {
 constexpr ScreenName kScreens[] = {
     {Screen::Chart, "chart"},   {Screen::Airports, "airports"}, {Screen::Splash, "splash"},
     {Screen::Update, "update"}, {Screen::Picker, "picker"},     {Screen::Brightness, "brightness"},
-    {Screen::Volume, "volume"}, {Screen::Close, "close"},
+    {Screen::Volume, "volume"}, {Screen::Maps, "maps"},         {Screen::Close, "close"},
 };
-constexpr const char* kScreenList = "chart, airports, splash, update, picker, brightness, volume or close";
+constexpr const char* kScreenList = "chart, airports, splash, update, picker, brightness, volume, maps or close";
 
 struct ButtonName {
   Button button;

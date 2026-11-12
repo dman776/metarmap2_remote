@@ -24,7 +24,7 @@ volatile bool g_serialBusy = false;
 static LGFX lcd;
 static MapClient mapClient;
 static Updater updater;
-static Settings settings;  // read once at startup; the clients keep pointers into it
+static Settings settings;  // read once at startup; the updater, the web page and the screens keep pointers to it
 static status_led::StatusLight statusLight;
 
 // The status light on the back: what the Copilot is doing (status_led.h), written only when its color changes
@@ -89,7 +89,7 @@ void setup() {
   lcd.setBrightness(200);
 
   lvgl_port_init(lcd);
-  ui_init(mapClient, updater);
+  ui_init(mapClient, updater, settings);
 
   // The Copilot keeps the network and password in its own settings and gives them to WiFi.begin() each time, so the
   // Wi-Fi driver needn't keep a copy in flash too: not persistent, each begin() (while not connected, e.g. Wi-Fi
@@ -106,7 +106,7 @@ void setup() {
     WiFi.begin(settings.wifiName.c_str(), settings.wifiPassword.c_str());
   }
 
-  mapClient.begin(settings.mapHost.c_str(), settings.mapPort);
+  mapClient.begin(settings.mapHost.c_str(), settings.mapPort);  // a copy: the map picker switches it with setMap()
   updater.begin(settings);
   remote_web_begin(updater, settings);  // starts once Wi-Fi is up, or config mode is on
 }

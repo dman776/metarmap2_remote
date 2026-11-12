@@ -65,6 +65,7 @@ dl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:0}dt{color:va
 <label for="wifiPass">Wi-Fi password</label><input id="wifiPass" type="password" placeholder="unchanged" autocomplete="new-password">
 <div class="row"><div><label for="mapHost">Chart address</label><input id="mapHost" required placeholder="metarmap.local"></div>
 <div style="flex:0 0 96px"><label for="mapPort">Port</label><input id="mapPort" type="number" min="1" max="65535" required></div></div>
+<p class="note">Or pick a map on the Copilot's logo screen (the globe at its top left): it switches at once, and its address shows here.</p>
 <button class="primary">Save and restart</button>
 <p class="note" id="connMsg">The Copilot restarts to use them. If it can't join the new network, flash it over USB with include/secrets.h.</p>
 </form>

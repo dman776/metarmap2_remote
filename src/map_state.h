@@ -43,6 +43,7 @@ struct MapStatus {
   // ("v26.11.04+16 f86daa4"), from /api/status's build; else the version.
   std::string versionText;
   std::string ip;
+  std::string name;      // the map's name ("Houston map", the map picker's); "" from an older Chart
   int activeIndex = -1;  // the visualizer the legend is for
   std::vector<LegendItem> legend;
   std::vector<Visualizer> visualizers;

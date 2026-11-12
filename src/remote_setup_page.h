@@ -49,7 +49,8 @@ button{min-height:44px;padding:0 16px;font:inherit;font-weight:600;color:var(--t
 <h2>The Chart</h2>
 <div class="row"><div><label for="host">Address</label><input id="host" required maxlength="63" autocapitalize="none" placeholder="metarmap.local"></div>
 <div class="port"><label for="port">Port</label><input id="port" type="number" min="1" max="65535" required></div></div>
-<p class="note">Its name or IP, as you open its web page: metarmap.local unless you gave the Pi another hostname.</p>
+<p class="note">Its name or IP, as you open its web page: metarmap.local unless you gave the Pi another hostname.
+Several maps? Once it's on Wi-Fi, pick one on the Copilot's logo screen (the globe at its top left).</p>
 </section>
 
 <button class="primary" id="save">Save and connect</button>

@@ -134,6 +134,14 @@ void settings_save_connection(const Settings& s) {
   saving.wrote(name || pass || host || port);
 }
 
+void settings_save_map(const std::string& host, uint16_t port) {
+  Saving saving("the map");
+  bool h = putString(saving.p, "map_host", host);
+  bool p = saving.p.getUShort("map_port", 0) != port;
+  if (p) saving.p.putUShort("map_port", port);
+  saving.wrote(h || p);
+}
+
 void settings_save_led(int brightness) {
   Saving s("the status light");
   bool changed = s.p.getUChar("led_pct", 255) != brightness;  // changes only

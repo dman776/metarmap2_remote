@@ -20,6 +20,12 @@ class MapClient {
  public:
   void begin(const char* host, uint16_t port);
 
+  // Talks to another Chart from now on (the map picker), without a restart: the request under way finishes and its
+  // answer is dropped, the connection shows offline at once (the splash's Reconnect), and the next polls are the new
+  // Chart's, its /api/status first thing. The UI's revisions stay as they are: each answer from the new Chart replaces
+  // the old one's whole. The host is copied (at most 63 characters).
+  void setMap(const char* host, uint16_t port);
+
   // A control endpoint, e.g. "/visualizer/next"; /api/live is polled again
   // right after it.
   void command(const std::string& path);
@@ -40,7 +46,8 @@ class MapClient {
   bool getLive(MapLive& out, uint32_t& rev);
   bool getConnection(Connection& out, uint32_t& rev);
 
-  const char* host() const { return host_; }
+  // The Chart's address as given to begin() or setMap() (the newest, should a switch still be waiting)
+  std::string host();
 
  private:
   struct Cmd {
@@ -61,9 +68,16 @@ class MapClient {
   void fetchAtis(const char* code);
   void sendSkip(const Cmd& cmd);
   void setConnection(bool wifi, bool online, int httpCode);
+  // A switch setMap() asked for: applied (true) between requests, on the task, which then starts over
+  // While one waits (pending_), an answer that comes is the old Chart's: dropped, and not "online"
+  bool applySwitch();
 
-  const char* host_ = "";
+  // host_ and port_ are the task's (begin() sets them before it starts); a switch waits in pending* under the mutex
+  char host_[64] = "";
   uint16_t port_ = 80;
+  char pendingHost_[64] = "";
+  uint16_t pendingPort_ = 80;
+  bool pending_ = false;
   QueueHandle_t queue_ = nullptr;
   SemaphoreHandle_t mutex_ = nullptr;
 

@@ -21,6 +21,7 @@ enum class Screen {
   Picker,      // the visualizer picker
   Brightness,  // the brightness sheet
   Volume,      // the logo's splash with its volume slider open
+  Maps,        // the logo's splash with its map picker open (scanning: its answer comes about 3 s later)
   Close,       // everything above closed: back to the panel that was open
 };
 
@@ -107,7 +108,8 @@ struct State {
   bool remoteControl = false;
   std::string screen = "main";            // main, splash, update, startup (connecting, or reconnecting), wifiSetup
   std::string panel = "chart";            // chart, airports
-  std::string overlay = "none";           // none, picker, brightness, card, volume (the splash's slider)
+  std::string overlay = "none";           // none, picker, brightness, card, volume (the splash's
+                                          // slider), maps (the splash's map picker)
   std::string card;                       // the open card's airport; "" for none
   std::string playing;                    // the card's airport is saying: awos, atis; "" for nothing
   int page = 1, pages = 1;                // the Airports page shown (1-based), of how many

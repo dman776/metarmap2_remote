@@ -221,12 +221,23 @@ void test_live_filter_drops_the_rest() {
 
 // ---- /api/status ----
 
+// A Chart with network discovery names itself (the map picker's name; it announces it with zeroconf too)
+void test_status_name() {
+  MapStatus status = parseStatus(
+      filtered(R"json({"version": "26.11.10", "name": "Houston map", "announcing": true, "ip": "10.0.0.5"})json",
+               statusFilter)
+          .as<JsonVariantConst>());
+  TEST_ASSERT_EQUAL_STRING("Houston map", status.name.c_str());
+  TEST_ASSERT_EQUAL_STRING("10.0.0.5", status.ip.c_str());
+}
+
 void test_status() {
   MapStatus status = parseStatus(filtered(kStatusJson, statusFilter).as<JsonVariantConst>());
   TEST_ASSERT_TRUE(status.valid);
   TEST_ASSERT_EQUAL_STRING("26.11.04", status.version.c_str());
   TEST_ASSERT_EQUAL_STRING("v26.11.04+16 f86daa4", status.versionText.c_str());
   TEST_ASSERT_EQUAL_STRING("192.168.10.76", status.ip.c_str());
+  TEST_ASSERT_EQUAL_STRING("", status.name.c_str());  // an older Chart has no name
   TEST_ASSERT_EQUAL_INT(10, status.activeIndex);
 
   TEST_ASSERT_EQUAL_UINT(15, status.visualizers.size());
@@ -396,6 +407,7 @@ int main() {
   RUN_TEST(test_live_without_legend_in_use);
   RUN_TEST(test_live_filter_drops_the_rest);
   RUN_TEST(test_status);
+  RUN_TEST(test_status_name);
   RUN_TEST(test_status_skipped);
   RUN_TEST(test_skip_answer);
   RUN_TEST(test_status_airports);
