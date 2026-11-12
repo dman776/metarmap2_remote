@@ -13,6 +13,7 @@
 #include <iterator>
 
 #include "board_es3c28p.h"
+#include "debounce.h"
 #include "log.h"
 
 namespace {
@@ -43,6 +44,7 @@ TaskHandle_t playTask = nullptr;
 std::atomic<bool> clickAsked{false};
 std::atomic<bool> soundsOn{true};
 std::atomic<uint32_t> lastStreamWrite{0};
+std::atomic<uint32_t> lastClick{0};  // when a tick was last let through (0: never)
 
 bool codecWrite(uint8_t reg, uint8_t value) {
   Wire1.beginTransmission(kCodecAddr);
@@ -225,6 +227,10 @@ bool audio_begin() {
 
 void audio_click() {
   if (!ready || !playTask || streamPlaying()) return;  // over a stream: nothing to hear it over, and no pop
+  // One tick per press: a request within kClickMs of the last one is the same touch (a finger the touch controller
+  // lost for a moment), not a new one. From any task: only the one that moves lastClick asks.
+  uint32_t last = lastClick.load(), now = millis();
+  if (!debounce::due(last, now, debounce::kClickMs) || !lastClick.compare_exchange_strong(last, now | 1)) return;
   clickAsked.store(true);
   xTaskNotifyGive(playTask);
 }
