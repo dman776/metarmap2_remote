@@ -93,6 +93,7 @@ Settings settings_load() {
   s.webPassword = getString(p, "web_pass", kDefaultWebPassword);
   s.ledBrightness = p.getUChar("led_pct", s.ledBrightness);
   s.sounds = p.getBool("sounds", s.sounds);
+  s.remoteControl = p.getBool("remote_ctl", s.remoteControl);
   if (p.isKey("speech_server")) {  // a prototype's own speech server: spoken METARs come from the map now
     p.remove("speech_server");
     saving.wrote(true);
@@ -144,6 +145,13 @@ void settings_save_sounds(bool on) {
   Saving s("sounds");
   bool changed = !s.p.isKey("sounds") || s.p.getBool("sounds") != on;  // changes only
   if (changed) s.p.putBool("sounds", on);
+  s.wrote(changed);
+}
+
+void settings_save_remote_control(bool on) {
+  Saving s("remote control");
+  bool changed = !s.p.isKey("remote_ctl") || s.p.getBool("remote_ctl") != on;  // changes only
+  if (changed) s.p.putBool("remote_ctl", on);
   s.wrote(changed);
 }
 

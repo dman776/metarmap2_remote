@@ -24,6 +24,7 @@ struct Settings {
   std::string webPassword;                 // the web page's login password (user metar); map until it's changed
   int ledBrightness = 5;                   // the status light on the back, 0-100 (%); 0 is off
   bool sounds = true;                      // the chime and the picker's pops (audio_play()); not the tick or speech
+  bool remoteControl = false;              // the screens can be driven over HTTP, for screenshots (/api/ui/...)
 };
 
 // The saved settings, after saving secrets.h's if this build has them.
@@ -46,6 +47,9 @@ void settings_save_led(int brightness);
 
 // Saves whether the sounds play (the web page's Sounds). Writes only a change.
 void settings_save_sounds(bool on);
+
+// Saves whether remote control is on (the web page's "Remote control (for screenshots)"). Writes only a change.
+void settings_save_remote_control(bool on);
 
 // Saves the web page's login password.
 void settings_save_web_password(const std::string& password);

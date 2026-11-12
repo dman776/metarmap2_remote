@@ -18,8 +18,11 @@
 #include "remote_setup_page.h"
 #include "remote_web_page.h"
 #include "settings.h"
+#include "ui.h"
+#include "ui_control.h"
 #include "update_check.h"
 #include "updater.h"
+#include "web_guard.h"
 #include "wifi_setup.h"
 
 namespace {
@@ -65,12 +68,37 @@ std::vector<uint8_t> romDeflate(const std::vector<uint8_t>& raw) {
   return out;
 }
 
+// A POST carries X-Copilot: 1, which another site's page can't add (web_guard.h). Alone for the setup page's POSTs.
+bool headerSent() {
+  if (web_guard::headerOk(server.header(web_guard::kHeader).c_str())) return true;
+  LOGF("web: %s refused: no X-Copilot header\n", server.uri().c_str());
+  server.send(403, "text/plain", web_guard::kNoHeader);
+  return false;
+}
+
+// The Host names the Copilot (an IPv4 address, or metarmap-copilot.local), not a rebinding page's name
+bool hostAllowed() {
+  // collected per request (start()): WebServer's hostHeader() keeps the last request's when one has none
+  String host = server.header("Host");
+  if (web_guard::hostOk(host.c_str())) return true;
+  LOGF("web: %s refused: Host \"%s\"\n", server.uri().c_str(), host.c_str());
+  server.send(403, "text/plain", web_guard::kBadHost);
+  return false;
+}
+
 // The login: user metar, the password (map until it's changed, as the map's own web UI)
-bool allowed() {
+bool loggedIn() {
   if (server.authenticate(kUser, settings->webPassword.c_str())) return true;
   server.requestAuthentication(BASIC_AUTH, kRealm);
   return false;
 }
+
+// Every GET behind the login: the Host, then the login
+bool allowed() { return hostAllowed() && loggedIn(); }
+
+// Every POST behind the login: the Host, the X-Copilot header (before the login, so a forged one gets no login
+// prompt), then the login
+bool postAllowed() { return hostAllowed() && headerSent() && loggedIn(); }
 
 std::string arg(const char* name) {
   std::string v = server.hasArg(name) ? server.arg(name).c_str() : "";
@@ -106,9 +134,10 @@ void onState() {
   doc["mapHost"] = settings->mapHost;
   doc["mapPort"] = settings->mapPort;
   doc["uptime"] = millis() / 1000;
-  doc["defaultPassword"] = settings->webPassword == kDefaultWebPassword;
+  doc["defaultPassword"] = web_guard::isDefaultPassword(settings->webPassword);
   doc["led"] = settings->ledBrightness;
   doc["sounds"] = settings->sounds;
+  doc["remoteControl"] = settings->remoteControl;
   JsonObject u = doc["update"].to<JsonObject>();
   u["phase"] = phaseName(st.phase);
   u["channel"] = update::channelName(st.channel);
@@ -168,7 +197,7 @@ void saveConnection(bool keepPassword) {
 }
 
 void onConnection() {
-  if (!allowed()) return;
+  if (!postAllowed()) return;
   saveConnection(true);
 }
 
@@ -203,6 +232,7 @@ void onSetupRescan() {
     server.send(404, "text/plain", "not found");
     return;
   }
+  if (!headerSent()) return;
   wifi_setup_rescan();
   server.send(200, "text/plain", "OK");
 }
@@ -212,6 +242,7 @@ void onSetupSave() {
     server.send(404, "text/plain", "not found");
     return;
   }
+  if (!headerSent()) return;
   saveConnection(false);
 }
 
@@ -230,7 +261,7 @@ void onNotFound() {
 // channel=releases|latest|branch|release, with branch=<name> for branch and release=<tag> (v26.11.07) for release.
 // The one not sent stays as saved.
 void onChannel() {
-  if (!allowed()) return;
+  if (!postAllowed()) return;
   std::string channel = arg("channel"), branch, release;
   updater->choice(branch, release);
   if (server.hasArg("branch")) branch = arg("branch");
@@ -248,20 +279,20 @@ void onChannel() {
 }
 
 void onCheck() {
-  if (!allowed()) return;
+  if (!postAllowed()) return;
   updater->check();
   server.send(200, "text/plain", "OK");
 }
 
 void onInstall() {
-  if (!allowed()) return;
+  if (!postAllowed()) return;
   LOGF("web: install asked for\n");
   updater->install();
   server.send(200, "text/plain", "OK");
 }
 
 void onPassword() {
-  if (!allowed()) return;
+  if (!postAllowed()) return;
   std::string password = server.hasArg("password") ? server.arg("password").c_str() : "";
   if (password.size() < 3 || password.size() > 64) {
     server.send(400, "text/plain", "The password needs 3 to 64 characters.");
@@ -275,7 +306,7 @@ void onPassword() {
 
 // The status light's brightness, 0-100 (%): on at once (main.cpp reads it each loop), and saved
 void onLed() {
-  if (!allowed()) return;
+  if (!postAllowed()) return;
   std::string v = arg("brightness");
   char* end = nullptr;
   long pct = strtol(v.c_str(), &end, 10);
@@ -290,7 +321,7 @@ void onLed() {
 
 // The sounds (the chime, the picker's pops): on=1 or 0; at once (audio_set_sounds()), and saved
 void onSounds() {
-  if (!allowed()) return;
+  if (!postAllowed()) return;
   std::string v = arg("on");
   if (v != "0" && v != "1") {
     server.send(400, "text/plain", "on: 1 or 0.");
@@ -303,8 +334,120 @@ void onSounds() {
   server.send(200, "text/plain", settings->sounds ? "Saved: sounds on." : "Saved: sounds off.");
 }
 
+// Remote control (for screenshots): on=1 or 0; at once, and saved. Off at first.
+void onRemoteControl() {
+  if (!postAllowed()) return;
+  std::string v = arg("on");
+  if (v != "0" && v != "1") {
+    server.send(400, "text/plain", "on: 1 or 0.");
+    return;
+  }
+  if (v == "1" && web_guard::isDefaultPassword(settings->webPassword)) {
+    LOGF("web: remote control not turned on: the password is the default\n");
+    server.send(403, "text/plain", web_guard::kDefaultPasswordRemote);
+    return;
+  }
+  settings->remoteControl = v == "1";
+  settings_save_remote_control(settings->remoteControl);
+  LOGF("web: remote control %s\n", settings->remoteControl ? "on" : "off");
+  server.send(200, "text/plain", settings->remoteControl ? "Saved: remote control on." : "Saved: remote control off.");
+}
+
+// ---- remote control of the screens, for screenshots (ui_control.h): behind the login and the setting ----
+//
+// Each runs here, on loop()'s task, which LVGL runs on: ui_control_*() do what the tap does, let the screen settle
+// (up to a second) and draw it before the answer goes, so a GET /screen.png after it shows the result.
+
+ui_control::Arg param(const char* name) {
+  ui_control::Arg a;
+  a.given = server.hasArg(name);
+  if (a.given) a.value = arg(name);
+  return a;
+}
+
+// A POST's guards and the login (403, 401), then the setting and a password that isn't the default (403): one turned
+// on before the default was refused (or the password set back to map) does nothing until the password is changed
+bool controlAllowed() {
+  if (!postAllowed()) return false;
+  if (!settings->remoteControl) {
+    server.send(403, "text/plain",
+                "Remote control is off. Turn on \"Remote control (for screenshots)\" in the Copilot's web page's "
+                "Settings.");
+    return false;
+  }
+  if (web_guard::isDefaultPassword(settings->webPassword)) {
+    server.send(403, "text/plain", web_guard::kDefaultPasswordRemote);
+    return false;
+  }
+  return true;
+}
+
+void sendState() {
+  ui_control::State st = ui_control_state();
+  st.remoteControl = settings->remoteControl;
+  server.sendHeader("Cache-Control", "no-store");
+  server.send(200, "application/json", ui_control::stateJson(st).c_str());
+}
+
+// What a control did: the state after it (200), or why not, as text
+void answer(const ui_control::Outcome& r) {
+  if (r.ok()) {
+    sendState();
+    return;
+  }
+  LOGF("web: ui: %d %s\n", r.status, r.text.c_str());
+  server.send(r.status, "text/plain", r.text.c_str());
+}
+
+void onUiState() {
+  if (!allowed()) return;  // answers with remote control off too, so a script can say it's off
+  sendState();
+}
+
+void onUiShow() {
+  if (!controlAllowed()) return;
+  ui_control::ShowRequest req;
+  ui_control::Outcome r = ui_control::parseShow(param("screen"), param("page"), req);
+  if (r.ok()) {
+    std::string what = ui_control::screenName(req.screen);
+    if (req.page) what += " page " + std::to_string(req.page);
+    LOGF("web: ui show %s\n", what.c_str());
+    r = ui_control_show(req);
+  }
+  answer(r);
+}
+
+void onUiCard() {
+  if (!controlAllowed()) return;
+  ui_control::CardRequest req;
+  ui_control::Outcome r =
+      ui_control::parseCard(param("airport"), param("position"), param("page"), param("button"), req);
+  if (r.ok()) {
+    std::string what = req.airport;
+    if (req.position) what += "position " + std::to_string(req.position);
+    if (req.page) what += " page " + std::to_string(req.page);
+    if (req.button != ui_control::Button::None)
+      what += std::string(what.empty() ? "" : " ") + ui_control::buttonName(req.button);
+    LOGF("web: ui card %s\n", what.c_str());
+    r = ui_control_card(req);
+  }
+  answer(r);
+}
+
+void onUiVisualizer() {
+  if (!controlAllowed()) return;
+  std::string id;
+  ui_control::Outcome r = ui_control::parseVisualizer(param("id"), id);
+  if (r.ok()) {
+    LOGF("web: ui visualizer %s\n", id.c_str());
+    r = ui_control_visualizer(id);
+  }
+  answer(r);
+}
+
 void onScreen() {
   if (!allowed()) return;
+  lv_refr_now(nullptr);  // anything changed since the last frame drawn first
   static std::vector<uint16_t> pixels;
   int w = 0, h = 0;
   lvgl_port_capture(pixels, w, h);
@@ -338,6 +481,9 @@ void onLogFile() {
 }
 
 void start() {
+  // kept for each request (reset by the next): the POSTs' header, and the Host (web_guard.h)
+  static const char* collect[] = {web_guard::kHeader, "Host"};
+  server.collectHeaders(collect, 2);
   server.on("/", HTTP_GET, onPage);
   server.on("/api/state", HTTP_GET, onState);
   server.on("/api/connection", HTTP_POST, onConnection);
@@ -347,6 +493,11 @@ void start() {
   server.on("/api/password", HTTP_POST, onPassword);
   server.on("/api/led", HTTP_POST, onLed);
   server.on("/api/sounds", HTTP_POST, onSounds);
+  server.on("/api/remote-control", HTTP_POST, onRemoteControl);
+  server.on("/api/ui/state", HTTP_GET, onUiState);
+  server.on("/api/ui/show", HTTP_POST, onUiShow);
+  server.on("/api/ui/card", HTTP_POST, onUiCard);
+  server.on("/api/ui/visualizer", HTTP_POST, onUiVisualizer);
   server.on("/screen.png", HTTP_GET, onScreen);
   server.on("/log", HTTP_GET, onLog);
   server.on("/log.txt", HTTP_GET, onLogFile);

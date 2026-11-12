@@ -94,6 +94,7 @@ uint32_t statusRev = 0, liveRev = 0, connRev = 0;
 lv_style_t stCard, stBtn, stLit, stRail, stRailOn, stTile, stPressed, stDisabled;
 
 lv_obj_t* remoteScreen = nullptr;
+TaskHandle_t uiTask = nullptr;  // the task LVGL runs on (ui_init()'s; setup() and loop() share it), for remote control
 lv_obj_t* railButtons[2];
 lv_obj_t* panels[2];
 lv_obj_t *logoDot, *starIcon;
@@ -776,9 +777,9 @@ void markPicked(int index) {
   }
 }
 
-void onPick(lv_event_t* e) {
-  pickVisualizer((int)(intptr_t)lv_event_get_user_data(e));
-  // the pick shows lit for a moment, then the legend
+// A tap on tile `index`: the Chart switches to it, and the pick shows lit for a moment, then the legend
+void tapPick(int index) {
+  pickVisualizer(index);
   if (pickerTimer) lv_timer_delete(pickerTimer);
   pickerTimer = lv_timer_create(
       [](lv_timer_t*) {
@@ -788,6 +789,8 @@ void onPick(lv_event_t* e) {
       kPickedMs, nullptr);
   lv_timer_set_repeat_count(pickerTimer, 1);
 }
+
+void onPick(lv_event_t* e) { tapPick((int)(intptr_t)lv_event_get_user_data(e)); }
 
 lv_obj_t* pickTile(const lv_image_dsc_t* src, const char* text, int tileW) {
   lv_obj_t* t = button(picker, &stBtn);
@@ -1178,8 +1181,11 @@ lv_obj_t *cardDot, *cardCode, *cardTag, *cardName, *cardStatus, *cardMetar;
 lv_obj_t *cardActions, *locateBtn, *awosBtn, *atisBtn;
 lv_obj_t *volRow, *volSlider, *volLabel;
 lv_obj_t* transcript = nullptr;  // the ATIS being read, line by line, in the FAA's text
-int cardTile = -1;               // the tile whose card is open
-uint32_t cardLocatedAt = 0;      // when the card last asked the Chart to pulse the pixel (0: not yet)
+// The tile whose card is open, or -1. Not always a tile: buildTiles() (showStations(), when the Chart's airports
+// change) rebuilds `tiles` with the card left open, so it can be past the end. Read it through cardAirport() (nullptr
+// then), never tiles[cardTile]; the remote control checks it with ui_control::checkOpenCard() first.
+int cardTile = -1;
+uint32_t cardLocatedAt = 0;  // when the card last asked the Chart to pulse the pixel (0: not yet)
 std::vector<lv_obj_t*> txRows;
 int txLit = -1;       // the line being said
 bool txOpen = false;  // the transcript is on screen (it stays after the end, to read; a tap closes it)
@@ -1376,11 +1382,16 @@ void closeCard(lv_event_t* e = nullptr) {
   cardTile = -1;
 }
 
-void onLocate(lv_event_t*) {
-  if (!locateGate.accept(millis())) return;  // the same press
+// Locate: the Chart pulses the card's airport. Not debounced (see speak()).
+void locateCard() {
   const Tile* t = cardAirport();
   if (t) locate(*t);
   showCard();
+}
+
+void onLocate(lv_event_t*) {
+  if (!locateGate.accept(millis())) return;  // the same press
+  locateCard();
 }
 
 // The speaker's state now, not as the last tick saw it: a press right after another acts on what that one did.
@@ -1388,11 +1399,9 @@ void refreshRadio() {
   if (stream_get(radio, radioRev)) followTranscript();
 }
 
-// AWOS or ATIS; while it's being got ("Getting the ATIS...") or playing, the same button is Stop. (The tick came from
-// the touch driver as the finger landed.)
-void onSpeak(lv_event_t* e) {
-  bool wantAtis = (bool)(intptr_t)lv_event_get_user_data(e);
-  if (!(wantAtis ? atisGate : awosGate).accept(millis())) return;  // the same press
+// AWOS or ATIS; while it's being got ("Getting the ATIS...") or playing, the same button is Stop. Not debounced: the
+// touch press (onSpeak) is, the remote control's press isn't (one HTTP request is one press).
+void speak(bool wantAtis) {
   const Tile* t = cardAirport();
   if (!t) return;
   refreshRadio();
@@ -1405,6 +1414,13 @@ void onSpeak(lv_event_t* e) {
   }
   refreshRadio();  // so the button says Stop (or AWOS/ATIS again) at once
   showCard();
+}
+
+// A touch on AWOS or ATIS. (The tick came from the touch driver as the finger landed.)
+void onSpeak(lv_event_t* e) {
+  bool wantAtis = (bool)(intptr_t)lv_event_get_user_data(e);
+  if (!(wantAtis ? atisGate : awosGate).accept(millis())) return;  // the same press
+  speak(wantAtis);
 }
 
 void onVolume(lv_event_t* e) {
@@ -2307,6 +2323,7 @@ void checkMapLost() {
 }  // namespace
 
 void ui_init(MapClient& c, Updater& u) {
+  uiTask = xTaskGetCurrentTaskHandle();
   client = &c;
   updater = &u;
   lv_display_t* disp = lv_display_get_default();
@@ -2412,4 +2429,267 @@ void ui_tick() {
     lastTick = millis();
     tickClock();
   }
+}
+
+// ---- remote control, for screenshots (ui.h) ---------------------------------------------------------------------
+//
+// The web server answers on this same task (remote_web_tick() runs in loop(), after lv_timer_handler()), so these
+// call LVGL directly, as the serial console's commands do: nothing is handed between tasks. uiTask checks that.
+
+namespace {
+
+using ui_control::Button;
+using ui_control::done;
+using ui_control::fail;
+using ui_control::Outcome;
+using ui_control::Screen;
+
+constexpr uint32_t kSettleMinMs = 150;   // the stream's state (the card's Stop) and the first frame come in by then
+constexpr uint32_t kSettleMaxMs = 1000;  // a screen's fade is 300-400 ms: over well before
+
+bool onUiTask() { return uiTask && xTaskGetCurrentTaskHandle() == uiTask; }
+
+Outcome wrongTask() { return fail(500, "Remote control has to run on the screen's task."); }
+
+// Runs the screen (ui_tick() and LVGL's timers) for at least `minMs`, until its animations (a screen's fade) are
+// over, then draws what's changed, so the next screenshot shows it
+void settle(uint32_t minMs = kSettleMinMs) {
+  uint32_t start = millis();
+  for (;;) {
+    ui_tick();
+    lv_timer_handler();
+    uint32_t t = millis() - start;
+    if (t >= kSettleMaxMs || (t >= minMs && lv_anim_count_running() == 0)) break;
+    delay(5);
+  }
+  lv_refr_now(nullptr);
+}
+
+bool installing() { return upd.phase == UpdateState::Installing || upd.phase == UpdateState::Restarting; }
+
+// Wi-Fi config mode, or the startup (or reconnecting) splash: the panels aren't there to show
+Outcome reachable() {
+  if (setupScr) return fail(409, "The Copilot is in Wi-Fi setup.");
+  if (splash && splashMode != SplashMode::OnDemand) {
+    return fail(409, "The Copilot is connecting to the Chart (the startup splash is on screen).");
+  }
+  return done();
+}
+
+// The update screen closed, as its Back does (not while it installs)
+Outcome leaveUpdate() {
+  if (!updScr) return done();
+  if (installing()) return fail(409, "A firmware update is installing.");
+  hideUpdate();
+  settle(0);
+  return done();
+}
+
+// Back to the panels: the update screen and the logo's splash closed (as their Back and Close), then the picker and
+// the sheets
+Outcome toPanels() {
+  Outcome r = reachable();
+  if (r.ok()) r = leaveUpdate();
+  if (!r.ok()) return r;
+  if (splash) {
+    hideSplash();  // its volume slider goes with it
+    settle(0);
+  }
+  closeOverlays();
+  return done();
+}
+
+// The logo's splash, as the logo shows it; one already open starts its 30 s again, its volume slider closed
+Outcome openSplash() {
+  Outcome r = reachable();
+  if (r.ok()) r = leaveUpdate();
+  if (!r.ok()) return r;
+  closeOverlays();
+  if (splash) {
+    closeSplashVolume();
+    splashStart = millis();
+  } else {
+    showSplash(SplashMode::OnDemand);
+  }
+  return done();
+}
+
+// Whether the card's button `b` would do anything on tile `t`'s card (`open`: the card open now): not a disabled (or
+// hidden) one
+Outcome canPress(const Tile& t, bool open, Button b) {
+  switch (b) {
+    case Button::Locate:
+      if (live.exclusive) return fail(409, "Locate can't show while Rainbow or Chase runs.");
+      break;
+    case Button::Awos:
+    case Button::Atis:
+      if (!stream_available()) return fail(409, "The Copilot's speaker isn't working: no AWOS or ATIS.");
+      if (!awosAvailable()) return fail(409, "The Chart can't speak now (its speech is off).");
+      if (b == Button::Atis && !t.atis) return fail(409, t.code + " has no ATIS.");
+      break;
+    case Button::Stop:
+      if (open) refreshRadio();  // what it's saying now ("Getting..." counts), not as the last tick saw it
+      if (!open || !cardSpeaking()) return fail(409, t.code + " isn't saying anything.");
+      break;
+    case Button::None:
+      break;
+  }
+  return done();
+}
+
+void press(Button b) {
+  switch (b) {
+    case Button::Locate:  // not through onLocate(): its debounce is for a finger, and this is one request
+      locateCard();
+      break;
+    case Button::Awos:
+      speak(false);
+      break;
+    case Button::Atis:
+      speak(true);
+      break;
+    case Button::Stop:  // the playing one's button, which says Stop
+      if (cardSpeaking()) speak(cardSpeaking() == 2);
+      break;
+    case Button::None:
+      break;
+  }
+}
+
+bool shown(lv_obj_t* o) { return o && !lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN); }
+
+}  // namespace
+
+ui_control::Outcome ui_control_show(const ui_control::ShowRequest& req) {
+  if (!onUiTask()) return wrongTask();
+  Outcome r = done();
+  switch (req.screen) {
+    case Screen::Chart:
+    case Screen::Picker:
+    case Screen::Brightness:
+      r = toPanels();
+      if (!r.ok()) return r;
+      showTab(0);
+      if (req.screen == Screen::Picker) openPicker();
+      if (req.screen == Screen::Brightness) openBrightness();
+      break;
+    case Screen::Airports:
+      if (req.page) r = ui_control::checkPage(req.page, pageCount());
+      if (r.ok()) r = toPanels();
+      if (!r.ok()) return r;
+      showTab(1);
+      if (req.page) showPage(req.page - 1);
+      break;
+    case Screen::Close:
+      r = toPanels();
+      if (!r.ok()) return r;
+      break;
+    case Screen::Splash:
+    case Screen::Volume:
+      r = openSplash();
+      if (!r.ok()) return r;
+      if (req.screen == Screen::Volume) openSplashVolume(nullptr);
+      break;
+    case Screen::Update:
+      r = reachable();
+      if (!r.ok()) return r;
+      if (!updScr) {
+        closeOverlays();
+        showUpdate();  // from the splash too, as its Firmware button
+      }
+      break;
+  }
+  settle();
+  return done();
+}
+
+ui_control::Outcome ui_control_card(const ui_control::CardRequest& req) {
+  if (!onUiTask()) return wrongTask();
+  Outcome r = reachable();
+  if (!r.ok()) return r;
+  int index = cardTile;
+  if (req.opens()) {
+    std::vector<std::string> codes(tiles.size());
+    std::transform(tiles.begin(), tiles.end(), codes.begin(), [](const Tile& t) { return t.code; });
+    r = ui_control::findCard(codes, kPerPage, page, req, index);
+  } else {  // the open card's: cardTile can be past the end of tiles (see it)
+    r = ui_control::checkOpenCard(cardOpen() && !updScr && !splash, index, (int)tiles.size());
+  }
+  if (r.ok() && req.opens() && req.button == Button::Stop) {
+    r = fail(409, "Opening a card stops what it's saying: send button=stop alone, to the open card.");
+  }
+  if (r.ok() && req.button != Button::None) {
+    // in range: findCard()'s index is one of tiles, and checkOpenCard() checked cardTile
+    const Tile* t = req.opens() ? &tiles[index] : cardAirport();
+    r = t ? canPress(*t, !req.opens(), req.button) : fail(409, "The card's airport is gone from the Chart's airports.");
+  }
+  if (!r.ok()) return r;
+  if (req.opens()) {
+    r = toPanels();
+    if (!r.ok()) return r;
+    showTab(1);
+    showPage(pages::of(index, kPerPage));
+    openCard(index);  // as a tap on its tile: the Chart pulses its pixel
+    // what that stopped (the airport's own AWOS, say) reaches the screen before a button's pressed, as for a finger
+    if (req.button != Button::None) settle();
+  }
+  press(req.button);
+  settle();
+  return done();
+}
+
+ui_control::Outcome ui_control_visualizer(const std::string& want) {
+  if (!onUiTask()) return wrongTask();
+  if (status.visualizers.empty()) return fail(409, "The Chart's visualizers aren't known yet.");
+  int index = ui_control::findVisualizer(status.visualizers, want);
+  if (index < 0) return fail(404, "\"" + want + "\" isn't one of the Chart's visualizers.");
+  if (!conn.online) return fail(409, "The Chart isn't answering.");
+  if (pickerOpen()) {
+    tapPick(index);  // lit a moment, then the picker closes, as a tap
+    settle(kPickedMs + 100);
+  } else {
+    pickVisualizer(index);
+    settle();
+  }
+  return done();
+}
+
+ui_control::State ui_control_state() {
+  ui_control::State s;
+  if (!onUiTask()) {
+    s.screen = "unknown";
+    return s;
+  }
+  s.screen = setupScr ? "wifiSetup"
+             : updScr ? "update"
+             : splash ? (splashMode == SplashMode::OnDemand ? "splash" : "startup")
+                      : "main";
+  s.panel = shown(panels[1]) ? "airports" : "chart";
+  if (splash && shown(splashVolPopup)) {
+    s.overlay = "volume";
+  } else if (cardOpen()) {
+    s.overlay = "card";
+  } else if (pickerOpen()) {
+    s.overlay = "picker";
+  } else if (shown(bright.backdrop)) {
+    s.overlay = "brightness";
+  }
+  const Tile* t = cardOpen() ? cardAirport() : nullptr;
+  if (t) s.card = t->code;
+  int speaking = t ? cardSpeaking() : 0;
+  s.playing = speaking == 1 ? "awos" : speaking == 2 ? "atis" : "";
+  s.page = page + 1;
+  s.pages = pageCount();
+  size_t first = std::min(tiles.size(), (size_t)page * kPerPage);
+  size_t last = std::min(tiles.size(), first + kPerPage);
+  s.pageAirports.resize(last - first);
+  std::transform(tiles.begin() + first, tiles.begin() + last, s.pageAirports.begin(),
+                 [](const Tile& tile) { return tile.code; });
+  s.airports = (int)tiles.size();
+  if (shownIndex >= 0 && shownIndex < (int)status.visualizers.size()) s.visualizer = status.visualizers[shownIndex].id;
+  s.visualizers.resize(status.visualizers.size());
+  std::transform(status.visualizers.begin(), status.visualizers.end(), s.visualizers.begin(),
+                 [](const Visualizer& v) { return v.id; });
+  s.online = conn.online;
+  return s;
 }
