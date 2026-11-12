@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <iterator>
 
 namespace update {
 
@@ -104,7 +105,7 @@ std::vector<std::string> buildBranches(const std::vector<Release>& releases) {
 bool isUpdate(Channel channel, const Release& release, const std::string& currentTag,
               const std::string& currentCommit) {
   if (release.url.empty()) return false;  // nothing to install
-  if (channel == Channel::Releases) {
+  if (channel == Channel::Releases || channel == Channel::Release) {
     std::vector<int> candidate = versionParts(release.tag);
     if (candidate.empty() || release.prerelease) return false;
     std::vector<int> current = versionParts(currentTag);
@@ -114,12 +115,70 @@ bool isUpdate(Channel channel, const Release& release, const std::string& curren
   return release.commit.compare(0, 7, currentCommit, 0, 7) != 0;
 }
 
+namespace {
+
+// A release that can be installed: the firmware file, a release tag, not a pre-release.
+bool installableRelease(const Release& r) { return !r.url.empty() && !r.prerelease && !versionParts(r.tag).empty(); }
+
+}  // namespace
+
+std::vector<std::string> releaseTags(const std::vector<Release>& releases, size_t max) {
+  std::vector<Release> usable;
+  std::copy_if(releases.begin(), releases.end(), std::back_inserter(usable), installableRelease);
+  std::stable_sort(usable.begin(), usable.end(),
+                   [](const Release& a, const Release& b) { return versionParts(a.tag) > versionParts(b.tag); });
+  std::vector<std::string> tags;
+  for (const Release& r : usable) {
+    if (tags.size() >= max) break;
+    if (std::find(tags.begin(), tags.end(), r.tag) == tags.end()) tags.push_back(r.tag);
+  }
+  return tags;
+}
+
+Release findRelease(const std::vector<Release>& releases, const std::string& tag) {
+  auto at = std::find_if(releases.begin(), releases.end(),
+                         [&](const Release& r) { return r.tag == tag && installableRelease(r); });
+  return at == releases.end() ? Release() : *at;
+}
+
+Age ageOf(const std::string& tag, const std::string& currentTag, const std::string& currentVersion) {
+  std::vector<int> candidate = versionParts(tag);
+  if (candidate.empty()) return Age::Unknown;
+  std::vector<int> current = versionParts(currentTag);
+  if (current.empty() || candidate > current) return Age::Newer;  // before the first release, any is newer
+  if (candidate < current) return Age::Older;
+  return currentVersion == currentTag ? Age::Same : Age::Older;  // commits after the tag are newer than it
+}
+
+const char* ageText(Age age) {
+  switch (age) {
+    case Age::Older:
+      return "older than installed";
+    case Age::Same:
+      return "same as installed";
+    case Age::Newer:
+      return "newer than installed";
+    default:
+      return "";
+  }
+}
+
+bool canInstall(Channel channel, const Release& release, const std::string& currentTag,
+                const std::string& currentVersion, const std::string& currentCommit) {
+  if (channel != Channel::Release) return isUpdate(channel, release, currentTag, currentCommit);
+  if (!installableRelease(release)) return false;
+  Age age = ageOf(release.tag, currentTag, currentVersion);
+  return age == Age::Older || age == Age::Newer;
+}
+
 const char* channelName(Channel channel) {
   switch (channel) {
     case Channel::Latest:
       return "latest";
     case Channel::Branch:
       return "branch";
+    case Channel::Release:
+      return "release";
     default:
       return "releases";
   }
@@ -128,6 +187,7 @@ const char* channelName(Channel channel) {
 Channel channelFromName(const std::string& name) {
   if (name == "latest") return Channel::Latest;
   if (name == "branch") return Channel::Branch;
+  if (name == "release") return Channel::Release;
   return Channel::Releases;
 }
 

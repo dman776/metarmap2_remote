@@ -87,6 +87,7 @@ Settings settings_load() {
   s.mapPort = p.getUShort("map_port", 80);
   s.updateChannel = getString(p, "upd_channel", s.updateChannel);
   s.updateBranch = getString(p, "upd_branch", s.updateBranch);
+  s.updateRelease = getString(p, "upd_release", s.updateRelease);
   s.streamUrl = getString(p, "stream_url", "");
   s.volume = p.getUChar("volume", s.volume);
   s.webPassword = getString(p, "web_pass", kDefaultWebPassword);
@@ -116,7 +117,9 @@ void settings_save_update(const Settings& s) {
   Saving saving("the update channel");
   bool channel = putString(saving.p, "upd_channel", s.updateChannel);
   bool branch = putString(saving.p, "upd_branch", s.updateBranch);
-  saving.wrote(channel || branch);
+  // Firmware from before Pick release reads "release" as Releases, and leaves upd_release alone.
+  bool release = putString(saving.p, "upd_release", s.updateRelease);
+  saving.wrote(channel || branch || release);
 }
 
 void settings_save_connection(const Settings& s) {

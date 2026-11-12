@@ -113,13 +113,21 @@ void onState() {
   u["phase"] = phaseName(st.phase);
   u["channel"] = update::channelName(st.channel);
   u["branch"] = st.branch;
+  u["release"] = st.release;
   u["checked"] = st.checked;
   u["available"] = st.available;
+  u["installable"] = st.installable;
+  u["age"] = st.age == update::Age::Older   ? "older"
+             : st.age == update::Age::Same  ? "same"
+             : st.age == update::Age::Newer ? "newer"
+                                            : "";
   u["candidate"] = st.candidate;
   u["error"] = st.error;
   u["progress"] = st.progress;
   JsonArray branches = u["branches"].to<JsonArray>();
   for (const std::string& b : st.branches) branches.add(b);
+  JsonArray releases = u["releases"].to<JsonArray>();
+  for (const std::string& r : st.releases) releases.add(r);
   sendJson(doc);
 }
 
@@ -219,14 +227,23 @@ void onNotFound() {
   server.send(404, "text/plain", "not found");
 }
 
+// channel=releases|latest|branch|release, with branch=<name> for branch and release=<tag> (v26.11.07) for release.
+// The one not sent stays as saved.
 void onChannel() {
   if (!allowed()) return;
-  std::string channel = arg("channel"), branch = arg("branch");
-  if (channel != "releases" && channel != "latest" && channel != "branch") {
-    server.send(400, "text/plain", "channel: releases, latest or branch");
+  std::string channel = arg("channel"), branch, release;
+  updater->choice(branch, release);
+  if (server.hasArg("branch")) branch = arg("branch");
+  if (server.hasArg("release")) release = arg("release");
+  if (channel != "releases" && channel != "latest" && channel != "branch" && channel != "release") {
+    server.send(400, "text/plain", "channel: releases, latest, branch or release");
     return;
   }
-  updater->setChannel(update::channelFromName(channel), branch);
+  if (!release.empty() && update::versionParts(release).empty()) {
+    server.send(400, "text/plain", "release: a release's tag, like v26.11.07");
+    return;
+  }
+  updater->setChannel(update::channelFromName(channel), branch, release);
   server.send(200, "text/plain", "OK");
 }
 

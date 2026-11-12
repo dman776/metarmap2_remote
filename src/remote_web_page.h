@@ -49,8 +49,10 @@ dl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:0}dt{color:va
 <h2>Firmware</h2>
 <dl><dt>Installed</dt><dd id="installed"></dd><dt>Available</dt><dd id="available"></dd><dt>Up for</dt><dd id="uptime"></dd></dl>
 <label for="channel">Update channel</label>
-<select id="channel"><option value="releases">Releases</option><option value="latest">Latest commit</option><option value="branch">Branch</option></select>
+<select id="channel"><option value="releases">Releases</option><option value="latest">Latest commit</option><option value="branch">Branch</option><option value="release">Pick release</option></select>
 <div id="branchRow" hidden><label for="branch">Branch</label><select id="branch"></select></div>
+<div id="releaseRow" hidden><label for="release">Release</label><select id="release"></select>
+<p class="note">Any of the newest releases, older ones too. Your settings are kept.</p></div>
 <button id="check">Check now</button><button class="primary" id="install" disabled>Install</button>
 <progress id="progress" max="100" hidden></progress>
 <p class="note" id="updMsg"></p>
@@ -100,7 +102,7 @@ function dur(s) { const d = Math.floor(s / 86400), h = Math.floor(s / 3600) % 24
   return (d ? d + 'd ' : '') + (d || h ? h + 'h ' : '') + m + 'm'; }
 
 // ---- the state: firmware, settings (filled once, so typing isn't overwritten) ----
-let filled = false, branchesKey = '', offline = false;
+let filled = false, branchesKey = '', releasesKey = '', offline = false;
 async function poll() {
   try {
     const r = await fetch('/api/state', {cache: 'no-store'});
@@ -124,14 +126,28 @@ async function poll() {
       names.forEach(n => { const o = document.createElement('option'); o.value = o.textContent = n; $('#branch').append(o); });
       $('#branch').value = u.branch;
     }
-    let avail = u.phase === 'checking' ? 'Checking...' : !u.checked ? '' : !u.candidate ? 'None published'
+    const pick = u.channel === 'release';
+    $('#releaseRow').hidden = !pick;
+    const rkey = u.releases.join(',') + '|' + u.release;
+    if (rkey !== releasesKey && document.activeElement !== $('#release')) {
+      releasesKey = rkey;
+      const tags = u.releases.slice();
+      if (u.release && !tags.includes(u.release)) tags.push(u.release);
+      $('#release').innerHTML = '';
+      if (!u.release) { const o = new Option('Pick a release', '', true, true); o.disabled = true; $('#release').append(o); }
+      tags.forEach(t => $('#release').append(new Option(t + (u.releases.includes(t) ? '' : ' (not on GitHub)'), t)));
+      $('#release').value = u.release;
+    }
+    let avail = u.phase === 'checking' ? 'Checking...' : !u.checked ? '' : !u.candidate ? (pick && !u.release ? 'Pick a release' : 'None published')
+      : pick ? u.candidate + (u.age ? '  (' + {older: 'older than installed', same: 'same as installed', newer: 'newer than installed'}[u.age] + ')' : '')
       : u.candidate + (u.available ? '' : '  (up to date)');
     $('#available').textContent = avail;
-    $('#available').className = u.available ? 'okc' : '';
+    $('#available').className = u.installable ? 'okc' : '';
     const busy = u.phase === 'installing' || u.phase === 'restarting';
-    $('#install').disabled = !u.available || u.phase !== 'idle';
+    $('#install').disabled = !u.installable || u.phase !== 'idle';
+    $('#install').textContent = pick && u.candidate ? 'Install ' + u.candidate : 'Install';
     $('#check').disabled = busy;
-    $('#channel').disabled = $('#branch').disabled = busy;
+    $('#channel').disabled = $('#branch').disabled = $('#release').disabled = busy;
     $('#progress').hidden = !busy;
     $('#progress').value = u.progress;
     say($('#updMsg'), u.error ? u.error : u.phase === 'installing' ? 'Installing: ' + u.progress + '%'
@@ -152,7 +168,14 @@ setInterval(poll, 2000); poll();
 $('#channel').onchange = async () => {
   const ch = $('#channel').value;
   $('#branchRow').hidden = ch !== 'branch';
-  try { await post('/api/channel', {channel: ch, branch: ch === 'branch' ? ($('#branch').value || '') : ''}); poll(); }
+  $('#releaseRow').hidden = ch !== 'release';
+  const data = {channel: ch};
+  if (ch === 'branch') data.branch = $('#branch').value || '';
+  try { await post('/api/channel', data); poll(); }
+  catch (e) { say($('#updMsg'), e.message, true); }
+};
+$('#release').onchange = async () => {
+  try { await post('/api/channel', {channel: 'release', release: $('#release').value}); poll(); }
   catch (e) { say($('#updMsg'), e.message, true); }
 };
 $('#branch').onchange = async () => {
@@ -161,7 +184,7 @@ $('#branch').onchange = async () => {
 };
 $('#check').onclick = async () => { try { await post('/api/check', {}); poll(); } catch (e) { say($('#updMsg'), e.message, true); } };
 $('#install').onclick = async () => {
-  if (!confirm('Install ' + $('#available').textContent.trim() + '? The Copilot restarts when it has it.')) return;
+  if (!confirm('Install ' + $('#available').textContent.trim() + '? Your settings are kept. The Copilot restarts when it has it.')) return;
   try { await post('/api/install', {}); poll(); } catch (e) { say($('#updMsg'), e.message, true); }
 };
 

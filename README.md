@@ -104,7 +104,7 @@ buttons: **Chart**, **Airports**, and the **logo**.
 - **Screen**: the Copilot's screen as a PNG, refreshed on demand or live (about
   once a second), and **Download PNG**.
 - **Firmware**: the installed and available versions, the update channel and
-  branch, **Check now** and **Install**, with its progress.
+  branch (or, on **Pick release**, the release), **Check now** and **Install**, with its progress.
 - **Settings**: the Wi-Fi network and password, and the Chart's address and port;
   saving restarts the Copilot with them. If it can't join the new network, use
   **Wi-Fi setup** on its screen (below). A USB build's `secrets.h` applies only
@@ -141,9 +141,13 @@ buttons: **Chart**, **Airports**, and the **logo**.
   stack for a moment, so the heap at `play` is lower then than once it has gone.
 - Live control of the Chart stays on the touchscreen, MetarMap2 Web and the Cockpit.
 - The page works through the Copilot's own endpoints (all behind the same login), listed in
-  `src/remote_web.h`: `GET /api/state` (the versions, settings, `led`, `sounds` and the update's state), and
-  `POST /api/connection`, `/api/channel`, `/api/check`, `/api/install`, `/api/password`, `/api/led`
-  (`brightness=0`-`100`) and `/api/sounds` (`on=1` or `0`).
+  `src/remote_web.h`: `GET /api/state` (the versions, settings, `led`, `sounds` and the update's state: its
+  `channel`, `branch` and `branches`, `release` and `releases` (the tags Pick release offers, newest first),
+  `available` (newer: the star), `installable` (what **Install** can install) and `age` (`older`, `same` or
+  `newer`, for Pick release)), and `POST /api/connection`, `/api/channel` (`channel=releases`, `latest`,
+  `branch` with `branch=<name>`, or `release` with `release=v26.11.08`; the one not sent stays as it was),
+  `/api/check`, `/api/install`, `/api/password`, `/api/led` (`brightness=0`-`100`) and `/api/sounds`
+  (`on=1` or `0`).
 
 **Wi-Fi setup**
 
@@ -198,7 +202,28 @@ buttons: **Chart**, **Airports**, and the **logo**.
   restarts.
 - The channels are metarmap2's: **Releases** (the newest release, if newer than
   the installed one), **Latest commit** (the newest commit of `main`) and
-  **Branch** (the newest commit of the branch you pick). The choice is saved.
+  **Branch** (the newest commit of the branch you pick), and **Pick release**:
+  one release you choose, older ones too. The choice is saved.
+- **Pick release** (on the screen and the web page) lists the 15 newest releases that have the firmware file
+  (`metarmap_remote-es3c28p.bin`; not pre-releases or branch builds), newest first. Pick one: the screen says
+  whether it's older, newer or the same as installed, and **INSTALL, KEEPING SETTINGS** (the page's
+  **Install v...**) installs exactly that release, even an older one. The settings (Wi-Fi, the Chart's address,
+  the web password, volume, status light, sounds, the update channel) are kept: they're in flash, outside the
+  firmware, and every release reads them the same way. The star only shows for a newer release, so while the
+  channel is Pick release the Copilot doesn't tell you about new releases: switch back to **Releases** for that.
+- Firmware from a few commits after a release (`v26.11.10+3 abc1234`) counts as newer than that release, so
+  Pick release can put it back to the release itself.
+- **Going back to new firmware** after installing an older release: releases before Pick release don't have
+  it, but every release (from the first, v26.11.05) has **Releases**, **Latest commit** and **Branch** on its
+  update screen: from v26.11.08 the logo's splash, then **Firmware** or **Update v...**; in v26.11.05 to
+  v26.11.07, keep holding a touch past the splash screen, to 10 s. An older release reads the saved Pick
+  release as **Releases**, so it offers the newest release straight away: press **UPDATE**. Or pick
+  **Latest commit** (the newest `main`) or a **Branch**. The web page's **Firmware** section came in
+  v26.11.08: before that, use the screen. Back on firmware with Pick release, the channel is still Pick
+  release (unless you chose another on the old one): choose **Releases** again to hear of new releases.
+- What older releases lack: v26.11.05 to v26.11.07 have no web page, no Wi-Fi setup network, no ATIS and the
+  first touch layout (the Info tab with ATIS, the side rail and the web page came in v26.11.08; ATIS reading
+  along in the FAA's text only came in v26.11.10). They use the saved Wi-Fi as it is.
 
 **Volume**
 
@@ -415,7 +440,9 @@ into the spare one while the running one carries on, and the board switches
 only after the whole file has arrived and matched its checksum. A failed or
 interrupted download leaves the running firmware as it was. (The board's
 bootloader can't roll back on its own, so if new firmware didn't start at all,
-flash it by USB.)
+flash it by USB.) Installing an older release works the same way: nothing on
+the board refuses older firmware (no anti-rollback or secure boot), and the
+settings in flash stay as they are.
 
 Which legend entries are in use comes from the Chart: `/api/live`'s
 `visualizer.legendInUse` names them by the `key` each entry has in
@@ -514,7 +541,8 @@ day (`v26.11.07.1`).
   creates the GitHub release, if there isn't one, and attaches
   `metarmap_remote-es3c28p.bin` (the app, which the Copilot's updater installs)
   and `metarmap_remote-es3c28p-factory.bin` (the whole flash, for a blank
-  board). That's the **Releases** channel.
+  board). That's the **Releases** channel, and the list **Pick release** offers. Every release so far has
+  the app under this name; one without it isn't offered.
 - Each push to a branch replaces a pre-release tagged `build-<branch>` with that
   commit's firmware: `build-main` is **Latest commit**, the others are
   **Branch**. Deleting a branch removes its build.
