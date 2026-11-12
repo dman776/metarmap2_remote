@@ -115,6 +115,17 @@ buttons: **Chart**, **Airports**, and the **logo**.
 - **Log**: the last 32 KB of the Copilot's log (what the serial console shows,
   each line with the seconds since startup), following new lines as they come,
   and **Download**.
+- The log starts with why the last run ended: `last run ended: task watchdog (reset reason 6)` (power-on,
+  software restart, panic, task watchdog, brownout, ...). After a crash it also shows the crash, once (it's
+  then cleared from flash, which adds a fraction of a second to that one startup): `last crash: task
+  stream_net, PC 0x..., cause ..., ELF sha256 ...` and `last crash: backtrace 0x... 0x...` (up to 16 frames).
+  A crash dump that can't be read is cleared too (`unreadable crash dump ..., erased`). The addresses can be
+  given to `addr2line` with the `firmware.elf` of the same build: `xtensa-esp32s3-elf-addr2line -pfiaC -e
+  .pio/build/es3c28p/firmware.elf 0x... 0x...` (the toolchain is in
+  `~/.platformio/packages/toolchain-xtensa-esp32s3/bin`). That names the crashing code for a crash in our code;
+  for a task watchdog it may not: the watchdog's interrupt aborts, so the PC and the first frames are the
+  panic, abort and interrupt handlers, and the code that was spinning shows deeper in the backtrace, if it's
+  within the 16 frames at all.
 - Live control of the Chart stays on the touchscreen, MetarMap2 Web and the Cockpit.
 - The page works through the Copilot's own endpoints (all behind the same login), listed in
   `src/remote_web.h`: `GET /api/state` (the versions, settings, `led`, `sounds` and the update's state), and
@@ -153,6 +164,9 @@ buttons: **Chart**, **Airports**, and the **logo**.
 - If the Chart stops answering (or Wi-Fi drops) for 5 s, the Copilot goes back to it:
   "Reconnecting to the Chart... retrying" until the Chart answers, then the Copilot fades
   back in. Not while the update screen is open.
+- A slow Chart (a Pi Zero busy sending an ATIS, say) is waited for without holding up the Copilot: each poll
+  waits up to 5 s for it to answer and 5 s between parts of the answer, then counts as no answer. (Before, a
+  Chart that stalled mid-answer could restart the Copilot.)
 - The logo's splash (not the one at startup) has a speaker button at its top
   right: the speaker's volume. Its symbol shows the level, crossed out (muted) at
   0%. A tap opens a volume slider across the top of the screen, the same volume
@@ -201,6 +215,9 @@ buttons: **Chart**, **Airports**, and the **logo**.
   a few seconds; it keeps it until the next METAR.
 - If the Chart can't, the Copilot shows why, in the Chart's words (e.g. spoken
   weather is off, or the speech server can't be reached).
+- A Chart that is slow to answer, or never does, ends in "no answer" on the card (after 2 minutes, or at once if
+  it closes the connection) instead of restarting the Copilot. **Stop**, closing the card, or another AWOS or
+  ATIS ends the wait at once.
 - Always from the Copilot's Chart (`MAP_HOST`).
 
 **Spoken ATIS**
@@ -217,7 +234,8 @@ buttons: **Chart**, **Airports**, and the **logo**.
   stays to read, and a tap goes back to the METAR.
 - The Chart makes the whole ATIS before answering, about half a minute on a
   Kokoro server, so "Getting the ATIS..." shows until it starts; the Copilot
-  waits up to 2 minutes. After that it's kept until the ATIS changes.
+  waits up to 2 minutes (then the card says "no answer"; Stop ends the wait). Once made, the Chart keeps it
+  until the ATIS changes.
 - Needs metarmap2 with spoken ATIS (after 26.11.07). How a word is said is set
   on MetarMap2 Web's Pronunciation page.
 
@@ -419,6 +437,8 @@ for the endpoints.
 | `src/sounds.c`, `src/sounds.h` | The sounds, generated from `assets/sounds/*.mp3` |
 | `src/stream.cpp` | The speaker's player: the spoken weather from the Chart, on two tasks |
 | `src/stream_dsp.cpp` | The player's ring buffer, resampler and URL parsing |
+| `src/net_wait.cpp`, `src/net_client.h` | Waiting on the network in turns, so a slow server can't trip core 0's watchdog: HTTP lines, status codes, JSON bodies |
+| `src/last_run.cpp` | At startup: why the last run ended, and a crash's summary from flash, into the log |
 | `src/third_party/minimp3.h` | The MP3 decoder (public domain); one marked change: its scratch can live in PSRAM |
 | `src/updater.cpp` | Checking GitHub and installing firmware, on its own task |
 | `src/update_check.cpp` | GitHub's release JSON, versions, what's an update |
@@ -439,7 +459,7 @@ The firmware uses the Arduino framework with [LVGL](https://lvgl.io/) 9,
 
 ### Tests and lint
 
-The parsing, legend, paging, skip marks, update-check and audio (buffer, resampler, URL) code is plain C++ with unit tests that
+The parsing, legend, paging, skip marks, update-check, network-wait and audio (buffer, resampler, URL) code is plain C++ with unit tests that
 run on your computer (PlatformIO's Unity framework). The JSON fixtures in
 `test/test_parse` are real, trimmed answers from a Chart.
 

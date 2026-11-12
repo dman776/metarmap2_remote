@@ -7,6 +7,7 @@
 #include "board_es3c28p.h"
 #include "display.h"
 #include "firmware_version.h"
+#include "last_run.h"
 #include "log.h"
 #include "lvgl_port.h"
 #include "map_client.h"
@@ -51,6 +52,7 @@ void setup() {
   Serial.begin(115200);
   log_begin();  // the log the web page shows
   LOGF("MetarMap2 Copilot %s\n", FIRMWARE_VERSION);
+  log_last_run();  // why the last run ended (a crash's summary too), for the web page's log
 
   settings = settings_load();  // Wi-Fi and map: from secrets.h, else as saved
   neopixelWrite(RGB_LED, 0, 0, 0);

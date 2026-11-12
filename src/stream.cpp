@@ -14,6 +14,7 @@
 
 #include "audio.h"
 #include "log.h"
+#include "net_client.h"
 #include "settings.h"
 #include "stream_dsp.h"
 
@@ -37,6 +38,7 @@ constexpr size_t kOutFrames = 4096;         // after resampling: a 8 kHz stream'
 constexpr uint32_t kTimeoutMs = 10 * 1000;
 // the map answers once its speech server has read the whole text: half a minute for an ATIS, or more on a slow server
 constexpr uint32_t kSpeakTimeoutMs = 120 * 1000;
+constexpr uint32_t kWaitTurnMs = 20;  // waiting for an answer: core 0's idle task (and the watchdog) runs meanwhile
 constexpr uint32_t kRetryMs = 4000;
 constexpr int kMaxRedirects = 3;
 constexpr uint32_t kReaderStack = 12 * 1024;
@@ -55,7 +57,11 @@ std::atomic<bool> wanted{false};
 // The tasks run only while playing, so their stacks (in internal RAM, which TLS needs too) are free otherwise. Each
 // Play starts a generation; a task from an older one stops without touching anything shared.
 std::atomic<uint32_t> generation{0};
-std::atomic<int> players{0};       // player tasks still running (one, or for a moment two)
+std::atomic<int> players{0};  // player tasks still running (one, or for a moment two)
+// Readers between their last look at the generation and the end of their connection: they share the ring, the epoch
+// and the answer's length with the player, so a new Play waits for them (moments: they look every few ms). A reader
+// still connecting, or waiting for an answer, isn't one of them, and stops at its next look.
+std::atomic<int> feeding{0};
 std::atomic<uint32_t> epoch{0};    // the reader bumps it for each connection...
 std::atomic<uint32_t> acked{0};    // ...and the player says it has dropped what it had (and may read the ring)
 std::atomic<bool> flowing{false};  // the reader has the stream open
@@ -74,14 +80,41 @@ std::string currentUrl() {
   return url;
 }
 
-void publish(StreamState::Phase phase, const char* message = "") {
-  xSemaphoreTake(mutex, portMAX_DELAY);
+bool current(uint32_t gen) { return wanted && generation.load() == gen; }
+
+void publishLocked(StreamState::Phase phase, const char* message) {  // with the mutex held
   bool changed = state.phase != phase || state.message != message;
   state.phase = phase;
   state.message = message;
   if (phase == StreamState::Off) state.speaking.clear();
   if (phase == StreamState::Off || phase == StreamState::Connecting) state.rate = state.playedMs = state.totalMs = 0;
   if (changed) stateRev++;
+}
+
+void publish(StreamState::Phase phase, const char* message = "") {
+  xSemaphoreTake(mutex, portMAX_DELAY);
+  publishLocked(phase, message);
+  xSemaphoreGive(mutex);
+}
+
+// A reader's news, only while its Play is still the one wanted: start() moves the generation under the same mutex,
+// so an old reader can't overwrite the new Play's state.
+bool publishIfCurrent(uint32_t gen, StreamState::Phase phase, const char* message = "") {
+  xSemaphoreTake(mutex, portMAX_DELAY);
+  bool mine = current(gen);
+  if (mine) publishLocked(phase, message);
+  xSemaphoreGive(mutex);
+  return mine;
+}
+
+// A reader's Play is over (played, failed, or stopped): unless another Play has started since.
+void finish(uint32_t gen, StreamState::Phase phase, const char* message = "") {
+  xSemaphoreTake(mutex, portMAX_DELAY);
+  if (generation.load() == gen) {
+    wanted = false;
+    flowing = false;
+    publishLocked(phase, message);
+  }
   xSemaphoreGive(mutex);
 }
 
@@ -116,8 +149,24 @@ String headerValue(const String& line) {
   return value;
 }
 
-// Opens `url`, following redirects, and leaves the client at the start of the audio. False, with why, if it can't.
-bool openStream(std::string url, std::unique_ptr<WiFiClient>& client, std::string& error) {
+// The connection, for readLine(): it waits in turns (readStringUntil() would spin on core 0 until the watchdog
+// restarts the board), and stops waiting once this Play isn't wanted.
+class PlayLines : public ClientSource {
+ public:
+  PlayLines(WiFiClient& client, uint32_t gen) : ClientSource(client, kWaitTurnMs), gen_(gen) {}
+  bool wanted() override { return current(gen_); }
+
+ private:
+  uint32_t gen_;
+};
+
+// Opens `url`, following redirects, and leaves the client just past the headers, with the answer's Content-Length
+// in `length` (0 if it doesn't say). The headers are read in blocks, so the audio's first bytes may already be read:
+// they're in `head`, to go before what the client gives next. The server has `answerMs` to start answering. False,
+// with why, if it can't ("" if the Play was stopped meanwhile).
+bool openStream(std::string url, uint32_t gen, uint32_t answerMs, std::unique_ptr<WiFiClient>& client, uint32_t& length,
+                std::string& head, std::string& error) {
+  head.clear();
   for (int hop = 0; hop <= kMaxRedirects; hop++) {
     StreamUrl u;
     if (!parseStreamUrl(url, u)) {
@@ -132,7 +181,7 @@ bool openStream(std::string url, std::unique_ptr<WiFiClient>& client, std::strin
     } else {
       client.reset(new WiFiClient());
     }
-    client->setTimeout((oneShot ? kSpeakTimeoutMs : kTimeoutMs) / 1000);
+    client->setTimeout(kTimeoutMs / 1000);  // sending, and TLS's handshake; the answer is waited for below
     IPAddress ip;
     if (!WiFi.hostByName(u.host.c_str(), ip)) {
       error = "can't find " + u.host;
@@ -154,22 +203,42 @@ bool openStream(std::string url, std::unique_ptr<WiFiClient>& client, std::strin
         "Connection: close\r\n\r\n",
         u.path.c_str(), u.host.c_str());
 
-    String status = client->readStringUntil('\n');
-    status.trim();
-    int code = 0;
-    if (status.startsWith("HTTP/")) code = status.substring(9, 12).toInt();
-    if (status.startsWith("ICY ")) code = status.substring(4, 7).toInt();  // Shoutcast
+    // The map answers a spoken METAR or ATIS once it has it all (seconds, or half a minute), so this can be a long
+    // wait: in turns, to `answerMs`, ended at once by Stop or another Play.
+    PlayLines lines(*client, gen);
+    std::string raw;
+    NetResult got = readLine(lines, millis() + answerMs, raw);
+    if (got == NetResult::Stopped) {
+      error = "";
+      return false;
+    }
+    if (got != NetResult::Ok) {
+      if (got == NetResult::TimedOut) {
+        LOGF("stream: %s didn't answer in %u s\n", u.host.c_str(), (unsigned)(answerMs / 1000));
+      } else {
+        LOGF("stream: %s closed without answering\n", u.host.c_str());
+      }
+      error = "no answer";
+      return false;
+    }
+    int code = httpStatusCode(raw);
     String location, type;
-    contentLength = 0;
-    for (int i = 0; i < 40; i++) {  // the headers, up to the blank line
-      String line = client->readStringUntil('\n');
+    length = 0;
+    for (int i = 0; i < 40; i++) {  // the headers, up to the blank line (or what came)
+      got = readLine(lines, millis() + kTimeoutMs, raw, kHeaderLineMax);
+      if (got == NetResult::Stopped) {
+        error = "";
+        return false;
+      }
+      if (got != NetResult::Ok) break;
+      String line = raw.c_str();
       line.trim();
       if (line.length() == 0) break;
       String name = line.substring(0, max(0, line.indexOf(':')));
       name.toLowerCase();
       if (name == "location") location = headerValue(line);
       if (name == "content-type") type = headerValue(line);
-      if (name == "content-length") contentLength = (uint32_t)headerValue(line).toInt();
+      if (name == "content-length") length = (uint32_t)headerValue(line).toInt();
     }
     if (code >= 301 && code <= 308 && location.length() > 0) {
       url = resolveLocation(u, location.c_str());
@@ -177,10 +246,16 @@ bool openStream(std::string url, std::unique_ptr<WiFiClient>& client, std::strin
     }
     if (code != 200) {
       error = code ? "server said " + std::to_string(code) : "no answer";
+      if (!code) return false;
       // the map says why in a line of text (e.g. "Spoken weather is off: ..."): show that instead
-      String why = client->readStringUntil('\n');
+      got = readLine(lines, millis() + kTimeoutMs, raw);
+      if (got == NetResult::Stopped) {
+        error = "";
+        return false;
+      }
+      String why = got == NetResult::Ok ? raw.c_str() : "";
       why.trim();
-      if (code && why.length() > 0 && why.length() <= 200 && why.indexOf('<') < 0) error = why.c_str();
+      if (why.length() > 0 && why.length() <= 200 && why.indexOf('<') < 0) error = why.c_str();
       return false;
     }
     type.toLowerCase();
@@ -188,21 +263,35 @@ bool openStream(std::string url, std::unique_ptr<WiFiClient>& client, std::strin
       error = "not MP3 (" + std::string(type.c_str()) + ")";
       return false;
     }
+    // the audio's start, read with the headers' last block: a WAV's header, so it can't be lost
+    uint8_t ahead[BufferedSource::kBlock];
+    size_t n = lines.takeUnread(ahead, sizeof(ahead));
+    head.assign(reinterpret_cast<const char*>(ahead), n);
     return true;
   }
   error = "too many redirects";
   return false;
 }
 
-bool current(uint32_t gen) { return wanted && generation.load() == gen; }
+// Counts the reader as one of `feeding` while it's in scope.
+class Feeding {
+ public:
+  Feeding() { feeding++; }
+  ~Feeding() { feeding--; }
+  Feeding(const Feeding&) = delete;
+  Feeding& operator=(const Feeding&) = delete;
+};
 
 // One connection: reads until it drops or the user stops it. Returns why it ended ("" when stopped).
-std::string readOnce(uint32_t gen) {
+std::string readOnce(uint32_t gen, bool once, uint32_t answerMs) {
   std::unique_ptr<WiFiClient> client;
-  std::string error;
-  publish(StreamState::Connecting);
-  if (!openStream(currentUrl(), client, error)) return error;
+  std::string error, head;
+  uint32_t length = 0;
+  if (!publishIfCurrent(gen, StreamState::Connecting)) return "";
+  if (!openStream(currentUrl(), gen, answerMs, client, length, head, error)) return error;
+  Feeding counted;  // counted before looking, so a new Play either waits for it or is seen by it
   if (!current(gen)) return "";
+  contentLength = length;
 
   // The player drops what it has of the last connection first.
   uint32_t mine = epoch.fetch_add(1) + 1;
@@ -211,7 +300,9 @@ std::string readOnce(uint32_t gen) {
     delay(5);
   }
   flowing = true;
-  publish(StreamState::Buffering);
+  publishIfCurrent(gen, StreamState::Buffering);
+  // first what came with the headers (the ring is empty now: the player has just dropped the last connection's)
+  if (!head.empty()) ring->write(reinterpret_cast<const uint8_t*>(head.data()), head.size());
 
   std::unique_ptr<uint8_t[]> chunk(new uint8_t[kNetChunk]);
   uint32_t lastData = millis();
@@ -223,7 +314,7 @@ std::string readOnce(uint32_t gen) {
     int available = client->available();
     if (available <= 0) {
       if (!client->connected()) {
-        if (oneShot) {  // all of it: the player plays out what's left
+        if (once) {  // all of it: the player plays out what's left
           ended = true;
           return "done";
         }
@@ -238,7 +329,10 @@ std::string readOnce(uint32_t gen) {
       continue;
     }
     int n = client->read(chunk.get(), std::min<size_t>(available, kNetChunk));
-    if (n <= 0) continue;
+    if (n <= 0) {  // nothing after all (e.g. only part of a TLS record): never spin on core 0
+      delay(5);
+      continue;
+    }
     ring->write(chunk.get(), n);
     lastData = millis();
   }
@@ -248,34 +342,27 @@ std::string readOnce(uint32_t gen) {
 
 void readerTask(void* arg) {
   uint32_t gen = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(arg));
+  const bool once = oneShot;  // a spoken METAR or ATIS: once, no retrying, and the map may take long to answer
+  const uint32_t answerMs = once ? kSpeakTimeoutMs : kTimeoutMs;
   while (current(gen)) {
-    std::string why = WiFi.status() != WL_CONNECTED ? "no Wi-Fi" : readOnce(gen);
+    std::string why = WiFi.status() != WL_CONNECTED ? "no Wi-Fi" : readOnce(gen, once, answerMs);
     if (!current(gen)) break;
-    if (oneShot) {  // a spoken METAR: once, no retrying
+    if (once) {
       if (why == "done") {
         while (current(gen) && !drained) delay(20);
-        delay(300);  // the last of it is still in the I2S queue
-        if (generation.load() == gen) {
-          wanted = false;
-          flowing = false;
-          publish(StreamState::Off);
-        }
-      } else if (generation.load() == gen) {
+        for (int i = 0; i < 15 && current(gen); i++) delay(20);  // the last of it is still in the I2S queue
+        finish(gen, StreamState::Off);
+      } else {
         LOGF("stream: speaking failed: %s\n", why.c_str());
-        wanted = false;
-        flowing = false;
-        publish(StreamState::Failed, why.c_str());
+        finish(gen, StreamState::Failed, why.c_str());
       }
       vTaskDelete(nullptr);
     }
     LOGF("stream: %s; trying again\n", why.c_str());
-    publish(StreamState::Retrying, why.c_str());
+    publishIfCurrent(gen, StreamState::Retrying, why.c_str());
     for (uint32_t waited = 0; current(gen) && waited < kRetryMs; waited += 100) delay(100);
   }
-  if (generation.load() == gen) {
-    flowing = false;
-    publish(StreamState::Off);
-  }
+  finish(gen, StreamState::Off);
   vTaskDelete(nullptr);
 }
 
@@ -552,25 +639,27 @@ void start(const std::string& url, bool once, const std::string& speaking, bool 
     wanted = false;  // the old tasks stop
     publish(StreamState::Off);
   }
-  // A player from the last Play may still be finishing a write to the speaker (up to 100 ms); two would share the
-  // buffer. An old reader can take longer (a connection timing out), but it stops without touching anything.
-  for (int waited = 0; players.load() > 0 && waited < 500; waited += 10) delay(10);
-  if (players.load() > 0) {
-    LOGF("stream: the last player hasn't stopped; not starting\n");
+  // A player from the last Play may still be finishing a write to the speaker (up to 100 ms), and its reader a write
+  // to the buffer (moments); two of either would share it. An old reader still connecting or waiting for an answer
+  // touches nothing shared, and stops at its next look (every 20 ms while waiting).
+  auto busy = [] { return players.load() > 0 || feeding.load() > 0; };
+  for (int waited = 0; busy() && waited < 500; waited += 10) delay(10);
+  if (busy()) {
+    LOGF("stream: the last %s hasn't stopped; not starting\n", players.load() > 0 ? "player" : "reader");
     return;
   }
+  xSemaphoreTake(mutex, portMAX_DELAY);  // with the generation: an old reader's finish() is before or after, whole
   uint32_t gen = generation.fetch_add(1) + 1;
-  xSemaphoreTake(mutex, portMAX_DELAY);
   playUrl = url;
   state.speaking = speaking;
   state.atis = atis;
-  xSemaphoreGive(mutex);
   oneShot = once;
   ended = false;
   drained = false;
-  wanted = true;
   flowing = false;
-  publish(StreamState::Connecting);
+  wanted = true;
+  publishLocked(StreamState::Connecting, "");
+  xSemaphoreGive(mutex);
   LOGF("stream: play; free internal heap %u, largest block %u\n",
        (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
