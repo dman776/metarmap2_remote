@@ -14,8 +14,13 @@ constexpr const char* kDefaultWebPassword = "map";
 struct Settings {
   std::string wifiName;
   std::string wifiPassword;
-  std::string mapHost;
+  std::string mapHost;  // the Chart's address: the web page's Chart address, or a map picked
   uint16_t mapPort = 80;
+  std::string mapIp;    // the IP the Chart was last reached at: MapClient's fallback when its name doesn't resolve
+  std::string mapName;  // the picked map's announced name (the splash's line under "Connecting to the Chart..."); ""
+  // A map was picked or typed (the map picker, the web page, the Wi-Fi setup page with a new address, secrets.h).
+  // False on a first start: the Copilot looks for a map itself (map_list::autoPick()).
+  bool mapChosen = false;
   std::string updateChannel = "releases";  // releases, latest, branch, release (update_check.h)
   std::string updateBranch;                // "" until one is picked
   std::string updateRelease;               // the Pick release channel's tag (v26.11.07); "" until one is picked
@@ -39,11 +44,16 @@ void settings_save_volume(int volume);
 // Saves the update channel, branch and picked release.
 void settings_save_update(const Settings& settings);
 
-// Saves the Wi-Fi network and password, and the map's address and port (the web page; used after a restart).
+// Saves the Wi-Fi network and password, the map's address and port, and whether a map was chosen (mapChosen; the web
+// page; used after a restart). A new address forgets the old one's IP and name.
 void settings_save_connection(const Settings& settings);
 
-// Saves the map's address and port (the map picker's choice; used at once, and after a restart). Writes only a change.
-void settings_save_map(const std::string& host, uint16_t port);
+// Saves the map's address, port, IP ("" for none) and name (the map picker's choice, or the one map a first start
+// found; used at once, and after a restart), and that a map was chosen. Writes only a change.
+void settings_save_map(const std::string& host, uint16_t port, const std::string& ip, const std::string& name);
+
+// Saves the IP the map's name now resolves to (MapClient learned it). Writes only a change.
+void settings_save_map_ip(const std::string& ip);
 
 // Saves the status light's brightness (0-100). Writes only a change.
 void settings_save_led(int brightness);

@@ -14,17 +14,31 @@
 
 #include <string>
 
+#include "map_route.h"
 #include "map_state.h"
+
+// How the Chart is reached now (map_route.h): its saved address, the IP it was last reached at, and whether requests
+// go to that IP (the name doesn't resolve)
+struct MapRoute {
+  std::string host;
+  std::string ip;  // "" until known
+  uint16_t port = 80;
+  bool byIp = false;
+  // What spoken METARs and ATIS should use: "http://<host or IP>:<port>"
+  std::string baseUrl() const { return "http://" + (byIp ? ip : host) + ":" + std::to_string(port); }
+};
 
 class MapClient {
  public:
-  void begin(const char* host, uint16_t port);
+  // `ip`: the IP the Chart was last reached at ("" for none), for when its name doesn't resolve (map_route.h)
+  void begin(const char* host, uint16_t port, const char* ip);
 
   // Talks to another Chart from now on (the map picker), without a restart: the request under way finishes and its
-  // answer is dropped, the connection shows offline at once (the splash's Reconnect), and the next polls are the new
-  // Chart's, its /api/status first thing. The UI's revisions stay as they are: each answer from the new Chart replaces
-  // the old one's whole. The host is copied (at most 63 characters).
-  void setMap(const char* host, uint16_t port);
+  // answer is dropped, the connection shows offline at once (the splash's Reconnect), commands still queued for the
+  // old Chart are dropped, and the next polls are the new Chart's, its /api/status first thing. What the old Chart
+  // said (its status and live state) is cleared at once, so its visualizers and legend don't stay on screen. The
+  // host and IP are copied (at most 63 and 15 characters).
+  void setMap(const char* host, uint16_t port, const char* ip);
 
   // A control endpoint, e.g. "/visualizer/next"; /api/live is polled again
   // right after it.
@@ -49,6 +63,10 @@ class MapClient {
   // The Chart's address as given to begin() or setMap() (the newest, should a switch still be waiting)
   std::string host();
 
+  // How the Chart is reached, if that changed since `rev`: a switch, the fallback to its IP and back, or a new IP
+  // its name resolved to (the UI saves that, and points spoken METARs at it)
+  bool getRoute(MapRoute& out, uint32_t& rev);
+
  private:
   struct Cmd {
     char path[64];
@@ -63,7 +81,7 @@ class MapClient {
   void run();
   // GET path; with doc, its JSON (through filter, if any) when it's a 200, or a 400 too with errorBody
   int get(const char* path, uint32_t timeoutMs, JsonDocument* doc, JsonDocument* filter, bool errorBody = false);
-  void pollStatus();
+  bool pollStatus();  // true once it has the Chart's /api/status
   void pollLive();
   void fetchAtis(const char* code);
   void sendSkip(const Cmd& cmd);
@@ -72,12 +90,19 @@ class MapClient {
   // While one waits (pending_), an answer that comes is the old Chart's: dropped, and not "online"
   bool applySwitch();
 
-  // host_ and port_ are the task's (begin() sets them before it starts); a switch waits in pending* under the mutex
-  char host_[64] = "";
+  // Publishes route_ (under the mutex) when it changed
+  void publishRoute();
+
+  // route_ and port_ are the task's (begin() sets them before it starts); a switch waits in pending* under the mutex
+  map_route::Route route_;
   uint16_t port_ = 80;
+  uint32_t routeSeen_ = 0;  // route_.rev() when it was last published
   char pendingHost_[64] = "";
+  char pendingIp_[16] = "";
   uint16_t pendingPort_ = 80;
   bool pending_ = false;
+  MapRoute routeOut_;  // for getRoute(), under the mutex
+  uint32_t routeRev_ = 0;
   QueueHandle_t queue_ = nullptr;
   SemaphoreHandle_t mutex_ = nullptr;
 

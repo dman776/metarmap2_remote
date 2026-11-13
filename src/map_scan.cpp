@@ -86,6 +86,8 @@ void scanTask(void*) {
   } else {
     LOGF("maps: scan failed (%s, %d)\n", s.error.c_str(), (int)err);
   }
+  // how much of its kStack it never used (bytes, on the ESP32), to check the 5 KB is enough on the board
+  LOGF("maps: scan stack %u B unused of %u\n", (unsigned)uxTaskGetStackHighWaterMark(nullptr), (unsigned)kStack);
   publish(s);
   running = false;
   vTaskDelete(nullptr);

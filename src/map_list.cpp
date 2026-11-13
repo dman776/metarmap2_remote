@@ -69,7 +69,7 @@ std::vector<Found> merge(const std::vector<Found>& found) {
   std::vector<Found> out;
   for (const Found& f : found) {
     std::string host = hostToSave(f);
-    if (host.empty()) continue;  // nothing to reach it by
+    if (host.empty() || f.port == 0) continue;  // nothing to reach it by
     auto same = std::find_if(out.begin(), out.end(), [&](const Found& m) {
       return m.port == f.port && ((!f.ip.empty() && m.ip == f.ip) || hostToSave(m) == host);
     });
@@ -84,17 +84,23 @@ std::vector<Found> merge(const std::vector<Found>& found) {
   return out;
 }
 
+Row toRow(const Found& f) {
+  std::string host = hostToSave(f);
+  Row r;
+  r.name = f.name.empty() ? host : f.name;
+  r.address = address(f.ip.empty() ? host : f.ip, f.port);
+  r.version = versionText(f.version);
+  r.host = host;
+  r.ip = f.ip;
+  r.port = f.port;
+  return r;
+}
+
 std::vector<Row> rows(const std::vector<Found>& found, const Current& current, size_t cap) {
   std::vector<Row> out;
   bool haveCurrent = false;
   for (const Found& f : merge(found)) {
-    std::string host = hostToSave(f);
-    Row r;
-    r.name = f.name.empty() ? host : f.name;
-    r.address = address(f.ip.empty() ? host : f.ip, f.port);
-    r.version = versionText(f.version);
-    r.host = host;
-    r.port = f.port;
+    Row r = toRow(f);
     r.current = !haveCurrent && isCurrent(f, current);  // one row only, should two answers both match
     haveCurrent = haveCurrent || r.current;
     out.push_back(r);
@@ -105,6 +111,7 @@ std::vector<Row> rows(const std::vector<Found>& found, const Current& current, s
     r.address = address(current.host, current.port);
     r.version = current.version;
     r.host = current.host;
+    r.ip = current.ip;
     r.port = current.port;
     r.current = true;
     r.announced = false;
@@ -123,6 +130,83 @@ std::vector<Row> rows(const std::vector<Found>& found, const Current& current, s
     }
   }
   return out;
+}
+
+namespace {
+
+// U+00C0 to U+00FF without their accents (x for the multiplication sign, / for division)
+constexpr const char kLatin1[] = "AAAAAAACEEEEIIIIDNOOOOOxOUUUUYTsaaaaaaaceeeeiiiidnooooo/ouuuuyty";
+
+// One code point as ASCII, onto `out`
+void plainCodePoint(uint32_t cp, std::string& out) {
+  if (cp < 0x20 || cp == 0x7f) {
+    out += ' ';
+  } else if (cp < 0x80) {
+    out += (char)cp;
+  } else if (cp == 0xa0) {
+    out += ' ';
+  } else if (cp >= 0xc0 && cp <= 0xff) {
+    out += kLatin1[cp - 0xc0];
+  } else if (cp == 0x2018 || cp == 0x2019) {
+    out += '\'';
+  } else if (cp == 0x201c || cp == 0x201d) {
+    out += '"';
+  } else if (cp == 0x2013 || cp == 0x2014) {
+    out += '-';
+  } else if (cp == 0x2026) {
+    out += "...";
+  } else {
+    out += '?';
+  }
+}
+
+}  // namespace
+
+std::string plainText(const std::string& s) {
+  std::string out;
+  size_t i = 0;
+  while (i < s.size()) {
+    auto b = (unsigned char)s[i];
+    size_t len = b < 0x80 ? 1 : (b & 0xe0) == 0xc0 ? 2 : (b & 0xf0) == 0xe0 ? 3 : (b & 0xf8) == 0xf0 ? 4 : 0;
+    uint32_t cp = len == 1 ? b : len == 2 ? (b & 0x1f) : len == 3 ? (b & 0x0f) : (b & 0x07);
+    bool ok = len != 0 && i + len <= s.size();
+    for (size_t k = 1; ok && k < len; k++) {
+      auto c = (unsigned char)s[i + k];
+      ok = (c & 0xc0) == 0x80;
+      cp = (cp << 6) | (c & 0x3f);
+    }
+    if (!ok) {  // a broken sequence: its first byte only, as '?'
+      out += '?';
+      i++;
+      continue;
+    }
+    plainCodePoint(cp, out);
+    i += len;
+  }
+  return out;
+}
+
+std::string splashName(const std::string& switchingTo, const std::string& statusName, const std::string& savedName,
+                       const std::string& host, uint16_t port) {
+  const std::string& name = !switchingTo.empty() ? switchingTo : !statusName.empty() ? statusName : savedName;
+  return plainText(name.empty() ? address(host, port) : name);
+}
+
+bool mapChosen(bool hasFlag, bool flag, bool hasHost) { return hasFlag ? flag : hasHost; }
+
+AutoDecision autoPick(const std::vector<Found>& found, const AutoInput& in) {
+  AutoDecision d;
+  if (in.chosen || in.answering || in.pickerOpen) return d;  // never over a map the user set, or one that works
+  std::vector<Found> maps = in.scanFailed ? std::vector<Found>() : merge(found);
+  if (maps.size() == 1) {
+    d.step = AutoStep::Pick;
+    d.pick = toRow(maps[0]);
+  } else if (maps.size() > 1) {
+    d.step = AutoStep::OpenPicker;
+  } else if (in.scans < kAutoScans) {
+    d.step = AutoStep::Rescan;
+  }
+  return d;
 }
 
 }  // namespace map_list

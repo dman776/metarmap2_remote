@@ -38,6 +38,7 @@ struct Row {
   std::string address;  // as shown: "192.168.1.50", or "192.168.1.50:8080" (not port 80)
   std::string version;  // as shown: "v26.11.10"; "" for none
   std::string host;     // what's saved when it's picked: the mDNS host name (it follows a DHCP change), else the IP
+  std::string ip;       // its IPv4 address, saved with it: MapClient falls back to it should the name stop resolving
   uint16_t port = 80;
   bool current = false;   // the map in use: marked, and a tap on it does nothing
   bool announced = true;  // false: the current map, which didn't answer the scan
@@ -58,12 +59,62 @@ std::string hostToSave(const Found& f);
 bool isCurrent(const Found& f, const Current& current);
 
 // The answers, one per Chart: a Chart heard twice (over IPv4 and IPv6, or two answers) is one, with what each answer
-// knew (its IP from one, its version from the other); one with neither an IP nor a host name is left out
+// knew (its IP from one, its version from the other); one with neither an IP nor a host name, or with port 0 (an
+// answer without its service record), is left out
 std::vector<Found> merge(const std::vector<Found>& found);
+
+// A found Chart's row (not the current one: rows() marks that)
+Row toRow(const Found& f);
 
 // The rows: one per Chart (merge()), sorted by name (any case), at most
 // `cap`; the current map always among them (a row of its own if it didn't answer the scan: named by its
 // /api/status name, else its saved host, at its saved address)
 std::vector<Row> rows(const std::vector<Found>& found, const Current& current, size_t cap = kMaxMaps);
+
+// ---- names on the screen ----
+
+// A name as the build's fonts can draw it (Montserrat, ASCII only): UTF-8 accented Latin letters lose their accent
+// (Zurich for Zürich), curly quotes, dashes and the ellipsis become their ASCII forms, control characters a space,
+// and anything else (or a broken UTF-8 byte) a '?'
+std::string plainText(const std::string& s);
+
+// The map's name for the splash's own line under "Connecting to the Chart...": the Chart just picked; else the one
+// in use by its /api/status name, the name saved when it was picked, or its saved address (host, with :port if not
+// 80). As plainText(); the screen shortens it with dots only if it's wider than the screen.
+std::string splashName(const std::string& switchingTo, const std::string& statusName, const std::string& savedName,
+                       const std::string& host, uint16_t port);
+
+// ---- the first start: a Copilot that has never had a map picked or typed ----
+
+// Whether the map has been chosen, from what's saved: the flag (map_chosen) when it's there; else whether a map
+// address is (firmware from before the flag: an existing Copilot, its map left as it is)
+bool mapChosen(bool hasFlag, bool flag, bool hasHost);
+
+constexpr int kAutoScans = 4;  // scans at most on a first start while the map doesn't answer (one each kAutoScanMs)
+constexpr uint32_t kAutoScanMs = 20000;
+constexpr uint32_t kAutoFirstMs = 2000;  // the first, this long after Wi-Fi is up (the network's mDNS starts first)
+
+enum class AutoStep {
+  Nothing,     // leave it: a map was chosen, the one in use answers, the picker is open, or the scans are used up
+  Pick,        // exactly one Chart answered: use it (pick)
+  OpenPicker,  // two or more: the map picker opens, for a tap on one
+  Rescan,      // none (or the scan failed): scan again in kAutoScanMs
+};
+
+struct AutoInput {
+  bool chosen = false;      // mapChosen()
+  bool answering = false;   // the map in use answers (it's left as it is)
+  bool pickerOpen = false;  // the map picker is on screen: the user picks
+  bool scanFailed = false;  // the scan couldn't ask (not on the network yet)
+  int scans = 1;            // scans done so far, this one included
+};
+
+struct AutoDecision {
+  AutoStep step = AutoStep::Nothing;
+  Row pick;  // with Pick
+};
+
+// What a first start does with a scan's answers (`found`, as the scan gave them: merged here)
+AutoDecision autoPick(const std::vector<Found>& found, const AutoInput& in);
 
 }  // namespace map_list

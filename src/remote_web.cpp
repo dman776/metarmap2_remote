@@ -188,6 +188,14 @@ void saveConnection(bool keepPassword) {
   }
   settings->wifiName = name;
   if (!password.empty() || !keepPassword) settings->wifiPassword = password;
+  // A map is chosen: on the settings page, always (its Save is the Chart address too); on the setup page, when its
+  // address was changed from the one shown (a first start's metarmap.local left as it is: the Copilot looks for one)
+  bool changed = host != settings->mapHost || (uint16_t)portNum != settings->mapPort;
+  settings->mapChosen = settings->mapChosen || keepPassword || changed;
+  if (changed) {
+    settings->mapIp.clear();
+    settings->mapName.clear();
+  }
   settings->mapHost = host;
   settings->mapPort = (uint16_t)portNum;
   settings_save_connection(*settings);

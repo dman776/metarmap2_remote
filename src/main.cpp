@@ -106,7 +106,8 @@ void setup() {
     WiFi.begin(settings.wifiName.c_str(), settings.wifiPassword.c_str());
   }
 
-  mapClient.begin(settings.mapHost.c_str(), settings.mapPort);  // a copy: the map picker switches it with setMap()
+  // a copy: the map picker switches it with setMap(); the saved IP for when the name doesn't resolve
+  mapClient.begin(settings.mapHost.c_str(), settings.mapPort, settings.mapIp.c_str());
   updater.begin(settings);
   remote_web_begin(updater, settings);  // starts once Wi-Fi is up, or config mode is on
 }

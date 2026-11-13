@@ -171,6 +171,122 @@ void test_rows_capped_keeping_the_current() {
 
 void test_rows_nothing_found_nothing_saved() { TEST_ASSERT_EQUAL_INT(0, map_list::rows({}, saved("")).size()); }
 
+void test_merge_leaves_out_port_0() {
+  // an answer without its service record (SRV) has no port: nothing to connect to
+  std::vector<Found> m = map_list::merge({chart("Houston", "10.0.0.5", 0), chart("Austin", "10.0.0.6")});
+  TEST_ASSERT_EQUAL_INT(1, m.size());
+  TEST_ASSERT_EQUAL_STRING("Austin", m[0].name.c_str());
+  TEST_ASSERT_EQUAL_INT(0, map_list::rows({chart("Houston", "10.0.0.5", 0)}, saved("")).size());
+}
+
+void test_row_keeps_the_ip_to_fall_back_to() {
+  Row r = map_list::toRow(chart("Houston", "10.0.0.5", 80, "metarmap2-a1b2c3"));
+  TEST_ASSERT_EQUAL_STRING("metarmap2-a1b2c3.local", r.host.c_str());
+  TEST_ASSERT_EQUAL_STRING("10.0.0.5", r.ip.c_str());
+  std::vector<Row> rs = map_list::rows({}, saved("metarmap.local", 80, "10.0.0.9"));
+  TEST_ASSERT_EQUAL_STRING("10.0.0.9", rs[0].ip.c_str());  // the current one: its /api/status IP
+}
+
+void test_plain_text_for_the_fonts() {
+  TEST_ASSERT_EQUAL_STRING("Houston", map_list::plainText("Houston").c_str());
+  TEST_ASSERT_EQUAL_STRING("Zurich", map_list::plainText("Z\xC3\xBCrich").c_str());        // Zürich
+  TEST_ASSERT_EQUAL_STRING("Sao Paulo", map_list::plainText("S\xC3\xA3o Paulo").c_str());  // São Paulo
+  TEST_ASSERT_EQUAL_STRING("ESPANA", map_list::plainText("ESPA\xC3\x91"
+                                                         "A")
+                                         .c_str());  // ESPAÑA
+  TEST_ASSERT_EQUAL_STRING("Darryl's map", map_list::plainText("Darryl\xE2\x80\x99s map").c_str());
+  TEST_ASSERT_EQUAL_STRING("A - B...", map_list::plainText("A \xE2\x80\x93 B\xE2\x80\xA6").c_str());
+  TEST_ASSERT_EQUAL_STRING("Tokyo ??", map_list::plainText("Tokyo \xE6\x9D\xB1\xE4\xBA\xAC").c_str());  // 東京
+  TEST_ASSERT_EQUAL_STRING("map ?", map_list::plainText("map \xF0\x9F\x97\xBA").c_str());  // an emoji: one '?'
+  TEST_ASSERT_EQUAL_STRING("a b", map_list::plainText("a\tb").c_str());
+  // broken UTF-8: a '?' a byte, never reading past the end
+  TEST_ASSERT_EQUAL_STRING("a?b", map_list::plainText("a\xC3"
+                                                      "b")
+                                      .c_str());
+  TEST_ASSERT_EQUAL_STRING("x??", map_list::plainText("x\xE2\x80").c_str());
+  TEST_ASSERT_EQUAL_STRING("??", map_list::plainText("\x80\xFF").c_str());
+}
+
+void test_splash_name() {
+  // the one just picked; else the one in use by its /api/status name, its saved name, its address
+  TEST_ASSERT_EQUAL_STRING("Houston", map_list::splashName("Houston", "Austin", "Dallas", "h.local", 80).c_str());
+  TEST_ASSERT_EQUAL_STRING("Austin", map_list::splashName("", "Austin", "Dallas", "h.local", 80).c_str());
+  TEST_ASSERT_EQUAL_STRING("Dallas", map_list::splashName("", "", "Dallas", "h.local", 80).c_str());
+  TEST_ASSERT_EQUAL_STRING("metarmap.local", map_list::splashName("", "", "", "metarmap.local", 80).c_str());
+  TEST_ASSERT_EQUAL_STRING("10.0.0.5:8080", map_list::splashName("", "", "", "10.0.0.5", 8080).c_str());
+  TEST_ASSERT_EQUAL_STRING("Zurich", map_list::splashName("Z\xC3\xBCrich", "", "", "h", 80).c_str());
+  std::string longName(40, 'W');  // whole: the screen shortens it, only if it's wider
+  TEST_ASSERT_EQUAL_STRING(longName.c_str(), map_list::splashName(longName, "", "", "h", 80).c_str());
+}
+
+void test_map_chosen_and_the_migration() {
+  TEST_ASSERT_FALSE(map_list::mapChosen(false, false, false));  // a first start: nothing saved
+  TEST_ASSERT_TRUE(map_list::mapChosen(false, false, true));    // older firmware saved a map: an existing Copilot
+  TEST_ASSERT_FALSE(map_list::mapChosen(true, false, true));    // this firmware's setup page, address left as shown
+  TEST_ASSERT_TRUE(map_list::mapChosen(true, true, true));
+  TEST_ASSERT_TRUE(map_list::mapChosen(true, true, false));
+}
+
+namespace {
+
+map_list::AutoInput fresh(int scans = 1) {
+  map_list::AutoInput in;
+  in.scans = scans;
+  return in;
+}
+
+}  // namespace
+
+void test_auto_pick_one_map() {
+  map_list::AutoDecision d =
+      map_list::autoPick({chart("Houston", "10.0.0.5", 80, "metarmap2-a1b2c3", "26.11.12")}, fresh());
+  TEST_ASSERT_TRUE(d.step == map_list::AutoStep::Pick);
+  TEST_ASSERT_EQUAL_STRING("Houston", d.pick.name.c_str());
+  TEST_ASSERT_EQUAL_STRING("metarmap2-a1b2c3.local", d.pick.host.c_str());
+  TEST_ASSERT_EQUAL_STRING("10.0.0.5", d.pick.ip.c_str());
+  TEST_ASSERT_EQUAL_INT(80, d.pick.port);
+  // one Chart heard twice (IPv4 and IPv6) is one
+  d = map_list::autoPick(
+      {chart("Houston", "10.0.0.5", 80, "metarmap2-a1b2c3"), chart("Houston", "", 80, "metarmap2-a1b2c3")}, fresh());
+  TEST_ASSERT_TRUE(d.step == map_list::AutoStep::Pick);
+}
+
+void test_auto_pick_two_maps_open_the_picker() {
+  map_list::AutoDecision d = map_list::autoPick({chart("Houston", "10.0.0.5"), chart("Austin", "10.0.0.6")}, fresh());
+  TEST_ASSERT_TRUE(d.step == map_list::AutoStep::OpenPicker);
+}
+
+void test_auto_pick_none_scans_again_then_stops() {
+  for (int scans = 1; scans < map_list::kAutoScans; scans++) {
+    TEST_ASSERT_TRUE(map_list::autoPick({}, fresh(scans)).step == map_list::AutoStep::Rescan);
+  }
+  TEST_ASSERT_TRUE(map_list::autoPick({}, fresh(map_list::kAutoScans)).step == map_list::AutoStep::Nothing);
+  // a failed scan (not on the network yet) is as none, its answers (if any) not trusted
+  map_list::AutoInput in = fresh();
+  in.scanFailed = true;
+  TEST_ASSERT_TRUE(map_list::autoPick({chart("Houston", "10.0.0.5")}, in).step == map_list::AutoStep::Rescan);
+  // answers with nothing to reach them by are none
+  TEST_ASSERT_TRUE(map_list::autoPick({chart("Houston", ""), chart("X", "10.0.0.7", 0)}, fresh()).step ==
+                   map_list::AutoStep::Rescan);
+}
+
+void test_auto_pick_never_over_a_chosen_or_answering_map() {
+  std::vector<Found> one = {chart("Houston", "10.0.0.5")};
+  std::vector<Found> two = {chart("Houston", "10.0.0.5"), chart("Austin", "10.0.0.6")};
+  map_list::AutoInput chosen = fresh();
+  chosen.chosen = true;
+  TEST_ASSERT_TRUE(map_list::autoPick(one, chosen).step == map_list::AutoStep::Nothing);
+  TEST_ASSERT_TRUE(map_list::autoPick(two, chosen).step == map_list::AutoStep::Nothing);
+  TEST_ASSERT_TRUE(map_list::autoPick({}, chosen).step == map_list::AutoStep::Nothing);
+  map_list::AutoInput answering = fresh();
+  answering.answering = true;  // the default address answered before the scan was over: left as it is
+  TEST_ASSERT_TRUE(map_list::autoPick(one, answering).step == map_list::AutoStep::Nothing);
+  TEST_ASSERT_TRUE(map_list::autoPick(two, answering).step == map_list::AutoStep::Nothing);
+  map_list::AutoInput picking = fresh();
+  picking.pickerOpen = true;  // the user has the picker open: theirs to pick
+  TEST_ASSERT_TRUE(map_list::autoPick(one, picking).step == map_list::AutoStep::Nothing);
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_address_leaves_out_port_80);
@@ -184,5 +300,14 @@ int main() {
   RUN_TEST(test_current_map_shown_when_it_didnt_announce);
   RUN_TEST(test_rows_capped_keeping_the_current);
   RUN_TEST(test_rows_nothing_found_nothing_saved);
+  RUN_TEST(test_merge_leaves_out_port_0);
+  RUN_TEST(test_row_keeps_the_ip_to_fall_back_to);
+  RUN_TEST(test_plain_text_for_the_fonts);
+  RUN_TEST(test_splash_name);
+  RUN_TEST(test_map_chosen_and_the_migration);
+  RUN_TEST(test_auto_pick_one_map);
+  RUN_TEST(test_auto_pick_two_maps_open_the_picker);
+  RUN_TEST(test_auto_pick_none_scans_again_then_stops);
+  RUN_TEST(test_auto_pick_never_over_a_chosen_or_answering_map);
   return UNITY_END();
 }

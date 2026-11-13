@@ -169,7 +169,8 @@ buttons: **Chart**, **Airports**, and the **logo**.
   Wi-Fi), or go to **http://192.168.4.1/**. Pick your Wi-Fi from the networks
   the Copilot can see (2.4 GHz only), or **Other network...** for a hidden one,
   enter its password, and the Chart's address (`metarmap.local` unless you gave
-  the Pi another hostname) and port. **Save and connect** restarts the Copilot
+  the Pi another hostname) and port; left as it is, the Copilot looks for the Chart itself on its first start
+  (**First start**, under **Several maps**). **Save and connect** restarts the Copilot
   on your Wi-Fi. No login here: it's your phone on the Copilot's own network.
 - A Copilot that was set up but can't join its Wi-Fi any more (a new router, a
   changed password) shows **Wi-Fi setup** on its splash once it says "Can't
@@ -183,7 +184,9 @@ buttons: **Chart**, **Airports**, and the **logo**.
 - At startup: the MetarMap2 logo, the metarmap2 repo, the Copilot's firmware
   version and the Chart's (once it answers: v26.11.04, or v26.11.04+16 f86daa4
   when the Chart runs commits after a release), and
-  "Connecting to Wi-Fi..." and "Connecting to the Chart..." turning OK. Two
+  "Connecting to Wi-Fi..." and "Connecting to the Chart..." turning OK, with the Chart's name on its own line
+  under it (its map name, else its address, e.g. `metarmap.local`; shortened with dots only when it's wider than
+  the screen, and accented letters without their accents, as the screen's font has none). Two
   seconds after both are OK, the Copilot fades in.
 - If Wi-Fi hasn't joined after 15 s, it names the network: "Can't find
   *network*" (out of range, or 5 GHz only) or "Can't join *network*", and keeps
@@ -211,13 +214,29 @@ buttons: **Chart**, **Airports**, and the **logo**.
   Chart that announces itself, a row each: its name (the Chart's map name, or its Pi's hostname), its address (IP,
   with `:port` when it isn't 80) and its version. The Chart in use is lit and says **In use**; it's always listed,
   even if it doesn't announce itself (named by its saved address, "not announced").
-- Tap another row to switch to it at once, with no restart: the splash says "Connecting to *name*..." until it
-  answers, then the Copilot fades in with that Chart's visualizers, airports and spoken weather. The choice is saved
-  as the Chart's address (the web page's Settings show it) and kept through restarts and firmware updates. The
-  saved address is the Chart's own network name (`metarmap2-a1b2c3.local`), so it still works when the router
-  gives the Pi a new IP; a Chart that announces no name is saved by its IP.
-- ⟳ scans again; ✕ (or a tap beside the list) closes it. The Copilot only asks the network when the picker opens:
-  nothing scans in the background.
+- Tap another row to switch to it at once, with no restart: the splash says "Connecting to the Chart..." with the
+  Chart's name on the line under it until it answers, then the Copilot fades in with that Chart's visualizers,
+  airports and spoken weather (the old Chart's are cleared at once, and anything still queued for it is dropped).
+  The choice is saved as the Chart's address (the web page's Settings show it) and kept through restarts and
+  firmware updates. The saved address is the Chart's own network name (`metarmap2-a1b2c3.local`), so it still
+  works when the router gives the Pi a new IP; a Chart that announces no name is saved by its IP.
+- Its IP is saved too, as a fallback: that network name only answers while the Chart's network discovery runs. If
+  the name doesn't resolve 3 times in a row, the Copilot uses the saved IP (spoken weather too); it tries the name
+  again every 5 minutes, and at once if the IP stops answering. Whenever the name answers at a new IP (the router
+  moved the Pi), that IP is saved instead. This works for an address typed on the web page too, once it has
+  answered.
+- ⟳ scans again; ✕ (or a tap beside the list) closes it. The logo's splash stays open while the picker is, and
+  30 s after it was last used. The Copilot only asks the network when the picker opens (and on a first start,
+  below): nothing scans in the background.
+- **First start**: a Copilot that has never had a map picked or typed (a new one: the setup page's Chart address
+  left as `metarmap.local`) looks for one itself, once it's on Wi-Fi: the same 3 s scan. Exactly one Chart found:
+  it's used and saved, as if picked. Two or more: the map picker opens over the splash for you to tap one. None:
+  it keeps the default address and scans again every 20 s while the Chart doesn't answer, 4 scans at most, and
+  again at the next start. If the default address answers first, it's left as it is (and the Copilot looks again
+  at the next start, until a map is picked or saved on the web page). A Copilot updated from an older firmware
+  already has its map: it never looks, and its map never changes on its own. A map picked on the screen, saved
+  on the web page's Settings, typed on the setup page (changed from the address shown) or in a USB build's
+  `secrets.h` counts as chosen.
 - A Chart announces itself once it has network discovery (a MetarMap2 release with the map name setting, and the
   zeroconf package): if one is missing from the list, update it, then on its Home page tap **Install network
   discovery**. "No maps found" means none answered (the list then
@@ -510,7 +529,11 @@ The map picker asks the network for `_metarmap2._tcp` once when it opens (or ⟳
 without an address is looked up by its host name) and at most 8, sorted by name, the one in use always kept
 (`src/map_list.cpp`, unit tested). Picking one saves it and hands it to the polling task (`MapClient::setMap()`): it
 finishes the request under way, drops that answer (the old Chart's), and polls the new Chart from then on, its
-`/api/status` first; the spoken weather's address changes with it. Nothing restarts.
+`/api/status` first; the spoken weather's address changes with it, the old Chart's state is cleared, and commands
+still queued for it are dropped. Nothing restarts. Each request looks the Chart's name up first; after 3 failed
+lookups in a row it goes to the saved IP instead, until that stops answering or 5 minutes pass (`src/map_route.cpp`,
+unit tested). On a first start, `map_list::autoPick()` (unit tested) decides from a scan's answers: use the one
+Chart, open the picker, scan again, or leave it.
 
 See the [MetarMap2 API documentation](https://github.com/dman776/metarmap2/blob/master/API.md)
 for the endpoints.
@@ -530,7 +553,8 @@ for the endpoints.
 | `src/map_client.cpp` | Polling the Chart and sending controls, on its own task |
 | `src/map_parse.cpp` | The API's JSON into `MapLive` and `MapStatus` |
 | `src/map_scan.cpp` | The map picker's scan: the Charts on the network (mDNS), on its own task |
-| `src/map_list.cpp` | The map picker's rows: one per Chart, sorted, the one in use marked, the address to save |
+| `src/map_list.cpp` | The map picker's rows: one per Chart, sorted, the one in use marked, the address to save; the splash's map name; a first start's pick |
+| `src/map_route.cpp` | Reaching the Chart by its name, or by its saved IP while the name doesn't resolve |
 | `src/legend.cpp` | Which legend entries the Chart is showing |
 | `src/pages.cpp` | The Airports panel's pages: alphabetical order, the page strip |
 | `src/skips.cpp` | The picker's skip marks: holds waiting for the Chart's answer, and what to say |
