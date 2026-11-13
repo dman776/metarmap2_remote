@@ -14,7 +14,7 @@ static const char kRemoteSetupPage[] PROGMEM = R"html(<!doctype html>
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
 main{max-width:520px;margin:0 auto;padding:16px}
-h1{font-size:20px;margin:4px 0 2px}.sub{color:var(--mut);font-size:14px;margin:0 0 16px}
+.brand{display:flex;align-items:center;gap:10px;margin:4px 0 2px}.brand svg{flex:none}h1{font-size:20px;margin:0}.sub{color:var(--mut);font-size:14px;margin:0 0 16px}
 section{background:var(--s1);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
 h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin:0 0 10px;display:flex;align-items:center}
 h2 button{margin:0 0 0 auto;min-height:32px;font-size:13px}
@@ -34,7 +34,7 @@ button{min-height:44px;padding:0 16px;font:inherit;font-weight:600;color:var(--t
 .note{color:var(--mut);font-size:14px;margin:10px 0 0}.err{color:var(--bad)}.okc{color:var(--ok)}
 [hidden]{display:none!important}
 </style></head><body><main>
-<h1>MetarMap2 Copilot</h1>
+<div class="brand"><svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z" fill="none" stroke="#f5b544" stroke-width="1.8" stroke-linejoin="round"/><circle cx="5" cy="4.5" r="2" fill="#3ddc84" style="filter:drop-shadow(0 0 2px #3ddc84)"/></svg><h1>MetarMap2 Copilot</h1></div>
 <p class="sub" id="sub">Set up its Wi-Fi and the Chart it controls.</p>
 
 <form id="form">

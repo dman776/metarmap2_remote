@@ -14,7 +14,7 @@ static const char kRemoteWebPage[] PROGMEM = R"html(<!doctype html>
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
 header{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line)}
-header h1{font-size:18px;margin:0;font-weight:600}header .v{color:var(--mut);font:12px ui-monospace,monospace;margin-left:auto}
+header h1{font-size:18px;margin:0;font-weight:600}header svg{flex:none}header .v{color:var(--mut);font:12px ui-monospace,monospace;margin-left:auto}
 main{max-width:980px;margin:0 auto;padding:16px;display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr))}
 section{min-width:0;background:var(--s1);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
 h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin:0 0 12px}
@@ -36,7 +36,7 @@ progress{width:100%;height:10px;margin-top:10px;accent-color:var(--acc)}
 .wide{grid-column:1/-1}[hidden]{display:none!important}
 dl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:0}dt{color:var(--mut)}dd{margin:0;font:13px ui-monospace,monospace}
 </style></head><body>
-<header><h1>MetarMap2 Copilot</h1><span class="v" id="version"></span></header>
+<header><svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z" fill="none" stroke="#f5b544" stroke-width="1.8" stroke-linejoin="round"/><circle cx="5" cy="4.5" r="2" fill="#3ddc84" style="filter:drop-shadow(0 0 2px #3ddc84)"/></svg><h1>MetarMap2 Copilot</h1><span class="v" id="version"></span></header>
 <main>
 
 <section class="wide app" hidden>
