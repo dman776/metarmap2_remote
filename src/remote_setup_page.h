@@ -7,6 +7,7 @@
 static const char kRemoteSetupPage[] PROGMEM = R"html(<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>MetarMap2 Copilot setup</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <style>
 :root{--bg:#0b1117;--s1:#121a23;--s2:#18222d;--line:#223041;--ctl:#2c3b4e;--tx:#e6edf3;--tx2:#c4d0dd;--mut:#93a4b8;
 --acc:#f5b544;--ok:#3ddc84;--bad:#ff5a5a}

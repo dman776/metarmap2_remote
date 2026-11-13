@@ -123,6 +123,14 @@ void onPage() {
   server.send_P(200, "text/html", kRemoteWebPage);
 }
 
+// The same plane icon as the Chart's web UI. No login: it is a fixed picture, and a browser may ask for it before it
+// has sent the password.
+void onFavicon() {
+  static const char kFavicon[] PROGMEM = R"svg(<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><rect width="24" height="24" rx="5" fill="#0d141c"/><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z" fill="none" stroke="#f5b544" stroke-width="1.8" stroke-linejoin="round"/><circle cx="5" cy="4.5" r="2" fill="#3ddc84"/></svg>)svg";
+  server.sendHeader("Cache-Control", "public, max-age=86400");
+  server.send_P(200, "image/svg+xml", kFavicon);
+}
+
 void onState() {
   if (!allowed()) return;
   static UpdateState st;
@@ -493,6 +501,7 @@ void start() {
   static const char* collect[] = {web_guard::kHeader, "Host"};
   server.collectHeaders(collect, 2);
   server.on("/", HTTP_GET, onPage);
+  server.on("/favicon.svg", HTTP_GET, onFavicon);
   server.on("/api/state", HTTP_GET, onState);
   server.on("/api/connection", HTTP_POST, onConnection);
   server.on("/api/channel", HTTP_POST, onChannel);
