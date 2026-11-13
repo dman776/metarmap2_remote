@@ -15,7 +15,7 @@ drives pixels itself.
 | **Brightness** | **Splash** | **Update** |
 | ![The brightness sheet](docs/brightness.png) | ![The logo's splash: versions, addresses, Close and Firmware, the map picker's globe at the top left and the volume button at the top right](docs/splash.png) | ![The firmware update screen](docs/update.png) |
 | **Visualizer picker** | | |
-| ![The visualizer picker: a tile for each visualizer; Gusts, Wind Dir and TFR are skipped (dimmed, with a SKIP badge)](docs/picker.png) | | |
+| ![The visualizer picker: a tile for each visualizer; Gusts, Wind Dir and TFR are skipped (dimmed, with a SKIP badge)](docs/picker.png) | ![The map picker: the maps announcing on the network, the one in use marked](docs/maps.png) | |
 
 ## What it does
 
