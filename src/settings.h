@@ -14,7 +14,7 @@ constexpr const char* kDefaultWebPassword = "map";
 struct Settings {
   std::string wifiName;
   std::string wifiPassword;
-  std::string mapHost;  // the Chart's address: the web page's Chart address, or a map picked
+  std::string mapHost;  // the Chart's address (the web page's, or a map picked); "" for none: found by the Copilot
   uint16_t mapPort = 80;
   std::string mapIp;    // the IP the Chart was last reached at: MapClient's fallback when its name doesn't resolve
   std::string mapName;  // the picked map's announced name (the splash's line under "Connecting to the Chart..."); ""

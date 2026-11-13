@@ -107,7 +107,8 @@ buttons: **Chart**, **Airports**, and the **logo**.
 - **Firmware**: the installed and available versions, the update channel and
   branch (or, on **Pick release**, the release), **Check now** and **Install**, with its progress.
 - **Settings**: the Wi-Fi network and password, and the Chart's address and port;
-  saving restarts the Copilot with them. A map picked on the Copilot's screen (**Several maps**) shows here as the
+  saving restarts the Copilot with them. Leave the address (and port) empty to let the Copilot find the Chart
+  itself after the restart (**First start**, under **Several maps**); an empty port is 80. A map picked on the Copilot's screen (**Several maps**) shows here as the
   Chart's address, with no restart. If it can't join the new network, use
   **Wi-Fi setup** on its screen (below). A USB build's `secrets.h` applies only
   when it changes, so what you save on the page stays.
@@ -169,7 +170,7 @@ buttons: **Chart**, **Airports**, and the **logo**.
   Wi-Fi), or go to **http://192.168.4.1/**. Pick your Wi-Fi from the networks
   the Copilot can see (2.4 GHz only), or **Other network...** for a hidden one,
   enter its password, and the Chart's address (`metarmap.local` unless you gave
-  the Pi another hostname) and port; left as it is, the Copilot looks for the Chart itself on its first start
+  the Pi another hostname) and port, or leave them empty: the Copilot then looks for the Chart itself
   (**First start**, under **Several maps**). **Save and connect** restarts the Copilot
   on your Wi-Fi. No login here: it's your phone on the Copilot's own network.
 - A Copilot that was set up but can't join its Wi-Fi any more (a new router, a
@@ -228,15 +229,16 @@ buttons: **Chart**, **Airports**, and the **logo**.
 - ⟳ scans again; ✕ (or a tap beside the list) closes it. The logo's splash stays open while the picker is, and
   30 s after it was last used. The Copilot only asks the network when the picker opens (and on a first start,
   below): nothing scans in the background.
-- **First start**: a Copilot that has never had a map picked or typed (a new one: the setup page's Chart address
-  left as `metarmap.local`) looks for one itself, once it's on Wi-Fi: the same 3 s scan. Exactly one Chart found:
+- **First start**: a Copilot that has no map picked or typed (a new one, with the setup page's Chart address left
+  empty, or one whose address was emptied on the web page's Settings) looks for one itself, once it's on Wi-Fi:
+  the same 3 s scan. Meanwhile it tries `metarmap.local`, the installer's usual hostname. Exactly one Chart found:
   it's used and saved, as if picked. Two or more: the map picker opens over the splash for you to tap one. None:
   it keeps the default address and scans again every 20 s while the Chart doesn't answer, 4 scans at most, and
   again at the next start. If the default address answers first, it's left as it is (and the Copilot looks again
   at the next start, until a map is picked or saved on the web page). A Copilot updated from an older firmware
-  already has its map: it never looks, and its map never changes on its own. A map picked on the screen, saved
-  on the web page's Settings, typed on the setup page (changed from the address shown) or in a USB build's
-  `secrets.h` counts as chosen.
+  already has its map: it never looks, and its map never changes on its own. A map picked on the screen, an address saved
+  on the web page's Settings, typed on the setup page (changed from the one shown) or in a USB build's
+  `secrets.h` counts as chosen; an empty address never does.
 - A Chart announces itself once it has network discovery (a MetarMap2 release with the map name setting, and the
   zeroconf package): if one is missing from the list, update it, then on its Home page tap **Install network
   discovery**. "No maps found" means none answered (the list then

@@ -14,6 +14,7 @@
 #include "firmware_version.h"
 #include "log.h"
 #include "lvgl_port.h"
+#include "map_list.h"
 #include "png.h"
 #include "remote_setup_page.h"
 #include "remote_web_page.h"
@@ -161,20 +162,17 @@ void onState() {
 }
 
 // Saves the Wi-Fi network and the map's address from the request, then restarts to use them. `keepPassword`: a blank
-// password keeps the saved one (the settings page); otherwise blank is an open network (the setup page).
+// password keeps the saved one (the settings page); otherwise blank is an open network (the setup page). An empty
+// Chart address (and port) is none: the Copilot finds the map itself at its next start (map_list::autoPick()).
 void saveConnection(bool keepPassword) {
-  std::string name = arg("wifi_name"), host = arg("map_host"), port = arg("map_port");
-  int portNum = atoi(port.c_str());
+  std::string name = arg("wifi_name");
+  map_list::AddressForm map = map_list::parseAddress(arg("map_host"), arg("map_port"));
   if (name.empty() || name.size() > 32) {
     server.send(400, "text/plain", "The Wi-Fi network's name is needed (at most 32 characters).");
     return;
   }
-  if (host.empty() || host.size() > 63 || host.find_first_of(" /:") != std::string::npos) {
-    server.send(400, "text/plain", "The Chart's address is a name or an IP, like metarmap.local or 192.168.1.50.");
-    return;
-  }
-  if (portNum < 1 || portNum > 65535) {
-    server.send(400, "text/plain", "The Chart's port is a number from 1 to 65535.");
+  if (!map.ok) {
+    server.send(400, "text/plain", map.error.c_str());
     return;
   }
   if (isSetupSsid(name)) {
@@ -188,18 +186,20 @@ void saveConnection(bool keepPassword) {
   }
   settings->wifiName = name;
   if (!password.empty() || !keepPassword) settings->wifiPassword = password;
-  // A map is chosen: on the settings page, always (its Save is the Chart address too); on the setup page, when its
-  // address was changed from the one shown (a first start's metarmap.local left as it is: the Copilot looks for one)
-  bool changed = host != settings->mapHost || (uint16_t)portNum != settings->mapPort;
-  settings->mapChosen = settings->mapChosen || keepPassword || changed;
+  // A map is chosen: none if the address is empty; on the settings page, always (its Save is the Chart address too);
+  // on the setup page, when its address was changed from the one shown
+  bool changed = map.host != settings->mapHost || map.port != settings->mapPort;
+  settings->mapChosen = map_list::chosenAfterSave(settings->mapChosen, keepPassword, changed, map.host.empty());
   if (changed) {
     settings->mapIp.clear();
     settings->mapName.clear();
   }
-  settings->mapHost = host;
-  settings->mapPort = (uint16_t)portNum;
+  settings->mapHost = map.host;
+  settings->mapPort = map.port;
   settings_save_connection(*settings);
-  LOGF("web: connection saved (%s, map %s:%d); restarting\n", name.c_str(), host.c_str(), portNum);
+  LOGF("web: connection saved (%s, map %s:%u%s); restarting\n", name.c_str(),
+       map.host.empty() ? "(none: found by the Copilot)" : map.host.c_str(), (unsigned)map.port,
+       settings->mapChosen ? "" : ", not chosen");
   server.send(200, "text/plain", "Saved. The Copilot restarts to use them.");
   restartAt = millis() + kRestartAfterMs;
 }

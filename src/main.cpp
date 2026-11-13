@@ -11,6 +11,7 @@
 #include "log.h"
 #include "lvgl_port.h"
 #include "map_client.h"
+#include "map_list.h"
 #include "remote_web.h"
 #include "settings.h"
 #include "status_led.h"
@@ -81,8 +82,8 @@ void setup() {
   audio_set_sounds(settings.sounds);
   audio_begin();  // before lcd.init(): it borrows the touch I2C pins
   // the Radio's stream, and spoken METARs from the map
-  stream_begin(settings.streamUrl, "http://" + settings.mapHost + ":" + std::to_string(settings.mapPort),
-               settings.volume);
+  std::string mapHost = map_list::hostToUse(settings.mapHost);  // none saved: metarmap.local, while it looks for one
+  stream_begin(settings.streamUrl, "http://" + mapHost + ":" + std::to_string(settings.mapPort), settings.volume);
 
   lcd.init();
   lcd.setRotation(3);  // landscape, USB-C on the right
@@ -107,7 +108,7 @@ void setup() {
   }
 
   // a copy: the map picker switches it with setMap(); the saved IP for when the name doesn't resolve
-  mapClient.begin(settings.mapHost.c_str(), settings.mapPort, settings.mapIp.c_str());
+  mapClient.begin(mapHost.c_str(), settings.mapPort, settings.mapIp.c_str());
   updater.begin(settings);
   remote_web_begin(updater, settings);  // starts once Wi-Fi is up, or config mode is on
 }

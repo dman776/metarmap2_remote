@@ -73,7 +73,7 @@ Settings settings_load() {
     if (p.getUShort("map_port", 0) != MAP_PORT) p.putUShort("map_port", MAP_PORT);
     putString(p, "map_ip", "");  // another map's, if the address changed
     putString(p, "map_name", "");
-    putFlag(p, "map_chosen", true);  // this build names its map: no looking for one
+    putFlag(p, "map_chosen", MAP_HOST[0] != 0);  // this build names its map (unless it's ""): no looking for one
   }
 #endif
 #ifdef WEB_PASSWORD
@@ -94,12 +94,12 @@ Settings settings_load() {
   Settings s;
   s.wifiName = getString(p, "wifi_name", kSetupSsid);  // nothing set up yet: Wi-Fi config mode
   s.wifiPassword = getString(p, "wifi_pass", "");
-  s.mapHost = getString(p, "map_host", "metarmap.local");  // the installer's usual hostname
+  s.mapHost = getString(p, "map_host", "");  // none yet: map_list::hostToUse() tries metarmap.local meanwhile
   s.mapPort = p.getUShort("map_port", 80);
   s.mapIp = getString(p, "map_ip", "");
   s.mapName = getString(p, "map_name", "");
   bool hasFlag = p.isKey("map_chosen");
-  s.mapChosen = map_list::mapChosen(hasFlag, hasFlag && p.getBool("map_chosen"), p.isKey("map_host"));
+  s.mapChosen = map_list::mapChosen(hasFlag, hasFlag && p.getBool("map_chosen"), !s.mapHost.empty());
   if (!hasFlag && s.mapChosen) {  // firmware from before the flag, with a map: kept as it is, never looked for
     p.putBool("map_chosen", true);
     saving.wrote(true);

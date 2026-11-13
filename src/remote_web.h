@@ -8,7 +8,8 @@
 //
 //   GET  /                     the page
 //   GET  /api/state            {version, ip, wifiName, mapHost, mapPort, led, sounds, remoteControl, update: {...}}
-//   POST /api/connection       wifi_name, wifi_pass ("" keeps it), map_host, map_port: saved, then a restart
+//   POST /api/connection       wifi_name, wifi_pass ("" keeps it), map_host, map_port ("" for none: found by the
+//                              Copilot; port "" is 80): saved, then a restart
 //   POST /api/channel          channel (releases, latest, branch), branch
 //   POST /api/check            check GitHub now
 //   POST /api/install          install the available firmware

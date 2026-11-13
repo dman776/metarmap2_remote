@@ -47,11 +47,11 @@ button{min-height:44px;padding:0 16px;font:inherit;font-weight:600;color:var(--t
 
 <section>
 <h2>The Chart</h2>
-<div class="row"><div><label for="host">Address</label><input id="host" required maxlength="63" autocapitalize="none" placeholder="metarmap.local"></div>
-<div class="port"><label for="port">Port</label><input id="port" type="number" min="1" max="65535" required></div></div>
-<p class="note">Its name or IP, as you open its web page: metarmap.local unless you gave the Pi another hostname.
-Not sure? Leave it: on its first start the Copilot looks for the Chart itself, uses it if there's one and lists
-them if there are several. Later, pick another on the Copilot's logo screen (the globe at its top left).</p>
+<div class="row"><div><label for="host">Address</label><input id="host" maxlength="63" autocapitalize="none" placeholder="empty: found by the Copilot"></div>
+<div class="port"><label for="port">Port</label><input id="port" type="number" min="1" max="65535" placeholder="80"></div></div>
+<p class="note">Its name or IP, as you open its web page (metarmap.local unless you gave the Pi another hostname), or
+leave it empty: the Copilot then looks for the Chart itself, uses it if there's one and lists them if there are
+several. Later, pick another on the Copilot's logo screen (the globe at its top left).</p>
 </section>
 
 <button class="primary" id="save">Save and connect</button>
@@ -91,7 +91,7 @@ async function load() {
     $('#sub').textContent = 'Set up its Wi-Fi and the Chart it controls. (' + s.apName + ', ' + s.version + ')';
     if (!filled) {
       filled = true;
-      $('#host').value = s.mapHost; $('#port').value = s.mapPort;
+      $('#host').value = s.mapHost; $('#port').value = s.mapHost ? s.mapPort : '';
       if (s.wifiName) chosen = s.wifiName;
     }
     const box = $('#nets');

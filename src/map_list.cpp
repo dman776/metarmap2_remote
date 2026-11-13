@@ -194,6 +194,42 @@ std::string splashName(const std::string& switchingTo, const std::string& status
 
 bool mapChosen(bool hasFlag, bool flag, bool hasHost) { return hasFlag ? flag : hasHost; }
 
+std::string hostToUse(const std::string& saved) { return saved.empty() ? kDefaultHost : saved; }
+
+AddressForm parseAddress(const std::string& host, const std::string& port) {
+  AddressForm f;
+  size_t from = host.find_first_not_of(" \t");
+  size_t to = host.find_last_not_of(" \t");
+  f.host = from == std::string::npos ? "" : host.substr(from, to - from + 1);
+  if (f.host.empty()) {  // none: found by the Copilot (map_list::autoPick())
+    f.ok = true;
+    return f;
+  }
+  if (f.host.size() > kMaxHost || f.host.find_first_of(" /:") != std::string::npos) {
+    f.error = "The Chart's address is a name or an IP, like metarmap.local or 192.168.1.50 (or empty, to find it).";
+    return f;
+  }
+  if (port.empty()) {
+    f.ok = true;
+    return f;
+  }
+  bool digits =
+      port.size() <= 5 && std::all_of(port.begin(), port.end(), [](unsigned char c) { return std::isdigit(c); });
+  long n = digits ? std::stol(port) : 0;
+  if (n < 1 || n > 65535) {
+    f.error = "The Chart's port is a number from 1 to 65535 (or empty, for 80).";
+    return f;
+  }
+  f.port = (uint16_t)n;
+  f.ok = true;
+  return f;
+}
+
+bool chosenAfterSave(bool wasChosen, bool settingsPage, bool changed, bool emptyHost) {
+  if (emptyHost) return false;
+  return wasChosen || settingsPage || changed;
+}
+
 AutoDecision autoPick(const std::vector<Found>& found, const AutoInput& in) {
   AutoDecision d;
   if (in.chosen || in.answering || in.pickerOpen) return d;  // never over a map the user set, or one that works

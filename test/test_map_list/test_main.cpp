@@ -227,6 +227,57 @@ void test_map_chosen_and_the_migration() {
   TEST_ASSERT_TRUE(map_list::mapChosen(true, true, false));
 }
 
+void test_host_to_use() {
+  TEST_ASSERT_EQUAL_STRING("metarmap.local", map_list::hostToUse("").c_str());  // none: the usual one meanwhile
+  TEST_ASSERT_EQUAL_STRING("10.0.0.5", map_list::hostToUse("10.0.0.5").c_str());
+}
+
+void test_parse_address_allows_empty() {
+  map_list::AddressForm f = map_list::parseAddress("", "");
+  TEST_ASSERT_TRUE(f.ok);  // none: found by the Copilot
+  TEST_ASSERT_EQUAL_STRING("", f.host.c_str());
+  TEST_ASSERT_EQUAL_INT(80, f.port);
+  f = map_list::parseAddress("  ", "8080");  // blanks are empty; its port is ignored
+  TEST_ASSERT_TRUE(f.ok);
+  TEST_ASSERT_EQUAL_STRING("", f.host.c_str());
+  TEST_ASSERT_EQUAL_INT(80, f.port);
+  f = map_list::parseAddress("", "junk");
+  TEST_ASSERT_TRUE(f.ok);
+  f = map_list::parseAddress(" metarmap.local ", "");  // trimmed; no port is 80
+  TEST_ASSERT_TRUE(f.ok);
+  TEST_ASSERT_EQUAL_STRING("metarmap.local", f.host.c_str());
+  TEST_ASSERT_EQUAL_INT(80, f.port);
+}
+
+void test_parse_address_checks_what_is_typed() {
+  map_list::AddressForm f = map_list::parseAddress("10.0.0.5", "5000");
+  TEST_ASSERT_TRUE(f.ok);
+  TEST_ASSERT_EQUAL_INT(5000, f.port);
+  TEST_ASSERT_FALSE(map_list::parseAddress("http://x", "").ok);
+  TEST_ASSERT_FALSE(map_list::parseAddress("a b", "").ok);
+  TEST_ASSERT_FALSE(map_list::parseAddress("x:80", "").ok);
+  TEST_ASSERT_FALSE(map_list::parseAddress(std::string(64, 'a'), "").ok);
+  TEST_ASSERT_TRUE(map_list::parseAddress(std::string(63, 'a'), "").ok);
+  for (const char* bad : {"0", "65536", "-1", "8o", "999999", "1.5"}) {
+    f = map_list::parseAddress("metarmap.local", bad);
+    TEST_ASSERT_FALSE_MESSAGE(f.ok, bad);
+    TEST_ASSERT_FALSE(f.error.empty());
+  }
+  TEST_ASSERT_TRUE(map_list::parseAddress("metarmap.local", "65535").ok);
+}
+
+void test_chosen_after_save() {
+  // empty: never chosen, the Copilot looks for one (even if one was chosen before)
+  TEST_ASSERT_FALSE(map_list::chosenAfterSave(true, true, true, true));
+  TEST_ASSERT_FALSE(map_list::chosenAfterSave(false, false, false, true));
+  // the settings page: chosen
+  TEST_ASSERT_TRUE(map_list::chosenAfterSave(false, true, false, false));
+  // the setup page: when the address shown was changed; already chosen stays so
+  TEST_ASSERT_TRUE(map_list::chosenAfterSave(false, false, true, false));
+  TEST_ASSERT_FALSE(map_list::chosenAfterSave(false, false, false, false));
+  TEST_ASSERT_TRUE(map_list::chosenAfterSave(true, false, false, false));
+}
+
 namespace {
 
 map_list::AutoInput fresh(int scans = 1) {
@@ -305,6 +356,10 @@ int main() {
   RUN_TEST(test_plain_text_for_the_fonts);
   RUN_TEST(test_splash_name);
   RUN_TEST(test_map_chosen_and_the_migration);
+  RUN_TEST(test_host_to_use);
+  RUN_TEST(test_parse_address_allows_empty);
+  RUN_TEST(test_parse_address_checks_what_is_typed);
+  RUN_TEST(test_chosen_after_save);
   RUN_TEST(test_auto_pick_one_map);
   RUN_TEST(test_auto_pick_two_maps_open_the_picker);
   RUN_TEST(test_auto_pick_none_scans_again_then_stops);

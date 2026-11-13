@@ -84,6 +84,30 @@ std::string plainText(const std::string& s);
 std::string splashName(const std::string& switchingTo, const std::string& statusName, const std::string& savedName,
                        const std::string& host, uint16_t port);
 
+// ---- the Chart address on the web and setup pages ----
+
+constexpr const char* kDefaultHost = "metarmap.local";  // the installer's usual hostname
+
+// The address MapClient talks to: the saved one, or kDefaultHost while none is saved (left empty: the Copilot looks
+// for a map itself, and meanwhile tries the usual one)
+std::string hostToUse(const std::string& saved);
+
+// The Chart address and port as typed on a page: both may be empty. An empty address is "none: the Copilot finds the
+// map" (its port is then ignored); an empty port is 80.
+struct AddressForm {
+  bool ok = false;
+  std::string host;  // trimmed; "" for none
+  uint16_t port = 80;
+  std::string error;  // why it isn't ok, for the page
+};
+AddressForm parseAddress(const std::string& host, const std::string& port);
+
+// Whether a map is chosen after a page saved the address: an empty one is never (the Copilot looks for one at its next
+// start); otherwise it stays chosen, and becomes chosen on the settings page (its Save is the Chart address too) or
+// when the address was changed from the one shown (the setup page: a first start's address left as it is isn't a
+// choice)
+bool chosenAfterSave(bool wasChosen, bool settingsPage, bool changed, bool emptyHost);
+
 // ---- the first start: a Copilot that has never had a map picked or typed ----
 
 // Whether the map has been chosen, from what's saved: the flag (map_chosen) when it's there; else whether a map

@@ -1845,7 +1845,8 @@ void closeMaps(lv_event_t* = nullptr) {
 // The map in use, as the list marks it: as saved, and what its /api/status said
 map_list::Current currentMap() {
   map_list::Current c;
-  c.host = settings->mapHost;
+  // none saved (it's looking for one): metarmap.local is what it tries, listed only once it answers
+  c.host = settings->mapHost.empty() && !conn.online ? "" : map_list::hostToUse(settings->mapHost);
   c.port = settings->mapPort;
   if (status.valid) {
     c.ip = status.ip;
@@ -2137,7 +2138,7 @@ void showSplashOnDemand(lv_event_t*) {
 void tickAutoPick(bool scanned) {
   if (autoOver) return;
   if (settings->mapChosen || conn.online) {  // a map picked or typed, or the one set answers: nothing to look for
-    if (conn.online) LOGF("ui: first start: the Chart at %s answers; not looking for one\n", settings->mapHost.c_str());
+    if (conn.online) LOGF("ui: first start: the Chart at %s answers; not looking for one\n", client->host().c_str());
     autoOver = true;
     return;
   }
@@ -2198,7 +2199,7 @@ void tickSplash() {
     return;
   }
   setText(mapNameLine, map_list::splashName(switchingTo, status.valid ? status.name : "", settings->mapName,
-                                            settings->mapHost, settings->mapPort));
+                                            map_list::hostToUse(settings->mapHost), settings->mapPort));
   wl_status_t ws = WiFi.status();
   bool wifi = ws == WL_CONNECTED;
   if (wifi) {
@@ -2691,8 +2692,8 @@ void ui_tick() {
   // name resolved to is saved, for the next time it doesn't
   if (client->getRoute(route, routeRev)) {
     stream_set_map(route.baseUrl());
-    if (!route.ip.empty() && route.ip != settings->mapIp && route.host == settings->mapHost &&
-        route.port == settings->mapPort) {
+    if (!route.ip.empty() && route.ip != settings->mapIp && !settings->mapHost.empty() &&
+        route.host == settings->mapHost && route.port == settings->mapPort) {  // not the stand-in metarmap.local
       settings->mapIp = route.ip;
       settings_save_map_ip(route.ip);
     }
