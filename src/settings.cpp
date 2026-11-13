@@ -3,6 +3,7 @@
 #include <Preferences.h>
 
 #include "log.h"
+#include "map_list.h"
 #include "wifi_setup_text.h"
 
 #if __has_include("secrets.h")
@@ -21,6 +22,13 @@ std::string getString(Preferences& p, const char* key, const std::string& fallba
 bool putString(Preferences& p, const char* key, const std::string& value) {
   if (getString(p, key, "\x01") == value) return false;
   p.putString(key, value.c_str());
+  return true;
+}
+
+// Writes a flag if it isn't saved as `value` yet (a missing one included): whether it wrote.
+bool putFlag(Preferences& p, const char* key, bool value) {
+  if (p.isKey(key) && p.getBool(key) == value) return false;
+  p.putBool(key, value);
   return true;
 }
 
@@ -63,6 +71,9 @@ Settings settings_load() {
     putString(p, "wifi_pass", WIFI_PASSWORD);
     putString(p, "map_host", MAP_HOST);
     if (p.getUShort("map_port", 0) != MAP_PORT) p.putUShort("map_port", MAP_PORT);
+    putString(p, "map_ip", "");  // another map's, if the address changed
+    putString(p, "map_name", "");
+    putFlag(p, "map_chosen", MAP_HOST[0] != 0);  // this build names its map (unless it's ""): no looking for one
   }
 #endif
 #ifdef WEB_PASSWORD
@@ -83,8 +94,16 @@ Settings settings_load() {
   Settings s;
   s.wifiName = getString(p, "wifi_name", kSetupSsid);  // nothing set up yet: Wi-Fi config mode
   s.wifiPassword = getString(p, "wifi_pass", "");
-  s.mapHost = getString(p, "map_host", "metarmap.local");  // the installer's usual hostname
+  s.mapHost = getString(p, "map_host", "");  // none yet: map_list::hostToUse() tries metarmap.local meanwhile
   s.mapPort = p.getUShort("map_port", 80);
+  s.mapIp = getString(p, "map_ip", "");
+  s.mapName = getString(p, "map_name", "");
+  bool hasFlag = p.isKey("map_chosen");
+  s.mapChosen = map_list::mapChosen(hasFlag, hasFlag && p.getBool("map_chosen"), !s.mapHost.empty());
+  if (!hasFlag && s.mapChosen) {  // firmware from before the flag, with a map: kept as it is, never looked for
+    p.putBool("map_chosen", true);
+    saving.wrote(true);
+  }
   s.updateChannel = getString(p, "upd_channel", s.updateChannel);
   s.updateBranch = getString(p, "upd_branch", s.updateBranch);
   s.updateRelease = getString(p, "upd_release", s.updateRelease);
@@ -131,7 +150,30 @@ void settings_save_connection(const Settings& s) {
   bool host = putString(p, "map_host", s.mapHost);
   bool port = p.getUShort("map_port", 0) != s.mapPort;
   if (port) p.putUShort("map_port", s.mapPort);
-  saving.wrote(name || pass || host || port);
+  bool forget = false;
+  if (host || port) {  // another map: the old one's IP and name aren't its
+    forget = putString(p, "map_ip", "");
+    forget = putString(p, "map_name", "") || forget;
+  }
+  // always written with map_host, so a map_host without it means firmware from before it (settings_load())
+  bool chosen = putFlag(p, "map_chosen", s.mapChosen);
+  saving.wrote(name || pass || host || port || forget || chosen);
+}
+
+void settings_save_map(const std::string& host, uint16_t port, const std::string& ip, const std::string& name) {
+  Saving saving("the map");
+  bool h = putString(saving.p, "map_host", host);
+  bool p = saving.p.getUShort("map_port", 0) != port;
+  if (p) saving.p.putUShort("map_port", port);
+  bool i = putString(saving.p, "map_ip", ip);
+  bool n = putString(saving.p, "map_name", name);
+  bool c = putFlag(saving.p, "map_chosen", true);
+  saving.wrote(h || p || i || n || c);
+}
+
+void settings_save_map_ip(const std::string& ip) {
+  Saving saving("the map's IP");
+  saving.wrote(putString(saving.p, "map_ip", ip));
 }
 
 void settings_save_led(int brightness) {

@@ -13,7 +13,7 @@ drives pixels itself.
 |---|---|---|
 | ![The Chart panel: the visualizer, its steps, its legend, Auto and Pixels](docs/leds.png) | ![The Airports panel: a page of airports and the page strip](docs/airports.png) | ![An airport's card: its METAR, and Locate, AWOS and ATIS](docs/card.png) |
 | **Brightness** | **Splash** | **Update** |
-| ![The brightness sheet](docs/brightness.png) | ![The logo's splash: versions, addresses, Close and Firmware, and the volume button at the top right](docs/splash.png) | ![The firmware update screen](docs/update.png) |
+| ![The brightness sheet](docs/brightness.png) | ![The logo's splash: versions, addresses, Close and Firmware, the map picker's globe at the top left and the volume button at the top right](docs/splash.png) | ![The firmware update screen](docs/update.png) |
 | **Visualizer picker** | | |
 | ![The visualizer picker: a tile for each visualizer; Gusts, Wind Dir and TFR are skipped (dimmed, with a SKIP badge)](docs/picker.png) | | |
 
@@ -77,7 +77,8 @@ buttons: **Chart**, **Airports**, and the **logo**.
   (and the screen dims). A yellow star on it: a firmware update.
 - A tap shows the splash screen with the versions and the Chart's address, two
   buttons: **Close**, and **Firmware** (**Update v...** when there's one), the
-  firmware update screen, and a speaker button at the top right for the volume
+  firmware update screen, a globe at the top left for the **map picker** (see
+  **Several maps**) and a speaker button at the top right for the volume
   (see **Splash screen**). It closes on its own after 30 s.
 
 **Status light**
@@ -106,7 +107,9 @@ buttons: **Chart**, **Airports**, and the **logo**.
 - **Firmware**: the installed and available versions, the update channel and
   branch (or, on **Pick release**, the release), **Check now** and **Install**, with its progress.
 - **Settings**: the Wi-Fi network and password, and the Chart's address and port;
-  saving restarts the Copilot with them. If it can't join the new network, use
+  saving restarts the Copilot with them. Leave the address (and port) empty to let the Copilot find the Chart
+  itself after the restart (**First start**, under **Several maps**); an empty port is 80. A map picked on the Copilot's screen (**Several maps**) shows here as the
+  Chart's address, with no restart. If it can't join the new network, use
   **Wi-Fi setup** on its screen (below). A USB build's `secrets.h` applies only
   when it changes, so what you save on the page stays.
   Also the **status light**'s brightness (0-100%, 0 for off), and **Sounds** (on at first): the chime and the
@@ -167,7 +170,8 @@ buttons: **Chart**, **Airports**, and the **logo**.
   Wi-Fi), or go to **http://192.168.4.1/**. Pick your Wi-Fi from the networks
   the Copilot can see (2.4 GHz only), or **Other network...** for a hidden one,
   enter its password, and the Chart's address (`metarmap.local` unless you gave
-  the Pi another hostname) and port. **Save and connect** restarts the Copilot
+  the Pi another hostname) and port, or leave them empty: the Copilot then looks for the Chart itself
+  (**First start**, under **Several maps**). **Save and connect** restarts the Copilot
   on your Wi-Fi. No login here: it's your phone on the Copilot's own network.
 - A Copilot that was set up but can't join its Wi-Fi any more (a new router, a
   changed password) shows **Wi-Fi setup** on its splash once it says "Can't
@@ -181,7 +185,9 @@ buttons: **Chart**, **Airports**, and the **logo**.
 - At startup: the MetarMap2 logo, the metarmap2 repo, the Copilot's firmware
   version and the Chart's (once it answers: v26.11.04, or v26.11.04+16 f86daa4
   when the Chart runs commits after a release), and
-  "Connecting to Wi-Fi..." and "Connecting to the Chart..." turning OK. Two
+  "Connecting to Wi-Fi..." and "Connecting to the Chart..." turning OK, with the Chart's name on its own line
+  under it (its map name, else its address, e.g. `metarmap.local`; shortened with dots only when it's wider than
+  the screen, and accented letters without their accents, as the screen's font has none). Two
   seconds after both are OK, the Copilot fades in.
 - If Wi-Fi hasn't joined after 15 s, it names the network: "Can't find
   *network*" (out of range, or 5 GHz only) or "Can't join *network*", and keeps
@@ -199,6 +205,45 @@ buttons: **Chart**, **Airports**, and the **logo**.
   (none at 0%, with **Sounds** off, or while audio plays). A tap beside the
   slider, or 4 s without a touch, closes it; using it keeps the splash open
   another 30 s.
+- A globe at its top left opens the **map picker** (below). The startup and reconnecting splash have it too, once
+  the Copilot is on Wi-Fi, so a Chart that doesn't answer can be swapped for one that does.
+
+**Several maps**
+
+- With more than one Chart on the network, the Copilot can switch between them. Tap the logo, then the globe at
+  the splash's top left: "Maps on the network" scans for about 3 s ("Scanning the network..."), then lists each
+  Chart that announces itself, a row each: its name (the Chart's map name, or its Pi's hostname), its address (IP,
+  with `:port` when it isn't 80) and its version. The Chart in use is lit and says **In use**; it's always listed,
+  even if it doesn't announce itself (named by its saved address, "not announced").
+- Tap another row to switch to it at once, with no restart: the splash says "Connecting to the Chart..." with the
+  Chart's name on the line under it until it answers, then the Copilot fades in with that Chart's visualizers,
+  airports and spoken weather (the old Chart's are cleared at once, and anything still queued for it is dropped).
+  The choice is saved as the Chart's address (the web page's Settings show it) and kept through restarts and
+  firmware updates. The saved address is the Chart's own network name (`metarmap2-a1b2c3.local`), so it still
+  works when the router gives the Pi a new IP; a Chart that announces no name is saved by its IP.
+- Its IP is saved too, as a fallback: that network name only answers while the Chart's network discovery runs. If
+  the name doesn't resolve 3 times in a row, the Copilot uses the saved IP (spoken weather too); it tries the name
+  again every 5 minutes, and at once if the IP stops answering. Whenever the name answers at a new IP (the router
+  moved the Pi), that IP is saved instead. This works for an address typed on the web page too, once it has
+  answered.
+- ⟳ scans again; ✕ (or a tap beside the list) closes it. The logo's splash stays open while the picker is, and
+  30 s after it was last used. The Copilot only asks the network when the picker opens (and on a first start,
+  below): nothing scans in the background.
+- **First start**: a Copilot that has no map picked or typed (a new one, with the setup page's Chart address left
+  empty, or one whose address was emptied on the web page's Settings) looks for one itself, once it's on Wi-Fi:
+  the same 3 s scan. Meanwhile it tries `metarmap.local`, the installer's usual hostname. Exactly one Chart found:
+  it's used and saved, as if picked. Two or more: the map picker opens over the splash for you to tap one. None:
+  it keeps the default address and scans again every 20 s while the Chart doesn't answer, 4 scans at most, and
+  again at the next start. If the default address answers first, it's left as it is (and the Copilot looks again
+  at the next start, until a map is picked or saved on the web page). A Copilot updated from an older firmware
+  already has its map: it never looks, and its map never changes on its own. A map picked on the screen, an address saved
+  on the web page's Settings, typed on the setup page (changed from the one shown) or in a USB build's
+  `secrets.h` counts as chosen; an empty address never does.
+- A Chart announces itself once it has network discovery (a MetarMap2 release with the map name setting, and the
+  zeroconf package): if one is missing from the list, update it, then on its Home page tap **Install network
+  discovery**. "No maps found" means none answered (the list then
+  says so). Typing a Chart's address on the web page's (or the setup page's) **Chart address** still works for
+  any Chart, announced or not.
 
 **Firmware updates**
 
@@ -404,6 +449,9 @@ by GitHub without a `secrets.h`. To build one without yours, move
 
 ## Network and security
 
+To find Charts for the map picker the Copilot asks the local network (mDNS/DNS-SD, `_metarmap2._tcp`), only
+while the picker opens. A Chart announces just its name, address, port, version and `/api/status`: no login.
+
 The Copilot only uses the Chart's endpoints that need no login: `/api/live`,
 `/api/status`, `/visualizer/...`, `/brightness/...`, `/locate/...`, and
 `/api/speak/...` and `/api/atis/...` for the spoken weather. It doesn't know
@@ -478,6 +526,17 @@ isn't solid red), a color along a gradient entry (temperature, pressure), the
 lightning flag for the flash entry, else the nearest entry with the same
 effect.
 
+The map picker asks the network for `_metarmap2._tcp` once when it opens (or ⟳), on its own short-lived task (ESP-IDF's
+`mdns_query_ptr()`, 3 s, up to 20 answers), keeps one row per Chart (its IPv4 and IPv6 answers merged; an answer
+without an address is looked up by its host name) and at most 8, sorted by name, the one in use always kept
+(`src/map_list.cpp`, unit tested). Picking one saves it and hands it to the polling task (`MapClient::setMap()`): it
+finishes the request under way, drops that answer (the old Chart's), and polls the new Chart from then on, its
+`/api/status` first; the spoken weather's address changes with it, the old Chart's state is cleared, and commands
+still queued for it are dropped. Nothing restarts. Each request looks the Chart's name up first; after 3 failed
+lookups in a row it goes to the saved IP instead, until that stops answering or 5 minutes pass (`src/map_route.cpp`,
+unit tested). On a first start, `map_list::autoPick()` (unit tested) decides from a scan's answers: use the one
+Chart, open the picker, scan again, or leave it.
+
 See the [MetarMap2 API documentation](https://github.com/dman776/metarmap2/blob/master/API.md)
 for the endpoints.
 
@@ -495,6 +554,9 @@ for the endpoints.
 | `src/timing.h` | Timings the screens and the status light share |
 | `src/map_client.cpp` | Polling the Chart and sending controls, on its own task |
 | `src/map_parse.cpp` | The API's JSON into `MapLive` and `MapStatus` |
+| `src/map_scan.cpp` | The map picker's scan: the Charts on the network (mDNS), on its own task |
+| `src/map_list.cpp` | The map picker's rows: one per Chart, sorted, the one in use marked, the address to save; the splash's map name; a first start's pick |
+| `src/map_route.cpp` | Reaching the Chart by its name, or by its saved IP while the name doesn't resolve |
 | `src/legend.cpp` | Which legend entries the Chart is showing |
 | `src/pages.cpp` | The Airports panel's pages: alphabetical order, the page strip |
 | `src/skips.cpp` | The picker's skip marks: holds waiting for the Chart's answer, and what to say |
@@ -510,7 +572,7 @@ for the endpoints.
 | `src/third_party/minimp3.h` | The MP3 decoder (public domain); one marked change: its scratch can live in PSRAM |
 | `src/updater.cpp` | Checking GitHub and installing firmware, on its own task |
 | `src/update_check.cpp` | GitHub's release JSON, versions, what's an update |
-| `src/settings.cpp` | Wi-Fi, Chart, update, status light, sounds and remote control settings, in flash |
+| `src/settings.cpp` | Wi-Fi, Chart (also the map picker's), update, status light, sounds and remote control settings, in flash |
 | `src/display.h` | Display and touch driver settings (LovyanGFX) |
 | `install.py` | The installer: downloads a release's factory image and flashes it (Python only) |
 | `tools/test_install.py` | Its tests: `python3 -m unittest discover -s tools -p 'test_*.py'` |
@@ -586,11 +648,12 @@ export COPILOT_PASSWORD=...   # the web page's password (user metar)
 python3 tools/shoot.py metarmap-copilot.local splash picker card:KHOU airports:2
 python3 tools/shoot.py metarmap-copilot.local --out docs chart@leds.png airports@airports.png \
     card:KHOU@card.png brightness@brightness.png splash@splash.png update@update.png picker@picker.png close
+python3 tools/shoot.py metarmap-copilot.local --out docs --delay 4 maps@maps.png close
 ```
 
 `tools/shoot.py` (Python 3, nothing to install) opens each item, then saves the screen as `<item>.png` (or the name
 after `@`): a screen (`chart` (the Pixels panel), `airports`, `splash`, `update`, `picker`, `brightness`, `volume`
-(the splash's volume slider), `close`), `airports:N` (page N), `card:KHOU`, `card:N` (the Nth airport on the page
+(the splash's volume slider), `maps` (the splash's map picker: it scans for 3 s, so add `--delay 4`), `close`), `airports:N` (page N), `card:KHOU`, `card:N` (the Nth airport on the page
 shown), `card:P:N` (on page P), `button:locate|awos|atis|stop` (on the open card) and `visualizer:wind`. It doesn't
 turn remote control on: with it off it says so and stops. Give it the Copilot's IP or `metarmap-copilot.local`; it
 sends the `X-Copilot: 1` header the Copilot wants on each `POST`.
@@ -601,7 +664,7 @@ The endpoints (`src/remote_web.h`), all behind the web page's login. Parameters 
 | Endpoint | Parameters | Does |
 |---|---|---|
 | `GET /api/ui/state` | | What's on screen (answers with remote control off too) |
-| `POST /api/ui/show` | `screen=chart\|airports\|splash\|update\|picker\|brightness\|volume\|close`, `page=N` (with `airports`) | Opens it, as its tap; `close` closes the picker, sheets, card, splash and update screen, back to the panel |
+| `POST /api/ui/show` | `screen=chart\|airports\|splash\|update\|picker\|brightness\|volume\|maps\|close`, `page=N` (with `airports`) | Opens it, as its tap (`maps` starts a scan: its rows come about 3 s later); `close` closes the picker, sheets, card, splash and update screen, back to the panel |
 | `POST /api/ui/card` | `airport=KHOU` or `position=N` (and `page=P`); `button=locate\|awos\|atis\|stop` | Opens the airport's card (as a tap on its tile, on its page), then presses the button; `button=` alone presses it on the open card (`stop` only that way: opening a card stops what it says) |
 | `POST /api/ui/visualizer` | `id=wind` (an id, name or short name) | Switches the Chart to it, as its picker tile |
 | `POST /api/remote-control` | `on=1\|0` | The setting, as the web page's checkbox |
@@ -618,7 +681,7 @@ $C/screen.png -o screen.png
 
 A control answers once the screen has changed and settled (a screen's fade, the speaker's state: up to about a
 second), with `/api/ui/state`'s JSON: `remoteControl`, `screen` (`main`, `splash`, `update`, `startup` while it
-connects, `wifiSetup`), `panel` (`chart`, `airports`), `overlay` (`none`, `picker`, `brightness`, `card`, `volume`),
+connects, `wifiSetup`), `panel` (`chart`, `airports`), `overlay` (`none`, `picker`, `brightness`, `card`, `volume`, `maps`),
 `card` (its airport, or null), `playing` (`awos`, `atis` or null), `page` and `pages`, `pageAirports` (the page's
 airports, position 1 first), `airports`, `visualizer` (the id) and `visualizers`, and `online`. So a `GET
 /screen.png` straight after it shows the new screen. Otherwise:

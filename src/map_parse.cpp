@@ -52,6 +52,7 @@ void statusFilter(JsonDocument& filter) {
   build["commit"] = true;
   build["modified"] = true;
   filter["ip"] = true;
+  filter["name"] = true;
   JsonObject v = filter["visualizer"].to<JsonObject>();
   v["active"] = true;
   JsonObject item = v["legend"].add<JsonObject>();
@@ -143,6 +144,7 @@ MapStatus parseStatus(JsonVariantConst doc) {
   status.version = doc["version"] | "";
   status.versionText = versionText(doc);
   status.ip = doc["ip"] | "";
+  status.name = doc["name"] | "";
   status.activeIndex = doc["visualizer"]["active"] | -1;
   for (JsonVariantConst item : doc["visualizer"]["legend"].as<JsonArrayConst>()) {
     LegendItem li;

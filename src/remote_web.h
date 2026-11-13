@@ -8,7 +8,8 @@
 //
 //   GET  /                     the page
 //   GET  /api/state            {version, ip, wifiName, mapHost, mapPort, led, sounds, remoteControl, update: {...}}
-//   POST /api/connection       wifi_name, wifi_pass ("" keeps it), map_host, map_port: saved, then a restart
+//   POST /api/connection       wifi_name, wifi_pass ("" keeps it), map_host, map_port ("" for none: found by the
+//                              Copilot; port "" is 80): saved, then a restart
 //   POST /api/channel          channel (releases, latest, branch), branch
 //   POST /api/check            check GitHub now
 //   POST /api/install          install the available firmware
@@ -18,7 +19,7 @@
 //   POST /api/remote-control   on (1 or 0): remote control of the screens, for screenshots (off at first)
 //   GET  /api/ui/state         what's on screen: {remoteControl, screen, panel, overlay, card, playing, page, pages,
 //                              pageAirports, airports, visualizer, visualizers, online} (with remote control off too)
-//   POST /api/ui/show          screen (chart, airports, splash, update, picker, brightness, volume, close); page
+//   POST /api/ui/show          screen (chart, airports, splash, update, picker, brightness, volume, maps, close); page
 //                              (with airports: 1 is the first)
 //   POST /api/ui/card          airport (a code) or position (on the page shown, or page=), and/or button (locate,
 //                              awos, atis, stop: pressed on the card)

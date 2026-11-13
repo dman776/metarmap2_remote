@@ -47,7 +47,7 @@ const std::vector<std::string> kCodes = {"KAUS", "KDFW", "KHOU", "KIAH", "KSAT"}
 }  // namespace
 
 void test_every_screen_name_round_trips() {
-  const char* names[] = {"chart", "airports", "splash", "update", "picker", "brightness", "volume", "close"};
+  const char* names[] = {"chart", "airports", "splash", "update", "picker", "brightness", "volume", "maps", "close"};
   for (const char* n : names) {
     Screen s = Screen::Close;
     TEST_ASSERT_TRUE_MESSAGE(ui_control::screenFrom(n, s), n);

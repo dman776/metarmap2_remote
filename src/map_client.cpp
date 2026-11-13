@@ -15,6 +15,7 @@ namespace {
 
 constexpr uint32_t kLiveMs = 1500;         // the /remote page polls every 1 s
 constexpr uint32_t kStatusMs = 60 * 1000;  // and /api/status every minute
+constexpr uint32_t kStatusRetryMs = 5000;  // until the first one answers (after a switch, or Wi-Fi back): this often
 // How long the Chart has to start answering, and then between parts of the answer. Waited in turns, so a slow
 // Chart (a Pi Zero busy sending an ATIS) can't hold core 0 and set off the task watchdog.
 constexpr uint32_t kTimeoutMs = 5000;
@@ -39,13 +40,91 @@ void drainAndStop(WiFiClient& tcp) {
 
 }  // namespace
 
-void MapClient::begin(const char* host, uint16_t port) {
-  host_ = host;
-  port_ = port;
+void MapClient::begin(const char* host, uint16_t port, const char* ip) {
+  strlcpy(pendingHost_, host, sizeof(pendingHost_));
+  strlcpy(pendingIp_, ip, sizeof(pendingIp_));
+  route_.set(pendingHost_, pendingIp_);
+  port_ = pendingPort_ = port;
   queue_ = xQueueCreate(8, sizeof(Cmd));
   mutex_ = xSemaphoreCreateMutex();
+  publishRoute();
   // Core 0, beside Wi-Fi; LVGL runs in the Arduino loop on core 1.
   xTaskCreatePinnedToCore(taskEntry, "map_client", 12 * 1024, this, 1, nullptr, 0);
+}
+
+void MapClient::setMap(const char* host, uint16_t port, const char* ip) {
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  strlcpy(pendingHost_, host, sizeof(pendingHost_));
+  strlcpy(pendingIp_, ip, sizeof(pendingIp_));
+  pendingPort_ = port;
+  pending_ = true;
+  bool wifi = conn_.wifi;
+  // What the old Chart said goes now: its visualizers and legend aren't the new one's
+  status_ = MapStatus();
+  statusRev_++;
+  live_ = MapLive();
+  liveRev_++;
+  xSemaphoreGive(mutex_);
+  setConnection(wifi, false, 0);  // offline until the new Chart answers
+  LOGF("map: switching to %s:%u (%s)\n", host, (unsigned)port, *ip ? ip : "no IP");
+}
+
+bool MapClient::getRoute(MapRoute& out, uint32_t& rev) {
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  bool changed = rev != routeRev_;
+  if (changed) {
+    out = routeOut_;
+    rev = routeRev_;
+  }
+  xSemaphoreGive(mutex_);
+  return changed;
+}
+
+void MapClient::publishRoute() {
+  if (route_.rev() == routeSeen_) return;
+  routeSeen_ = route_.rev();
+  if (route_.byIp()) {
+    LOGF("map: %s doesn't resolve: by its IP, %s\n", route_.host().c_str(), route_.ip().c_str());
+  } else {
+    LOGF("map: by name, %s%s%s\n", route_.host().c_str(), route_.ip().empty() ? "" : "; its IP ", route_.ip().c_str());
+  }
+  MapRoute r;
+  r.host = route_.host();
+  r.ip = route_.ip();
+  r.port = port_;
+  r.byIp = route_.byIp();
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  routeOut_ = r;
+  routeRev_++;
+  xSemaphoreGive(mutex_);
+}
+
+std::string MapClient::host() {
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  std::string h = pendingHost_;
+  xSemaphoreGive(mutex_);
+  return h;
+}
+
+bool MapClient::applySwitch() {
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  bool p = pending_;
+  if (p) {
+    route_.set(pendingHost_, pendingIp_);
+    port_ = pendingPort_;
+    // Commands still queued were for the old Chart (the splash covers the panels till the new one answers): dropped.
+    // A skip's mark is undone when its answer doesn't come (skips::kQueuedMs).
+    xQueueReset(queue_);
+    // and anything the old Chart answered since setMap() cleared it
+    status_ = MapStatus();
+    statusRev_++;
+    live_ = MapLive();
+    liveRev_++;
+    pending_ = false;
+  }
+  xSemaphoreGive(mutex_);
+  if (p) publishRoute();
+  return p;
 }
 
 void MapClient::command(const std::string& path) {
@@ -131,11 +210,16 @@ void MapClient::taskEntry(void* self) { static_cast<MapClient*>(self)->run(); }
 
 void MapClient::run() {
   uint32_t lastLive = 0, lastStatus = 0;
-  bool haveStatus = false;
+  bool haveStatus = false, statusAsked = false;
   for (;;) {
+    if (applySwitch()) {  // another Chart: everything from it, the status first
+      LOGF("map: now %s:%u\n", route_.host().c_str(), (unsigned)port_);
+      lastLive = 0;
+      haveStatus = statusAsked = false;
+    }
     if (WiFi.status() != WL_CONNECTED) {
       setConnection(false, false, 0);
-      haveStatus = false;
+      haveStatus = statusAsked = false;
       vTaskDelay(pdMS_TO_TICKS(500));
       continue;
     }
@@ -167,10 +251,13 @@ void MapClient::run() {
     bool online = conn_.online;
     xSemaphoreGive(mutex_);
     uint32_t since = now - lastStatus;
-    if (online && (!haveStatus || (stale && since >= 2000) || since >= kStatusMs)) {
+    // Till the first answer, every kStatusRetryMs (a failed one doesn't wait out kStatusMs: the panels need it)
+    bool due = haveStatus ? (stale && since >= 2000) || since >= kStatusMs : !statusAsked || since >= kStatusRetryMs;
+    if (online && due) {
       lastStatus = now;
-      pollStatus();
-      haveStatus = true;
+      statusAsked = true;
+      // a failed poll keeps the one it had, if any: only a switch or Wi-Fi loss starts over
+      haveStatus = pollStatus() || haveStatus;
     }
   }
 }
@@ -180,11 +267,25 @@ void MapClient::run() {
 // The status code, or HTTPClient's negative codes for what went wrong.
 int MapClient::get(const char* path, uint32_t timeoutMs, JsonDocument* doc, JsonDocument* filter, bool errorBody) {
   WiFiClient tcp;
-  if (!tcp.connect(host_, port_, kConnectMs)) return HTTPC_ERROR_CONNECTION_REFUSED;
+  // By the name, or by the IP it was last at while the name doesn't resolve (map_route.h)
+  bool byIp = route_.useIp(millis());
+  IPAddress addr;
+  bool found = byIp ? addr.fromString(route_.ip().c_str()) : WiFi.hostByName(route_.host().c_str(), addr) == 1;
+  if (!byIp) route_.nameLookedUp(found, found ? addr.toString().c_str() : "", millis());
+  if (!found) {
+    publishRoute();
+    return HTTPC_ERROR_CONNECTION_REFUSED;
+  }
+  if (!tcp.connect(addr, port_, kConnectMs)) {
+    if (byIp) route_.ipFailed();  // the IP doesn't answer either: the name again (the Chart may have moved)
+    publishRoute();
+    return HTTPC_ERROR_CONNECTION_REFUSED;
+  }
+  publishRoute();
   tcp.setTimeout(kConnectMs / 1000);  // sending the request
   // HTTP/1.0: no chunked encoding, so the body can be streamed; the Chart closes it after the answer
-  std::string request = std::string("GET ") + path + " HTTP/1.0\r\nHost: " + host_ + ":" + std::to_string(port_) +
-                        "\r\nUser-Agent: metarmap-remote\r\nConnection: close\r\n\r\n";
+  std::string request = std::string("GET ") + path + " HTTP/1.0\r\nHost: " + route_.host() + ":" +
+                        std::to_string(port_) + "\r\nUser-Agent: metarmap-remote\r\nConnection: close\r\n\r\n";
   if (tcp.write(reinterpret_cast<const uint8_t*>(request.data()), request.size()) != request.size()) {
     tcp.stop();
     return HTTPC_ERROR_SEND_HEADER_FAILED;
@@ -240,6 +341,10 @@ void MapClient::pollLive() {
   live.rxMillis = millis();
 
   xSemaphoreTake(mutex_, portMAX_DELAY);
+  if (pending_) {  // the old Chart's: the switch comes first
+    xSemaphoreGive(mutex_);
+    return;
+  }
   live_ = std::move(live);
   liveRev_++;
   xSemaphoreGive(mutex_);
@@ -262,6 +367,10 @@ void MapClient::fetchAtis(const char* code) {
   t.code = code;
 
   xSemaphoreTake(mutex_, portMAX_DELAY);
+  if (pending_) {  // asked of the old Chart: the switch comes first
+    xSemaphoreGive(mutex_);
+    return;
+  }
   atis_ = std::move(t);
   atisRev_++;
   xSemaphoreGive(mutex_);
@@ -283,12 +392,16 @@ void MapClient::sendSkip(const Cmd& cmd) {
   if (a.id.empty()) a.id = cmd.skipId;
 
   xSemaphoreTake(mutex_, portMAX_DELAY);
+  if (pending_) {  // the old Chart's (its mark is undone when no answer comes)
+    xSemaphoreGive(mutex_);
+    return;
+  }
   skip_ = std::move(a);
   skipRev_++;
   xSemaphoreGive(mutex_);
 }
 
-void MapClient::pollStatus() {
+bool MapClient::pollStatus() {
   static JsonDocument filter(spiram());
   if (filter.isNull()) statusFilter(filter);
 
@@ -296,15 +409,20 @@ void MapClient::pollStatus() {
   int code = get("/api/status", kTimeoutMs, &doc, &filter);
   if (code != HTTP_CODE_OK) {
     LOGF("map: /api/status -> %d\n", code);
-    return;
+    return false;
   }
 
   MapStatus status = parseStatus(doc.as<JsonVariantConst>());
 
   xSemaphoreTake(mutex_, portMAX_DELAY);
+  if (pending_) {  // the old Chart's
+    xSemaphoreGive(mutex_);
+    return false;
+  }
   status_ = std::move(status);
   statusRev_++;
   xSemaphoreGive(mutex_);
+  return true;
 }
 
 // the least time between two chimes
@@ -312,6 +430,10 @@ constexpr uint32_t kChimeEveryMs = 60000;
 
 void MapClient::setConnection(bool wifi, bool online, int httpCode) {
   xSemaphoreTake(mutex_, portMAX_DELAY);
+  if (online && pending_) {  // the old Chart answered after setMap(): offline till the new one does
+    xSemaphoreGive(mutex_);
+    return;
+  }
   if (conn_.wifi != wifi || conn_.online != online || conn_.httpCode != httpCode) {
     if (conn_.online != online) LOGF("map: %s (%d)\n", online ? "online" : "offline", httpCode);
     // the chime when it reaches the Chart; not again within a minute, so a flaky Wi-Fi doesn't ring on and on

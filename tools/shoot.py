@@ -6,7 +6,9 @@
 Each item opens something, then saves the screen as <item>.png (card:KHOU is card-KHOU.png), or as the file after
 an @ (card:KHOU@card.png):
 
-    chart airports splash update picker brightness volume close   a screen (volume: the splash's volume slider)
+    chart airports splash update picker brightness volume maps close
+                                                                   a screen (volume: the splash's volume slider; maps:
+                                                                   its map picker, which scans 3 s: use --delay 4)
     airports:N                                                     the Airports panel's page N (1 is the first)
     card:KHOU                                                      an airport's card, by its code
     card:N  card:P:N                                               the Nth airport on the page shown, or on page P
@@ -31,7 +33,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-SCREENS = ("chart", "airports", "splash", "update", "picker", "brightness", "volume", "close")
+SCREENS = ("chart", "airports", "splash", "update", "picker", "brightness", "volume", "maps", "close")
 BUTTONS = ("locate", "awos", "atis", "stop")
 
 

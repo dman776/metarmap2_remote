@@ -46,7 +46,7 @@ constexpr uint32_t kPlayerStack = 8 * 1024;  // minimp3's scratch is in PSRAM (g
 constexpr uint32_t kPublishMs = 250;
 
 std::string streamUrl;
-std::string mapServer;  // http://MAP_HOST:MAP_PORT
+std::string mapServer;  // http://MAP_HOST:MAP_PORT (the screen's task's: stream_begin(), stream_set_map())
 std::string playUrl;    // what this Play is playing: the Radio's stream, or a spoken METAR
 ByteRing* ring = nullptr;
 SemaphoreHandle_t mutex = nullptr;
@@ -609,6 +609,8 @@ void stream_begin(const std::string& url, const std::string& map, int vol) {
 }
 
 bool stream_available() { return ring != nullptr; }
+
+void stream_set_map(const std::string& map) { mapServer = map; }
 
 void stream_set_volume(int vol, bool save) {
   vol = std::max(0, std::min(100, vol));
