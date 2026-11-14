@@ -31,6 +31,7 @@ extern const lv_image_dsc_t icon_vis_droplet;
 extern const lv_image_dsc_t icon_vis_eye;
 extern const lv_image_dsc_t icon_vis_gauge;
 extern const lv_image_dsc_t icon_vis_gust;
+extern const lv_image_dsc_t icon_vis_hourglass;
 extern const lv_image_dsc_t icon_vis_mountain;
 extern const lv_image_dsc_t icon_vis_plane;
 extern const lv_image_dsc_t icon_vis_rain;

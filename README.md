@@ -348,7 +348,9 @@ buttons: **Chart**, **Airports**, and the **logo**.
   3 s while the Chart catches up.
 - The visualizers' icons and short names come from the Chart (metarmap2 after
   26.11.08); with an older Chart the picker shows each visualizer's name, without
-  an icon.
+  an icon. The Copilot draws each icon from its own copy, so a visualizer whose
+  icon is newer than the Copilot's firmware shows only its short name: FAA Delays's
+  hourglass needs a Copilot after v26.11.12.
 
 The Cockpit's Map tab (the live map needs a browser), the visualizer's
 description and the Micro switch are left out.
