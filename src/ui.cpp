@@ -11,6 +11,7 @@
 #include "audio.h"
 #include "debounce.h"
 #include "firmware_version.h"
+#include "icon_store.h"
 #include "icons.h"
 #include "legend.h"
 #include "log.h"
@@ -827,7 +828,7 @@ void buildPicker() {
   int tileH = (kH - 2 * 4 - (rows - 1) * kTileGap) / rows;
   for (size_t i = 0; i < status.visualizers.size(); i++) {
     const Visualizer& v = status.visualizers[i];
-    lv_obj_t* t = pickTile(vis_icon(v.icon.c_str()), v.shortName.c_str(), tileW);
+    lv_obj_t* t = pickTile(vis_icon(v.icon.c_str(), v.iconRev.c_str()), v.shortName.c_str(), tileW);
     lv_obj_set_size(t, tileW, tileH);
     if (v.exclusive) lv_obj_set_style_border_color(t, hex(kEffect), 0);  // it takes the whole strip
     // a tap picks it; a hold skips it instead: LVGL sends SHORT_CLICKED only for a release before the hold
@@ -856,10 +857,52 @@ void buildPicker() {
 
 void showPickerTiles() {
   std::string key;
-  for (const Visualizer& v : status.visualizers) key += v.id + "|" + v.shortName + "|" + v.icon + ",";
+  for (const Visualizer& v : status.visualizers) key += v.id + "|" + v.shortName + "|" + v.icon + "|" + v.iconRev + ",";
   if (key == pickerKey) return;
   pickerKey = key;
   buildPicker();
+}
+
+// ---- the visualizer icons from the Chart (icon_store.h) ----------------------------------------------------------
+// The tiles show what the Copilot has (a saved icon, else the built-in one); one it lacks, or one the Chart has
+// changed (its iconRev), is fetched in the background, one at a time, and its tile shows it when it comes.
+
+icon_store::Fetcher iconFetcher;
+std::vector<icon_store::IconDone> iconsIn;
+uint32_t iconsRev = 0;
+
+// Asks for the next icon the tiles lack, if none is on its way and the Chart is online
+void askIcon() {
+  icon_store::Want w;
+  if (!iconFetcher.next(status, icon_store::have, conn.online, millis(), w)) return;
+  if (client->requestIcon(w.name, w.rev)) iconFetcher.asked(millis());
+}
+
+// The tiles whose icon is `name` show it now (no rebuild: their image changes in place)
+void showFetchedIcon(const std::string& name) {
+  for (size_t i = 0; i < pickTiles.size() && i < status.visualizers.size(); i++) {
+    const Visualizer& v = status.visualizers[i];
+    if (v.icon != name) continue;
+    const lv_image_dsc_t* src = vis_icon(v.icon.c_str(), v.iconRev.c_str());
+    if (!src) continue;
+    lv_obj_t* img = lv_obj_get_child(pickTiles[i], 0);
+    lv_image_set_src(img, src);
+    lv_obj_remove_flag(img, LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
+// Fetched icons (and failures) from MapClient: into the pool, onto their tiles; then the next one
+void showIcons() {
+  for (const icon_store::IconDone& d : iconsIn) {
+    bool kept = false;
+    if (d.ok && d.mask.size() == icon_store::kMaskBytes) {
+      kept = icon_store::adopt(d.name, d.rev, d.mask.data(), d.saved);
+      showFetchedIcon(d.name);
+    }
+    iconFetcher.answered(d, kept || d.saved, millis());
+  }
+  iconsIn.clear();
+  askIcon();
 }
 
 void openPicker(lv_event_t*) {
@@ -1874,6 +1917,7 @@ void switchMap(const map_list::Row& r) {
   settings_save_map(r.host, r.port, r.ip, r.name);
   autoOver = true;  // chosen: a first start's looking is over
   client->setMap(r.host.c_str(), r.port, r.ip.c_str());
+  iconFetcher.switched();  // the new Chart may have what the old one hadn't (saved icons stay)
   stream_set_map("http://" + r.host + ":" + std::to_string(r.port));  // spoken METARs and ATIS
   // what the splash shows of the old Chart, till the new one's /api/status comes
   status.ip.clear();
@@ -2701,6 +2745,7 @@ void ui_tick() {
 
   if (client->getStatus(status, statusRev)) {
     showPickerTiles();
+    askIcon();  // an icon the tiles lack, or one the Chart changed
     showSkips();
     showVisualizer(live.valid ? live.activeIndex : status.activeIndex);
     showLegend();
@@ -2719,11 +2764,17 @@ void ui_tick() {
   // after /api/live, so its answer wins over a poll from before it
   if (client->getSkip(skipAnswer, skipRev)) showSkipAnswer();
   expireSkips();
+  if (client->getIcons(iconsIn, iconsRev)) showIcons();
 
-  static uint32_t lastTick = 0;
+  static uint32_t lastTick = 0, lastIconAsk = 0;
   if (millis() - lastTick >= 250) {
     lastTick = millis();
     tickClock();
+  }
+  // a backoff over, the Chart back online, an answer that never came: asked again now and then
+  if (millis() - lastIconAsk >= 5000) {
+    lastIconAsk = millis();
+    askIcon();
   }
 }
 

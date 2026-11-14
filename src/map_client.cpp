@@ -4,6 +4,7 @@
 #include <WiFi.h>
 
 #include "audio.h"
+#include "icon_store.h"
 #include "log.h"
 #include "map_parse.h"
 #include "net_client.h"
@@ -16,6 +17,7 @@ namespace {
 constexpr uint32_t kLiveMs = 1500;         // the /remote page polls every 1 s
 constexpr uint32_t kStatusMs = 60 * 1000;  // and /api/status every minute
 constexpr uint32_t kStatusRetryMs = 5000;  // until the first one answers (after a switch, or Wi-Fi back): this often
+constexpr int kWrongLength = -101;         // getBinary(): a 200 of another length than asked for, or cut short
 // How long the Chart has to start answering, and then between parts of the answer. Waited in turns, so a slow
 // Chart (a Pi Zero busy sending an ATIS) can't hold core 0 and set off the task watchdog.
 constexpr uint32_t kTimeoutMs = 5000;
@@ -64,6 +66,7 @@ void MapClient::setMap(const char* host, uint16_t port, const char* ip) {
   statusRev_++;
   live_ = MapLive();
   liveRev_++;
+  icons_.clear();  // an icon the screen hasn't taken: asked of the old Chart
   xSemaphoreGive(mutex_);
   setConnection(wifi, false, 0);  // offline until the new Chart answers
   LOGF("map: switching to %s:%u (%s)\n", host, (unsigned)port, *ip ? ip : "no IP");
@@ -137,6 +140,28 @@ void MapClient::requestAtis(const std::string& code) {
   Cmd cmd{};
   strlcpy(cmd.atis, code.c_str(), sizeof(cmd.atis));
   if (xQueueSend(queue_, &cmd, 0) != pdTRUE) LOGF("map: command queue full, dropped %s's ATIS\n", cmd.atis);
+}
+
+bool MapClient::requestIcon(const std::string& name, const std::string& rev) {
+  if (!icon_store::validName(name)) return false;  // it goes into a URL and a file name
+  Cmd cmd{};
+  strlcpy(cmd.icon, name.c_str(), sizeof(cmd.icon));
+  if (icon_store::validRev(rev)) strlcpy(cmd.iconRev, rev.c_str(), sizeof(cmd.iconRev));
+  if (xQueueSend(queue_, &cmd, 0) == pdTRUE) return true;
+  LOGF("map: command queue full, dropped icon %s\n", cmd.icon);
+  return false;
+}
+
+bool MapClient::getIcons(std::vector<icon_store::IconDone>& out, uint32_t& rev) {
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  bool changed = rev != iconsRev_;
+  if (changed) {
+    out = std::move(icons_);
+    icons_.clear();
+    rev = iconsRev_;
+  }
+  xSemaphoreGive(mutex_);
+  return changed;
 }
 
 uint32_t MapClient::requestSkip(const std::string& id, bool skip) {
@@ -228,6 +253,8 @@ void MapClient::run() {
     if (xQueueReceive(queue_, &cmd, pdMS_TO_TICKS(50)) == pdTRUE) {
       if (cmd.atis[0]) {
         fetchAtis(cmd.atis);
+      } else if (cmd.icon[0]) {
+        fetchIcon(cmd.icon, cmd.iconRev);
       } else if (cmd.skipId[0]) {
         sendSkip(cmd);
         lastLive = 0;  // the marks from the Chart now
@@ -262,11 +289,10 @@ void MapClient::run() {
   }
 }
 
-// A GET to the Chart, its JSON into `doc`. Not HTTPClient: its header lines and deserializeJson() on its stream read
-// with Stream's timed reads, which spin on core 0 while the Chart is slow (the watchdog restarts the board at 5 s).
-// The status code, or HTTPClient's negative codes for what went wrong.
-int MapClient::get(const char* path, uint32_t timeoutMs, JsonDocument* doc, JsonDocument* filter, bool errorBody) {
-  WiFiClient tcp;
+int MapClient::request(const char* path, uint32_t timeoutMs, WiFiClient& tcp, ClientSource& src, long* length,
+                       std::string* etag) {
+  if (length) *length = -1;
+  if (etag) etag->clear();
   // By the name, or by the IP it was last at while the name doesn't resolve (map_route.h)
   bool byIp = route_.useIp(millis());
   IPAddress addr;
@@ -290,7 +316,6 @@ int MapClient::get(const char* path, uint32_t timeoutMs, JsonDocument* doc, Json
     tcp.stop();
     return HTTPC_ERROR_SEND_HEADER_FAILED;
   }
-  ClientSource src(tcp);
   std::string line;
   NetResult got = readLine(src, millis() + timeoutMs, line);
   if (got != NetResult::Ok) {
@@ -302,14 +327,28 @@ int MapClient::get(const char* path, uint32_t timeoutMs, JsonDocument* doc, Json
     drainAndStop(tcp);
     return HTTPC_ERROR_NO_HTTP_SERVER;
   }
-  for (int i = 0; i < 40; i++) {  // the headers: nothing in them is needed
+  std::string value;
+  for (int i = 0; i < 40; i++) {  // the headers: only the length and ETag, and only when asked for
     got = readLine(src, millis() + timeoutMs, line);
     if (got != NetResult::Ok) {
       drainAndStop(tcp);
       return got == NetResult::TimedOut ? HTTPC_ERROR_READ_TIMEOUT : HTTPC_ERROR_CONNECTION_LOST;
     }
     if (line.empty()) break;
+    if (length && httpHeader(line, "content-length", value)) *length = value.empty() ? -1 : atol(value.c_str());
+    if (etag && httpHeader(line, "etag", value)) *etag = value;
   }
+  return code;
+}
+
+// A GET to the Chart, its JSON into `doc`. Not HTTPClient: its header lines and deserializeJson() on its stream read
+// with Stream's timed reads, which spin on core 0 while the Chart is slow (the watchdog restarts the board at 5 s).
+// The status code, or HTTPClient's negative codes for what went wrong.
+int MapClient::get(const char* path, uint32_t timeoutMs, JsonDocument* doc, JsonDocument* filter, bool errorBody) {
+  WiFiClient tcp;
+  ClientSource src(tcp);
+  int code = request(path, timeoutMs, tcp, src);
+  if (code < 0) return code;
   PatientReader body(src, timeoutMs);
   if (doc && code == HTTP_CODE_BAD_REQUEST && errorBody) {
     // a 400's reason, if it has one: no JSON is still a 400
@@ -324,6 +363,33 @@ int MapClient::get(const char* path, uint32_t timeoutMs, JsonDocument* doc, Json
   }
   drainAndStop(tcp);  // src's read-ahead, if any, is dropped with it
   return code;
+}
+
+bool MapClient::getBinary(const char* path, uint32_t timeoutMs, uint8_t* out, size_t expected, int& code,
+                          std::string& etag) {
+  uint32_t deadline = millis() + timeoutMs;  // all of it, not per part: an icon is 400 bytes
+  WiFiClient tcp;
+  ClientSource src(tcp);
+  long length = -1;
+  code = request(path, timeoutMs, tcp, src, &length, &etag);
+  if (code < 0) return false;
+  if (code != HTTP_CODE_OK || length != (long)expected) {
+    if (code == HTTP_CODE_OK) code = kWrongLength;
+    drainAndStop(tcp);
+    return false;
+  }
+  size_t n = 0;
+  while (n < expected) {
+    int b = readByte(src, deadline);
+    if (b < 0) break;
+    out[n++] = (uint8_t)b;
+  }
+  drainAndStop(tcp);
+  if (n != expected) {
+    code = kWrongLength;  // cut short (a timeout, or the Wi-Fi went)
+    return false;
+  }
+  return true;
 }
 
 void MapClient::pollLive() {
@@ -373,6 +439,44 @@ void MapClient::fetchAtis(const char* code) {
   }
   atis_ = std::move(t);
   atisRev_++;
+  xSemaphoreGive(mutex_);
+}
+
+void MapClient::fetchIcon(const char* name, const char* rev) {
+  icon_store::IconDone d;
+  d.name = name;
+  d.rev = d.askedRev = rev;
+  std::string path = std::string("/api/icon/") + name + (*rev ? std::string("?v=") + rev : std::string());
+  static uint8_t mask[icon_store::kMaskBytes];  // this task's only
+  int code = 0;
+  std::string etag;
+  d.ok = getBinary(path.c_str(), kTimeoutMs, mask, sizeof(mask), code, etag);
+  LOGF("map: %s -> %d\n", path.c_str(), code);
+  if (d.ok) {
+    std::string served = icon_store::etagRev(etag);  // the mask the Chart has now: it may have changed since asked
+    if (!served.empty()) d.rev = served;
+    d.mask.assign(mask, mask + sizeof(mask));
+  } else if (code == HTTP_CODE_NOT_FOUND) {
+    d.why = icon_store::Failure::NotFound;
+  } else if (code == HTTPC_ERROR_CONNECTION_REFUSED || code == HTTPC_ERROR_SEND_HEADER_FAILED) {
+    d.why = icon_store::Failure::Connection;  // not the icon's fault
+  } else {
+    d.why = icon_store::Failure::BadAnswer;  // a timeout, an answer cut short, the wrong length, another status
+  }
+
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  bool old = pending_;
+  xSemaphoreGive(mutex_);
+  if (old) return;  // asked of the old Chart: the switch comes first
+  if (d.ok) d.saved = icon_store::saveFile(d.name, d.rev, mask);
+
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  if (pending_) {
+    xSemaphoreGive(mutex_);
+    return;
+  }
+  icons_.push_back(std::move(d));
+  iconsRev_++;
   xSemaphoreGive(mutex_);
 }
 

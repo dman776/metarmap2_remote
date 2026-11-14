@@ -1,5 +1,7 @@
 #include "net_wait.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cstring>
 
 namespace {
@@ -99,4 +101,17 @@ size_t PatientReader::readBytes(char* buffer, size_t length) {
     buffer[n++] = static_cast<char>(c);
   }
   return n;
+}
+
+bool httpHeader(const std::string& line, const char* lowerName, std::string& value) {
+  size_t colon = line.find(':');
+  size_t n = strlen(lowerName);
+  if (colon != n) return false;
+  if (!std::equal(lowerName, lowerName + n, line.begin(),
+                  [](char want, char c) { return tolower((unsigned char)c) == want; }))
+    return false;
+  size_t start = line.find_first_not_of(" \t", colon + 1);
+  size_t end = line.find_last_not_of(" \t\r\n");
+  value = start == std::string::npos || end < start ? std::string() : line.substr(start, end - start + 1);
+  return true;
 }

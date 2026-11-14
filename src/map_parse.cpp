@@ -66,6 +66,7 @@ void statusFilter(JsonDocument& filter) {
   vis["name"] = true;
   vis["shortName"] = true;
   vis["icon"] = true;
+  vis["iconRev"] = true;
   vis["exclusive"] = true;
   vis["skipped"] = true;
   JsonObject airport = filter["airports"].add<JsonObject>();
@@ -161,6 +162,11 @@ MapStatus parseStatus(JsonVariantConst doc) {
     v.name = vis["name"] | "";
     v.shortName = vis["shortName"] | v.name.c_str();
     v.icon = vis["icon"] | "";
+    v.iconRev = vis["iconRev"] | "";
+    // a Chart with /api/icon sends iconRev for each, null for an icon it has no mask for; an older one leaves it out
+    for (JsonPairConst kv : vis.as<JsonObjectConst>()) {
+      if (kv.key() == "iconRev") status.hasIconRev = true;
+    }
     v.exclusive = vis["exclusive"] | false;
     if (vis["skipped"].is<bool>()) status.hasSkip = true;  // a Chart before it doesn't say
     v.skipped = vis["skipped"] | false;

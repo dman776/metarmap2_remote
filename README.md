@@ -346,9 +346,12 @@ buttons: **Chart**, **Airports**, and the **logo**.
   that drifts a little still taps.
 - Like the Cockpit, a control you just touched keeps your setting for
   3 s while the Chart catches up.
-- The visualizers' icons and short names come from the Chart (metarmap2 after
-  26.11.08); with an older Chart the picker shows each visualizer's name, without
-  an icon.
+- The visualizers' short names come from the Chart (metarmap2 after 26.11.08), and so do their icons: a Chart newer
+  than 26.11.12 serves each one (`/api/icon/<name>`), and the Copilot fetches the ones it lacks and saves them, so a
+  visualizer newer than the firmware (FAA Delays' hourglass) gets its icon too, and an icon the Chart changes follows
+  it within a minute. The icons built into the firmware are the fallback: on a first start without the Chart, or
+  with an older Chart. A visualizer whose icon the Copilot has from neither shows just its name. See
+  [Visualizer icons](#visualizer-icons).
 
 The Cockpit's Map tab (the live map needs a browser), the visualizer's
 description and the Micro switch are left out.
@@ -514,6 +517,33 @@ flash it by USB.) Installing an older release works the same way: nothing on
 the board refuses older firmware (no anti-rollback or secure boot), and the
 settings in flash stay as they are.
 
+### Visualizer icons
+
+Each visualizer's icon is a 20x20 alpha mask (A8: 400 bytes, 0 clear to 255 solid) that the screen draws in the
+tile's text color, so it lights up with the tile and dims when skipped. The Chart serves its masks
+(`GET /api/icon/<name>`, public, no login), and `/api/status` says which mask each visualizer's icon is
+(`visualizers[].iconRev`, 8 hex digits that change when the mask does).
+
+- After each `/api/status` the Copilot works out the icons it lacks: one with nothing saved, or saved at another
+  `iconRev` than the Chart's (an icon built in at the Chart's `iconRev` counts as had). It asks for **one at a time**
+  on the background task, the next only after the last one's answer, and nothing while the Chart is offline, so it
+  never holds up the buttons or the polls. When one comes its tile changes in place (no rebuild).
+- A fetched icon is saved in flash (`/ic/<name>.bin` on LittleFS: a 10-byte header with the `iconRev`, then the
+  mask), written to a `.tmp` file and renamed, so a power cut leaves the old file or none. At startup the saved ones
+  are loaded and a corrupt one is deleted (and fetched again).
+- Which icon a tile shows: a saved one at the Chart's `iconRev` (or any saved one, from a Chart that doesn't say),
+  else the one built in, else an older saved one, else none (just the name).
+- Failures: a 404 waits 10 minutes before that icon is asked for again; a timeout, or an answer that's cut short or
+  isn't exactly 400 bytes, 1 minute (nothing is saved). The Chart not answering at all isn't held against the icon.
+  An older Chart (no `iconRev`) is asked once, for an icon the Copilot has neither saved nor built in; its 404 means
+  it has no `/api/icon`, and it isn't asked again. Switching to another Chart forgets all that (the saved icons stay).
+- The flash they're saved in is the `spiffs` partition of the 16 MB layout (3.4 MB, nothing else uses it), formatted
+  as LittleFS on the first start of this firmware. If it can't be mounted, or is full, a fetched icon is kept in RAM
+  only, till a restart. Firmware updates (over the air, or a factory image) don't touch it; erasing the flash
+  (`pio run -t erase`, or `esptool erase-flash`) clears the saved icons, and they're fetched again.
+- The built-in icons (`src/icons.c`) are the Chart's own masks, so they look the same (Rainbow is three plain arcs in
+  one color). See [Generated files](#generated-files).
+
 Which legend entries are in use comes from the Chart: `/api/live`'s
 `visualizer.legendInUse` names them by the `key` each entry has in
 `/api/status`. The Chart knows exactly what each pixel shows (an estimated MVFR is
@@ -560,6 +590,8 @@ for the endpoints.
 | `src/legend.cpp` | Which legend entries the Chart is showing |
 | `src/pages.cpp` | The Airports panel's pages: alphabetical order, the page strip |
 | `src/skips.cpp` | The picker's skip marks: holds waiting for the Chart's answer, and what to say |
+| `src/icon_store.cpp` | Visualizer icons from the Chart: the saved file's format, the backoff, which to fetch, one at a time (host tested) |
+| `src/icon_store_fs.cpp` | Their files on LittleFS and the images LVGL draws them from |
 | `src/map_state.h` | The Chart's state as the Copilot knows it |
 | `src/lvgl_port.cpp` | Display and touch for LVGL, screenshots |
 | `src/audio.cpp` | The codec, the touch tick, the short sounds and the I2S output |
@@ -578,7 +610,7 @@ for the endpoints.
 | `tools/test_install.py` | Its tests: `python3 -m unittest discover -s tools -p 'test_*.py'` |
 | `tools/shoot.py` | Screenshots over HTTP: opens named screens and saves PNGs (Python only); tested by `tools/test_shoot.py` |
 | `tools/factory.py` | After each build: `factory.bin`, the whole flash for a blank board |
-| `src/logo.c`, `src/star_icon.c`, `src/icons.c` | Images, generated from `assets/*.svg` and `assets/icons/*.svg` |
+| `src/logo.c`, `src/star_icon.c`, `src/icons.c` | Images, generated from `assets/*.svg`, `assets/icons/*.svg` and `assets/icon_masks.py` |
 | `src/github_roots.h` | The certificates trusted for GitHub, generated |
 | `include/lv_conf.h` | LVGL settings and fonts |
 
@@ -590,7 +622,7 @@ The firmware uses the Arduino framework with [LVGL](https://lvgl.io/) 9,
 
 ### Tests and lint
 
-The parsing, legend, paging, skip marks, remote control's requests, update-check, network-wait, debounce and audio (buffer, resampler, URL) code is plain C++ with unit tests that
+The parsing, legend, paging, skip marks, visualizer icons, remote control's requests, update-check, network-wait, debounce and audio (buffer, resampler, URL) code is plain C++ with unit tests that
 run on your computer (PlatformIO's Unity framework). The JSON fixtures in
 `test/test_parse` are real, trimmed answers from a Chart.
 
@@ -723,9 +755,13 @@ python3 tools/screenshot.py /dev/cu.usbmodem* airports.png 2  # Airports first
 
 - `src/logo.c` and `src/star_icon.c` come from `assets/logo.svg` (the Chart's
   header logo) and `assets/star.svg`, and `src/icons.c` and `src/icons.h` from
-  `assets/icons/` (white, so the screens can color them; `vis_<name>.svg` are
-  the visualizers' icons, by the name the Chart sends): `python3
-  tools/make_images.py`, which needs `rsvg-convert` (`brew install librsvg`).
+  `assets/icons/` (white, so the screens can color them) and `assets/icon_masks.py`:
+  `python3 tools/make_images.py`, which needs `rsvg-convert` (`brew install librsvg`).
+- The visualizers' icons come from the Chart (see [Visualizer icons](#visualizer-icons)): a new visualizer's
+  icon needs nothing here. The ones built in, the fallback, are A8 masks from `assets/icon_masks.py`, a copy of
+  metarmap2's `src/metarmap/web/icon_masks.py` (the masks the Chart serves, with their `iconRev`s). To change them,
+  copy a newer one over it and run `make_images.py` again; `make_images.py`'s `COMPILED` lists which are built in
+  (not the hourglass: it comes from the Chart). `tools/test_make_images.py` checks `src/icons.c` matches.
 - `src/sounds.c` and `src/sounds.h` come from the MP3s in `assets/sounds/`
   (`airplane-chime`, `hi-pop`, `lo-pop`), as 16 kHz mono PCM:
   `python3 tools/make_sounds.py`, which needs `ffmpeg` (`brew install ffmpeg`).
