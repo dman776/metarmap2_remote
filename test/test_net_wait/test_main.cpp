@@ -269,6 +269,24 @@ void test_status_codes() {
   TEST_ASSERT_EQUAL_INT(0, httpStatusCode(""));
 }
 
+void test_header_lines() {
+  std::string v;
+  TEST_ASSERT_TRUE(httpHeader("Content-Length: 400", "content-length", v));
+  TEST_ASSERT_EQUAL_STRING("400", v.c_str());
+  TEST_ASSERT_TRUE(httpHeader("Etag: \"7cb23636\"  ", "etag", v));  // Bottle's spelling
+  TEST_ASSERT_EQUAL_STRING("\"7cb23636\"", v.c_str());
+  TEST_ASSERT_TRUE(httpHeader("ETAG:\"x\"\r", "etag", v));
+  TEST_ASSERT_EQUAL_STRING("\"x\"", v.c_str());
+  TEST_ASSERT_TRUE(httpHeader("X-Empty:", "x-empty", v));
+  TEST_ASSERT_EQUAL_STRING("", v.c_str());
+  v = "kept";
+  TEST_ASSERT_FALSE(httpHeader("Content-Type: text/plain", "content-length", v));
+  TEST_ASSERT_FALSE(httpHeader("Content-Length-X: 1", "content-length", v));
+  TEST_ASSERT_FALSE(httpHeader("no colon", "content-length", v));
+  TEST_ASSERT_FALSE(httpHeader("", "etag", v));
+  TEST_ASSERT_EQUAL_STRING("kept", v.c_str());
+}
+
 // ---- a JSON body through PatientReader ----
 
 void test_json_that_comes_slowly() {
@@ -311,6 +329,7 @@ void test_json_cut_off() {
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_line_at_once);
+  RUN_TEST(test_header_lines);
   RUN_TEST(test_a_slow_answer_waits_in_turns);
   RUN_TEST(test_a_line_in_pieces);
   RUN_TEST(test_no_answer_by_the_deadline);

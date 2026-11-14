@@ -267,6 +267,22 @@ void test_status_skipped() {
   for (const Visualizer& v : older.visualizers) TEST_ASSERT_FALSE(v.skipped);
 }
 
+// A Chart with /api/icon says each icon's iconRev (null for one it has no mask for); an older one doesn't
+void test_status_icon_rev() {
+  MapStatus status = parseStatus(filtered(kStatusIconRevJson, statusFilter).as<JsonVariantConst>());
+  TEST_ASSERT_TRUE(status.hasIconRev);
+  TEST_ASSERT_EQUAL_UINT(3, status.visualizers.size());
+  TEST_ASSERT_EQUAL_STRING("7cb23636", status.visualizers[0].iconRev.c_str());
+  TEST_ASSERT_EQUAL_STRING("hourglass", status.visualizers[1].icon.c_str());
+  TEST_ASSERT_EQUAL_STRING("3e3d702c", status.visualizers[1].iconRev.c_str());
+  TEST_ASSERT_EQUAL_STRING("", status.visualizers[2].iconRev.c_str());  // null: no mask for it
+
+  MapStatus older = parseStatus(filtered(kStatusSkipJson, statusFilter).as<JsonVariantConst>());
+  TEST_ASSERT_FALSE(older.hasIconRev);
+  for (const Visualizer& v : older.visualizers) TEST_ASSERT_EQUAL_STRING("", v.iconRev.c_str());
+  TEST_ASSERT_FALSE(parseStatus(filtered(kStatusJson, statusFilter).as<JsonVariantConst>()).hasIconRev);
+}
+
 // /visualizer/<id>/skip and /unskip's answers
 void test_skip_answer() {
   JsonDocument doc;
@@ -409,6 +425,7 @@ int main() {
   RUN_TEST(test_status);
   RUN_TEST(test_status_name);
   RUN_TEST(test_status_skipped);
+  RUN_TEST(test_status_icon_rev);
   RUN_TEST(test_skip_answer);
   RUN_TEST(test_status_airports);
   RUN_TEST(test_version_text);

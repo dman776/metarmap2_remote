@@ -7,6 +7,7 @@
 #include "board_es3c28p.h"
 #include "display.h"
 #include "firmware_version.h"
+#include "icon_store.h"
 #include "last_run.h"
 #include "log.h"
 #include "lvgl_port.h"
@@ -107,6 +108,8 @@ void setup() {
     WiFi.begin(settings.wifiName.c_str(), settings.wifiPassword.c_str());
   }
 
+  // the icons saved from the Chart (LittleFS, formatted the first time), before MapClient's task can save another
+  icon_store::begin();
   // a copy: the map picker switches it with setMap(); the saved IP for when the name doesn't resolve
   mapClient.begin(mapHost.c_str(), settings.mapPort, settings.mapIp.c_str());
   updater.begin(settings);

@@ -64,6 +64,10 @@ NetResult readLine(NetSource& src, uint32_t deadline, std::string& out, size_t m
 // The code in an HTTP status line ("HTTP/1.0 200 OK", or Shoutcast's "ICY 200 OK"); 0 if it isn't one.
 int httpStatusCode(const std::string& line);
 
+// A header line's value if its name is `lowerName` (written in lower case; the line's in any case: Bottle sends
+// "Etag"), without the spaces around it: true then
+bool httpHeader(const std::string& line, const char* lowerName, std::string& value);
+
 // A body for deserializeJson() (ArduinoJson takes any reader with these two): each byte waited for in turns, up to
 // `idleMs` after the last; then it reads as the end, and the JSON as incomplete.
 class PatientReader {

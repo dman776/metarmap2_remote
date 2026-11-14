@@ -16,6 +16,9 @@ struct Visualizer {
   std::string name;
   std::string shortName;  // the name where there's little room (the picker); the name from a map without it
   std::string icon;       // what its icon shows (icons.h vis_icon()); "" from a map without it
+  // which of the Chart's masks its icon is (8 hex digits, /api/icon/<icon>'s ETag): "" from a Chart without
+  // /api/icon, or for an icon it has no mask for (icon_store.h)
+  std::string iconRev;
   bool exclusive = false;
   bool skipped = false;  // auto-rotate leaves it out (visualizer.auto_rotate.skip); false for an exclusive one
 };
@@ -48,6 +51,8 @@ struct MapStatus {
   std::vector<LegendItem> legend;
   std::vector<Visualizer> visualizers;
   bool hasSkip = false;  // the visualizers say whether auto-rotate skips them (a Chart after 26.11.10, B83)
+  // the visualizers say their iconRev (even null): the Chart serves /api/icon (newer than 26.11.12)
+  bool hasIconRev = false;
   std::vector<AirportInfo> airports;  // in LED order
 };
 

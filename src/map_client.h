@@ -13,9 +13,14 @@
 #include <freertos/semphr.h>
 
 #include <string>
+#include <vector>
 
+#include "icon_store.h"
 #include "map_route.h"
 #include "map_state.h"
+
+class ClientSource;
+class WiFiClient;
 
 // How the Chart is reached now (map_route.h): its saved address, the IP it was last reached at, and whether requests
 // go to that IP (the name doesn't resolve)
@@ -56,6 +61,14 @@ class MapClient {
   void requestAtis(const std::string& code);
   bool getAtis(AtisTranscript& out, uint32_t& rev);
 
+  // A visualizer icon (/api/icon/<name>?v=<rev>: a 20x20 A8 mask), fetched in the background and saved
+  // (icon_store.h); getIcons() has the answer then, a failure too. `rev` is the iconRev asked for ("" from a Chart
+  // that doesn't send one). false if it couldn't be queued. The screen asks for one at a time (icon_store::Fetcher):
+  // the queue is shared with the buttons.
+  bool requestIcon(const std::string& name, const std::string& rev);
+  // The answers that came since `rev`, moved into `out` (each is given once)
+  bool getIcons(std::vector<icon_store::IconDone>& out, uint32_t& rev);
+
   bool getStatus(MapStatus& out, uint32_t& rev);
   bool getLive(MapLive& out, uint32_t& rev);
   bool getConnection(Connection& out, uint32_t& rev);
@@ -70,8 +83,10 @@ class MapClient {
  private:
   struct Cmd {
     char path[64];
-    char atis[8];     // an airport whose ATIS lines to fetch, instead of a command
-    char skipId[32];  // a visualizer to skip or unskip (skipOn), instead of a command
+    char atis[8];                             // an airport whose ATIS lines to fetch, instead of a command
+    char skipId[32];                          // a visualizer to skip or unskip (skipOn), instead of a command
+    char icon[icon_store::kNameMax + 1];      // a visualizer icon to fetch, instead of a command
+    char iconRev[icon_store::kRevChars + 1];  // its iconRev ("" for none)
     bool skipOn;
     uint32_t skipSeq;   // its number, for its answer
     uint32_t queuedAt;  // millis() when it was queued
@@ -81,9 +96,19 @@ class MapClient {
   void run();
   // GET path; with doc, its JSON (through filter, if any) when it's a 200, or a 400 too with errorBody
   int get(const char* path, uint32_t timeoutMs, JsonDocument* doc, JsonDocument* filter, bool errorBody = false);
+  // GET path, a binary answer of exactly `expected` bytes into `out`, all of it within `timeoutMs`: true for a 200
+  // that says (Content-Length) and gives that many. `code`: the status, or a negative HTTPClient code; `etag` its
+  // ETag header ("" without one)
+  bool getBinary(const char* path, uint32_t timeoutMs, uint8_t* out, size_t expected, int& code, std::string& etag);
+  // What get() and getBinary() share: connects (by name or IP), sends the GET and reads the status line and headers,
+  // leaving `src` at the body. The status code, or a negative HTTPClient code with `tcp` closed. `length`: the
+  // Content-Length (-1 without one), `etag` the ETag, if asked for.
+  int request(const char* path, uint32_t timeoutMs, WiFiClient& tcp, ClientSource& src, long* length = nullptr,
+              std::string* etag = nullptr);
   bool pollStatus();  // true once it has the Chart's /api/status
   void pollLive();
   void fetchAtis(const char* code);
+  void fetchIcon(const char* name, const char* rev);
   void sendSkip(const Cmd& cmd);
   void setConnection(bool wifi, bool online, int httpCode);
   // A switch setMap() asked for: applied (true) between requests, on the task, which then starts over
@@ -110,6 +135,8 @@ class MapClient {
   MapLive live_;
   AtisTranscript atis_;
   uint32_t atisRev_ = 0;
+  std::vector<icon_store::IconDone> icons_;  // answers the screen hasn't taken yet
+  uint32_t iconsRev_ = 0;
   SkipAnswer skip_;
   uint32_t skipRev_ = 0;
   uint32_t skipSeq_ = 0;  // the last skip command's number (requestSkip(), on the screen's task only)

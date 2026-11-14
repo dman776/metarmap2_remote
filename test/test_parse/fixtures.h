@@ -463,3 +463,19 @@ static const char* kStatusSkipJson = R"json({
  ],
  "config": {"visualizer.auto_rotate.skip": ["wind"]}
 })json";
+
+// A Chart that serves its icons (/api/icon/<name>, newer than 26.11.12): each visualizer's iconRev, the ETag of its
+// mask, and null for an icon it has no mask for; trimmed as in metarmap2's API.md. kStatusJson and kStatusSkipJson
+// above are from a Chart before it.
+static const char* kStatusIconRevJson = R"json({
+ "version": "26.11.13",
+ "visualizer": {"active": 0, "legend": [], "icon": "plane", "iconRev": "7cb23636"},
+ "visualizers": [
+  {"index": 0, "id": "flight_category", "name": "Flight Category", "shortName": "Flight Cat", "icon": "plane",
+   "iconRev": "7cb23636", "exclusive": false, "skipped": false},
+  {"index": 1, "id": "faa_delays", "name": "FAA Delays", "shortName": "Delays", "icon": "hourglass",
+   "iconRev": "3e3d702c", "exclusive": false, "skipped": false},
+  {"index": 2, "id": "custom", "name": "Custom", "shortName": "Custom", "icon": "sparkle", "iconRev": null,
+   "exclusive": false, "skipped": false}
+ ]
+})json";
