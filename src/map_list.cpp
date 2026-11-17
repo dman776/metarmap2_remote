@@ -132,6 +132,18 @@ std::vector<Row> rows(const std::vector<Found>& found, const Current& current, s
   return out;
 }
 
+WebPickResult findPick(const std::vector<Row>& rows, const std::string& host, uint16_t port) {
+  WebPickResult out;
+  std::string want = normalHost(host);
+  if (want.empty()) return out;
+  auto it = std::find_if(rows.begin(), rows.end(),
+                         [&](const Row& r) { return r.port == port && normalHost(r.host) == want; });
+  if (it == rows.end()) return out;
+  out.row = *it;
+  out.result = it->current ? WebPick::Current : WebPick::Switch;
+  return out;
+}
+
 namespace {
 
 // U+00C0 to U+00FF without their accents (x for the multiplication sign, / for division)

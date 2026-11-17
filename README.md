@@ -106,9 +106,15 @@ buttons: **Chart**, **Airports**, and the **logo**.
   once a second), and **Download PNG**.
 - **Firmware**: the installed and available versions, the update channel and
   branch (or, on **Pick release**, the release), **Check now** and **Install**, with its progress.
+- **Maps on the network**: the same list as the globe on the Copilot's splash (**Several maps**). **Find maps**
+  scans the network once (about 3 s; "Scanning..." till it's in: nothing scans until you press it), then lists
+  each Chart that announces itself: its name, its address (`host:port`, the port only when it isn't 80) and its
+  version, the one in use marked **In use**. Click another to switch to it at once, as a tap on the screen does: no
+  Save, no restart; the Copilot shows its splash connecting to it, and the Chart address below shows it. Only a map
+  the last scan found can be picked here; for any other Chart, type its address in **Settings**.
 - **Settings**: the Wi-Fi network and password, and the Chart's address and port;
   saving restarts the Copilot with them. Leave the address (and port) empty to let the Copilot find the Chart
-  itself after the restart (**First start**, under **Several maps**); an empty port is 80. A map picked on the Copilot's screen (**Several maps**) shows here as the
+  itself after the restart (**First start**, under **Several maps**); an empty port is 80. A map picked on the Copilot's screen (**Several maps**) or in **Maps on the network** shows here as the
   Chart's address, with no restart. If it can't join the new network, use
   **Wi-Fi setup** on its screen (below). A USB build's `secrets.h` applies only
   when it changes, so what you save on the page stays.
@@ -155,8 +161,12 @@ buttons: **Chart**, **Airports**, and the **logo**.
   `newer`, for Pick release)), and `POST /api/connection`, `/api/channel` (`channel=releases`, `latest`, `branch`
   with `branch=<name>`, or `release` with `release=v26.11.08`; the one not sent stays as it was), `/api/check`,
   `/api/install`, `/api/password`, `/api/led` (`brightness=0`-`100`), `/api/sounds` and `/api/remote-control` (each
-  `on=1` or `0`). With remote control on, also `GET /api/ui/state` and `POST /api/ui/show`, `/api/ui/card` and
-  `/api/ui/visualizer` ([Screenshots over HTTP](#screenshots-over-http)). Every `POST` needs the header
+  `on=1` or `0`). The map list: `GET /api/maps` (`scanning`, `done`, `error` such as `Not on Wi-Fi`, and `maps`:
+  each `name`, `address`, `version`, `host`, `port`, `current`, `announced`), `POST /api/maps/scan` (starts a
+  scan, answers at once) and `POST /api/maps/pick` (`host=` and `port=` of one of `maps`: 404 for a map the last
+  scan didn't find; 409 while a scan runs, in Wi-Fi setup, or while a firmware update installs, whether it was
+  started on the screen or with the page's **Install**). With remote control on, also `GET /api/ui/state` and
+  `POST /api/ui/show`, `/api/ui/card` and `/api/ui/visualizer` ([Screenshots over HTTP](#screenshots-over-http)). Every `POST` needs the header
   `X-Copilot: 1`, and the address has to be the Copilot's IP or `metarmap-copilot.local`
   ([Network and security](#network-and-security)).
 
@@ -227,8 +237,12 @@ buttons: **Chart**, **Airports**, and the **logo**.
   moved the Pi), that IP is saved instead. This works for an address typed on the web page too, once it has
   answered.
 - ⟳ scans again; ✕ (or a tap beside the list) closes it. The logo's splash stays open while the picker is, and
-  30 s after it was last used. The Copilot only asks the network when the picker opens (and on a first start,
-  below): nothing scans in the background.
+  30 s after it was last used. The Copilot only asks the network when the picker opens, on the web page's **Find
+  maps** (**Web page**, above) and on a first start (below): nothing scans in the background.
+- The web page's **Maps on the network** is the same list, from a browser: a pick there switches the Copilot the
+  same way (it shows the connecting splash from whatever screen it was on, closing the update screen, an open card
+  or sheet; not during Wi-Fi setup or while a firmware update installs, which the page then says). It counts as
+  a choice, as a tap does: a first start's looking for a map (below) is over.
 - **First start**: a Copilot that has no map picked or typed (a new one, with the setup page's Chart address left
   empty, or one whose address was emptied on the web page's Settings) looks for one itself, once it's on Wi-Fi:
   the same 3 s scan. Meanwhile it tries `metarmap.local`, the installer's usual hostname. Exactly one Chart found:
@@ -453,7 +467,10 @@ by GitHub without a `secrets.h`. To build one without yours, move
 ## Network and security
 
 To find Charts for the map picker the Copilot asks the local network (mDNS/DNS-SD, `_metarmap2._tcp`), only
-while the picker opens. A Chart announces just its name, address, port, version and `/api/status`: no login.
+while the picker opens (or on the web page's **Find maps**, or a first start). A pick on the web page is refused
+unless the last scan found that map, so a request can't point the Copilot at an address of its choosing that way
+(the Settings form's Chart address, behind the same login and `X-Copilot` header, still can). A Chart announces
+just its name, address, port, version and `/api/status`: no login.
 
 The Copilot only uses the Chart's endpoints that need no login: `/api/live`,
 `/api/status`, `/visualizer/...`, `/brightness/...`, `/locate/...`, and
@@ -567,13 +584,19 @@ lookups in a row it goes to the saved IP instead, until that stops answering or 
 unit tested). On a first start, `map_list::autoPick()` (unit tested) decides from a scan's answers: use the one
 Chart, open the picker, scan again, or leave it.
 
+The web page's map list uses the same scan and rows. `POST /api/maps/scan` starts the scan and answers at once (the
+scan runs on its task: the web server and Wi-Fi setup aren't held up), and the page polls `GET /api/maps`. A pick
+(`POST /api/maps/pick`) is checked against the last scan's rows (`map_list::findPick()`, unit tested) and then
+switches as a tap on the screen does (`ui_switch_map()`): the web server answers on `loop()`'s task, the one LVGL
+runs on, so the switch runs there directly, as remote control's requests do; nothing is handed between tasks.
+
 See the [MetarMap2 API documentation](https://github.com/dman776/metarmap2/blob/master/API.md)
 for the endpoints.
 
 | File | What it does |
 |---|---|
 | `src/main.cpp` | Setup, Wi-Fi, the main loop, serial commands |
-| `src/remote_web.cpp`, `src/remote_web_page.h` | The Copilot's own web page: settings, firmware, the log, screenshots |
+| `src/remote_web.cpp`, `src/remote_web_page.h` | The Copilot's own web page: settings, firmware, the maps on the network, the log, screenshots |
 | `src/log.cpp`, `src/log_ring.cpp` | Logging to serial and the last 32 KB kept for the web page |
 | `src/png.cpp` | Screenshots as PNG (compressed by the ESP32-S3 ROM's deflate on the board) |
 | `src/wifi_setup.cpp`, `src/remote_setup_page.h` | Wi-Fi setup: the Copilot's own network, the captive portal, the setup page |
@@ -585,7 +608,7 @@ for the endpoints.
 | `src/map_client.cpp` | Polling the Chart and sending controls, on its own task |
 | `src/map_parse.cpp` | The API's JSON into `MapLive` and `MapStatus` |
 | `src/map_scan.cpp` | The map picker's scan: the Charts on the network (mDNS), on its own task |
-| `src/map_list.cpp` | The map picker's rows: one per Chart, sorted, the one in use marked, the address to save; the splash's map name; a first start's pick |
+| `src/map_list.cpp` | The map picker's rows: one per Chart, sorted, the one in use marked, the address to save; the splash's map name; a first start's pick; the web page's pick check |
 | `src/map_route.cpp` | Reaching the Chart by its name, or by its saved IP while the name doesn't resolve |
 | `src/legend.cpp` | Which legend entries the Chart is showing |
 | `src/pages.cpp` | The Airports panel's pages: alphabetical order, the page strip |

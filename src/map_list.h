@@ -71,6 +71,22 @@ Row toRow(const Found& f);
 // /api/status name, else its saved host, at its saved address)
 std::vector<Row> rows(const std::vector<Found>& found, const Current& current, size_t cap = kMaxMaps);
 
+// ---- a pick on the Copilot's web page (POST /api/maps/pick) ----
+
+enum class WebPick {
+  Switch,    // a found map, not the one in use: switch to it
+  Current,   // the map in use already: nothing to do
+  NotFound,  // not among the last scan's rows: refused (only a map the scan found can be picked from the web)
+};
+
+struct WebPickResult {
+  WebPick result = WebPick::NotFound;
+  Row row;  // the row picked (Switch, Current)
+};
+
+// The row of `rows` (the last scan's, as rows() made them) with this host (any case, a trailing dot or not) and port
+WebPickResult findPick(const std::vector<Row>& rows, const std::string& host, uint16_t port);
+
 // ---- names on the screen ----
 
 // A name as the build's fonts can draw it (Montserrat, ASCII only): UTF-8 accented Latin letters lose their accent

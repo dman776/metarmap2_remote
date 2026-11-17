@@ -338,6 +338,48 @@ void test_auto_pick_never_over_a_chosen_or_answering_map() {
   TEST_ASSERT_TRUE(map_list::autoPick(one, picking).step == map_list::AutoStep::Nothing);
 }
 
+void test_find_pick_switches_only_to_a_found_map() {
+  std::vector<Found> found = {
+      chart("Austin", "10.0.0.5", 8080, "metarmap2-000005"),
+      chart("Dallas", "10.0.0.6", 80, "metarmap2-000006"),
+  };
+  std::vector<Row> r = map_list::rows(found, saved("metarmap2-000006.local"));
+  map_list::WebPickResult p = map_list::findPick(r, "metarmap2-000005.local", 8080);
+  TEST_ASSERT_TRUE(p.result == map_list::WebPick::Switch);
+  TEST_ASSERT_EQUAL_STRING("Austin", p.row.name.c_str());
+  TEST_ASSERT_EQUAL_STRING("10.0.0.5", p.row.ip.c_str());
+  // any case, a trailing dot
+  TEST_ASSERT_TRUE(map_list::findPick(r, "METARMAP2-000005.local.", 8080).result == map_list::WebPick::Switch);
+  // the one in use: nothing to do
+  p = map_list::findPick(r, "metarmap2-000006.local", 80);
+  TEST_ASSERT_TRUE(p.result == map_list::WebPick::Current);
+  TEST_ASSERT_EQUAL_STRING("Dallas", p.row.name.c_str());
+  // anything the scan didn't find: refused (another port, another host, its IP when the row has its name, none)
+  TEST_ASSERT_TRUE(map_list::findPick(r, "metarmap2-000005.local", 80).result == map_list::WebPick::NotFound);
+  TEST_ASSERT_TRUE(map_list::findPick(r, "evil.example.com", 80).result == map_list::WebPick::NotFound);
+  TEST_ASSERT_TRUE(map_list::findPick(r, "10.0.0.5", 8080).result == map_list::WebPick::NotFound);
+  TEST_ASSERT_TRUE(map_list::findPick(r, "", 80).result == map_list::WebPick::NotFound);
+  TEST_ASSERT_TRUE(map_list::findPick({}, "metarmap2-000005.local", 8080).result == map_list::WebPick::NotFound);
+}
+
+void test_find_pick_the_unannounced_current_map_is_current() {
+  std::vector<Row> r = map_list::rows({chart("Austin", "10.0.0.5")}, saved("metarmap.local", 5000));
+  TEST_ASSERT_TRUE(map_list::findPick(r, "metarmap.local", 5000).result == map_list::WebPick::Current);
+  TEST_ASSERT_TRUE(map_list::findPick(r, "10.0.0.5", 80).result == map_list::WebPick::Switch);
+}
+
+void test_find_pick_a_map_saved_by_its_ip() {
+  // its mDNS host name is unusable (a space): the row's host is its IPv4 address (hostToSave()), picked by that
+  std::vector<Row> r = map_list::rows({chart("Austin", "10.0.0.5", 8080, "bad host")}, saved("metarmap.local"));
+  TEST_ASSERT_EQUAL_STRING("10.0.0.5", r[0].host.c_str());
+  map_list::WebPickResult p = map_list::findPick(r, "10.0.0.5", 8080);
+  TEST_ASSERT_TRUE(p.result == map_list::WebPick::Switch);
+  TEST_ASSERT_EQUAL_STRING("Austin", p.row.name.c_str());
+  TEST_ASSERT_EQUAL_STRING("10.0.0.5", p.row.ip.c_str());
+  TEST_ASSERT_TRUE(map_list::findPick(r, "10.0.0.5", 80).result == map_list::WebPick::NotFound);
+  TEST_ASSERT_TRUE(map_list::findPick(r, "bad host", 8080).result == map_list::WebPick::NotFound);
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_address_leaves_out_port_80);
@@ -364,5 +406,8 @@ int main() {
   RUN_TEST(test_auto_pick_two_maps_open_the_picker);
   RUN_TEST(test_auto_pick_none_scans_again_then_stops);
   RUN_TEST(test_auto_pick_never_over_a_chosen_or_answering_map);
+  RUN_TEST(test_find_pick_switches_only_to_a_found_map);
+  RUN_TEST(test_find_pick_the_unannounced_current_map_is_current);
+  RUN_TEST(test_find_pick_a_map_saved_by_its_ip);
   return UNITY_END();
 }
