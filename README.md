@@ -109,7 +109,7 @@ buttons: **Chart**, **Airports**, and the **logo**.
 - **Maps on the network**: the same list as the globe on the Copilot's splash (**Several maps**). **Find maps**
   scans the network once (about 3 s; "Scanning..." till it's in: nothing scans until you press it), then lists
   each Chart that announces itself: its name, its address (`host:port`, the port only when it isn't 80) and its
-  version, the one in use marked **In use**. Click another to switch to it at once, as a tap on the screen does: no
+  version with its build, as on the screen (`v26.11.12`, or `v26.11.12+8 7df0437`), the one in use marked **In use**. Click another to switch to it at once, as a tap on the screen does: no
   Save, no restart; the Copilot shows its splash connecting to it, and the Chart address below shows it. Only a map
   the last scan found can be picked here; for any other Chart, type its address in **Settings**.
 - **Settings**: the Wi-Fi network and password, and the Chart's address and port;
@@ -162,7 +162,7 @@ buttons: **Chart**, **Airports**, and the **logo**.
   with `branch=<name>`, or `release` with `release=v26.11.08`; the one not sent stays as it was), `/api/check`,
   `/api/install`, `/api/password`, `/api/led` (`brightness=0`-`100`), `/api/sounds` and `/api/remote-control` (each
   `on=1` or `0`). The map list: `GET /api/maps` (`scanning`, `done`, `error` such as `Not on Wi-Fi`, and `maps`:
-  each `name`, `address`, `version`, `host`, `port`, `current`, `announced`), `POST /api/maps/scan` (starts a
+  each `name`, `address`, `version` (as shown, with the build), `host`, `port`, `current`, `announced`), `POST /api/maps/scan` (starts a
   scan, answers at once) and `POST /api/maps/pick` (`host=` and `port=` of one of `maps`: 404 for a map the last
   scan didn't find; 409 while a scan runs, in Wi-Fi setup, or while a firmware update installs, whether it was
   started on the screen or with the page's **Install**). With remote control on, also `GET /api/ui/state` and
@@ -223,7 +223,11 @@ buttons: **Chart**, **Airports**, and the **logo**.
 - With more than one Chart on the network, the Copilot can switch between them. Tap the logo, then the globe at
   the splash's top left: "Maps on the network" scans for about 3 s ("Scanning the network..."), then lists each
   Chart that announces itself, a row each: its name (the Chart's map name, or its Pi's hostname), its address (IP,
-  with `:port` when it isn't 80) and its version. The Chart in use is lit and says **In use**; it's always listed,
+  with `:port` when it isn't 80) and its version: `v26.11.12+8 7df0437` for a Chart running 8 commits after its
+  newest release tag (it announces its build then), else plain `v26.11.12`: on a release, and for any Chart that
+  announces no build (an untagged version bump, a pre-release tag, no tag, a modified checkout, no git, or an
+  older Chart). The Chart's own version line (its splash, the Copilot's for the Chart in use) can say more, such
+  as ` modified` or the commit, than its row does. A long line ends in dots. The Chart in use is lit and says **In use**; it's always listed,
   even if it doesn't announce itself (named by its saved address, "not announced").
 - Tap another row to switch to it at once, with no restart: the splash says "Connecting to the Chart..." with the
   Chart's name on the line under it until it answers, then the Copilot fades in with that Chart's visualizers,
@@ -575,7 +579,9 @@ effect.
 
 The map picker asks the network for `_metarmap2._tcp` once when it opens (or ⟳), on its own short-lived task (ESP-IDF's
 `mdns_query_ptr()`, 3 s, up to 20 answers), keeps one row per Chart (its IPv4 and IPv6 answers merged; an answer
-without an address is looked up by its host name) and at most 8, sorted by name, the one in use always kept
+without an address is looked up by its host name; its TXT record's `version`, and `commit` and `ahead` from a Chart
+that announces its build, make the shown version, `map_list::versionText()`, which ignores a commit that isn't hex
+or an `ahead` that isn't a number) and at most 8, sorted by name, the one in use always kept
 (`src/map_list.cpp`, unit tested). Picking one saves it and hands it to the polling task (`MapClient::setMap()`): it
 finishes the request under way, drops that answer (the old Chart's), and polls the new Chart from then on, its
 `/api/status` first; the spoken weather's address changes with it, the old Chart's state is cleared, and commands

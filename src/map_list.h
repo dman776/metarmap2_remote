@@ -20,6 +20,10 @@ struct Found {
   std::string ip;        // its IPv4 address, "192.168.1.50"; "" without one
   uint16_t port = 80;
   std::string version;  // the TXT record's version, "26.11.10"; "" without one
+  // its build, from the TXT record (a Chart that knows it; "" from an older one): the commit, "7df0437", and how many
+  // commits it is after the release tag, "8" ("0" on a release). As received: versionText() checks them.
+  std::string commit;
+  std::string ahead;
 };
 
 // The map the Copilot uses now: as saved (the web page's Chart address, or a map picked here), and what its
@@ -47,8 +51,14 @@ struct Row {
 // "192.168.1.50", or "192.168.1.50:8080" for a port other than 80
 std::string address(const std::string& host, uint16_t port);
 
-// The TXT version as the splash shows a Chart's: "26.11.10" -> "v26.11.10"; one with its v as it is; "" for none
-std::string versionText(const std::string& version);
+// A found Chart's version as its row shows it: "26.11.10" -> "v26.11.10"; one with its v as it is; "" for none.
+// "v26.11.12+8 7df0437" only for a Chart that announces its build (`commit`, `ahead` in its TXT record): a Chart
+// announces them only when it runs its newest release tag plus `ahead` commits. Plain "v26.11.12" for a release
+// (ahead 0) and for any Chart that announces no build (an untagged version bump, a pre-release tag, no tag, a
+// modified checkout, no git, or a Chart from before them). So the row can say less than the Chart's own version
+// (its splash line, from /api/status) does: no " modified", and no commit in those cases. They come from the
+// network: a commit that isn't 7-40 of [0-9a-f] (shown as its first 7), or an ahead that isn't 1-5 digits, is none.
+std::string versionText(const std::string& version, const std::string& commit = "", const std::string& ahead = "");
 
 // The host to save for a found Chart: its mDNS host name as "<host>.local" (lowercase, no trailing dot) when it has a
 // usable one, else its IP; "" with neither

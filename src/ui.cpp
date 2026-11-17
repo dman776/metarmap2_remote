@@ -1975,7 +1975,8 @@ void showMaps() {
     lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
     std::string detail = r.address + (r.version.empty() ? "" : "  " + r.version);
     if (!r.announced) detail += "  (not announced)";
-    lv_obj_t* sub = label(text, detail.c_str(), &lv_font_montserrat_12, kMuted);
+    // the version is the network's (the TXT record's, or the unannounced row's /api/status): as the fonts can draw it
+    lv_obj_t* sub = label(text, map_list::plainText(detail).c_str(), &lv_font_montserrat_12, kMuted);
     lv_obj_set_size(sub, LV_PCT(100), lv_font_get_line_height(&lv_font_montserrat_12));
     lv_label_set_long_mode(sub, LV_LABEL_LONG_DOT);
     if (r.current) label(row, "In use", &lv_font_montserrat_12, kAccent);

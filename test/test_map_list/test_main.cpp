@@ -380,6 +380,69 @@ void test_find_pick_a_map_saved_by_its_ip() {
   TEST_ASSERT_TRUE(map_list::findPick(r, "bad host", 8080).result == map_list::WebPick::NotFound);
 }
 
+void test_version_text_with_the_build() {
+  using map_list::versionText;
+  TEST_ASSERT_EQUAL_STRING("v26.11.12+8 7df0437", versionText("26.11.12", "7df0437", "8").c_str());
+  // on its release, or an older Chart that doesn't announce its build
+  TEST_ASSERT_EQUAL_STRING("v26.11.12", versionText("26.11.12", "7df0437", "0").c_str());
+  TEST_ASSERT_EQUAL_STRING("v26.11.12", versionText("26.11.12").c_str());
+  TEST_ASSERT_EQUAL_STRING("v26.11.12", versionText("26.11.12", "", "8").c_str());
+  TEST_ASSERT_EQUAL_STRING("v26.11.12", versionText("26.11.12", "7df0437", "").c_str());
+  // a full hash: its first 7; leading zeros in ahead dropped
+  TEST_ASSERT_EQUAL_STRING("v26.11.12+8 7df0437",
+                           versionText("26.11.12", "7df04370123456789abcdef0123456789abcdef0", "008").c_str());
+  // anything else from the network is ignored: not hex (or upper case), too short or long, ahead not digits
+  TEST_ASSERT_EQUAL_STRING("v26.11.12", versionText("26.11.12", "7DF0437", "8").c_str());
+  TEST_ASSERT_EQUAL_STRING("v26.11.12", versionText("26.11.12", "7df04\n7", "8").c_str());
+  TEST_ASSERT_EQUAL_STRING("v26.11.12", versionText("26.11.12", "7df04", "8").c_str());
+  TEST_ASSERT_EQUAL_STRING("v26.11.12", versionText("26.11.12", std::string(41, 'a'), "8").c_str());
+  TEST_ASSERT_EQUAL_STRING("v26.11.12", versionText("26.11.12", "7df0437", "-8").c_str());
+  TEST_ASSERT_EQUAL_STRING("v26.11.12", versionText("26.11.12", "7df0437", "8 x").c_str());
+  TEST_ASSERT_EQUAL_STRING("v26.11.12", versionText("26.11.12", "7df0437", "999999").c_str());
+  TEST_ASSERT_EQUAL_STRING("v26.11.12", versionText("26.11.12", "7df043", "8").c_str());  // 6: too short
+  TEST_ASSERT_EQUAL_STRING("v26.11.12", versionText("26.11.12", "7df0437", "00000").c_str());
+  TEST_ASSERT_EQUAL_STRING("v26.11.12+99999 7df0437", versionText("26.11.12", "7df0437", "99999").c_str());
+  // a NUL inside the hash, or after it (a TXT value has a length: it isn't a C string)
+  const char nulInside[] = {'7', 'd', 'f', '\0', '4', '3', '7'};
+  const char nulAfter[] = {'7', 'd', 'f', '0', '4', '3', '7', '\0'};
+  TEST_ASSERT_EQUAL_STRING("v26.11.12", versionText("26.11.12", std::string(nulInside, 7), "8").c_str());
+  TEST_ASSERT_EQUAL_STRING("v26.11.12", versionText("26.11.12", std::string(nulAfter, 8), "8").c_str());
+  // no version: nothing, build or not
+  TEST_ASSERT_EQUAL_STRING("", versionText("", "7df0437", "8").c_str());
+}
+
+void test_rows_show_the_build_from_the_answer_with_the_version() {
+  // its IPv6 answer has the version and build, its IPv4 one the address: one row with both
+  Found v6 = chart("Houston map", "", 80, "metarmap2-a1b2c3", "26.11.12");
+  v6.commit = "7df0437";
+  v6.ahead = "8";
+  Found v4 = chart("Houston map", "10.0.0.5", 80, "metarmap2-a1b2c3.local.");
+  std::vector<Row> r = map_list::rows({v4, v6}, saved(""));
+  TEST_ASSERT_EQUAL_INT(1, r.size());
+  TEST_ASSERT_EQUAL_STRING("v26.11.12+8 7df0437", r[0].version.c_str());
+}
+
+void test_merge_takes_the_build_from_either_answer() {
+  // two answers for one Chart, the same version, only one with the build: the build is kept, in either order
+  Found plain = chart("Houston map", "10.0.0.5", 80, "metarmap2-a1b2c3", "26.11.12");
+  Found built = chart("Houston map", "10.0.0.5", 80, "metarmap2-a1b2c3", "26.11.12");
+  built.commit = "7df0437";
+  built.ahead = "8";
+  for (const std::vector<Found>& answers : {std::vector<Found>{plain, built}, std::vector<Found>{built, plain}}) {
+    std::vector<Found> m = map_list::merge(answers);
+    TEST_ASSERT_EQUAL_INT(1, m.size());
+    TEST_ASSERT_EQUAL_STRING("7df0437", m[0].commit.c_str());
+    TEST_ASSERT_EQUAL_STRING("8", m[0].ahead.c_str());
+    TEST_ASSERT_EQUAL_STRING("v26.11.12+8 7df0437", map_list::rows(answers, saved(""))[0].version.c_str());
+  }
+  // another version's build isn't taken: it isn't this version's
+  Found other = built;
+  other.version = "26.11.11";
+  std::vector<Found> m = map_list::merge({plain, other});
+  TEST_ASSERT_EQUAL_STRING("26.11.12", m[0].version.c_str());
+  TEST_ASSERT_EQUAL_STRING("", m[0].commit.c_str());
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_address_leaves_out_port_80);
@@ -409,5 +472,8 @@ int main() {
   RUN_TEST(test_find_pick_switches_only_to_a_found_map);
   RUN_TEST(test_find_pick_the_unannounced_current_map_is_current);
   RUN_TEST(test_find_pick_a_map_saved_by_its_ip);
+  RUN_TEST(test_version_text_with_the_build);
+  RUN_TEST(test_rows_show_the_build_from_the_answer_with_the_version);
+  RUN_TEST(test_merge_takes_the_build_from_either_answer);
   return UNITY_END();
 }

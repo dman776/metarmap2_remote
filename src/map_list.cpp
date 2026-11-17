@@ -44,9 +44,18 @@ std::string address(const std::string& host, uint16_t port) {
   return port == 80 ? host : host + ":" + std::to_string(port);
 }
 
-std::string versionText(const std::string& version) {
+std::string versionText(const std::string& version, const std::string& commit, const std::string& ahead) {
   if (version.empty()) return "";
-  return std::isdigit((unsigned char)version[0]) ? "v" + version : version;
+  std::string text = std::isdigit((unsigned char)version[0]) ? "v" + version : version;
+  bool hex = commit.size() >= 7 && commit.size() <= 40 && std::all_of(commit.begin(), commit.end(), [](char c) {
+               return std::isdigit((unsigned char)c) || (c >= 'a' && c <= 'f');
+             });
+  bool digits = !ahead.empty() && ahead.size() <= 5 &&
+                std::all_of(ahead.begin(), ahead.end(), [](unsigned char c) { return std::isdigit(c); });
+  if (!hex || !digits) return text;
+  long n = std::stol(ahead);
+  if (n <= 0) return text;  // on its release
+  return text + "+" + std::to_string(n) + " " + commit.substr(0, 7);
 }
 
 std::string hostToSave(const Found& f) {
@@ -78,7 +87,13 @@ std::vector<Found> merge(const std::vector<Found>& found) {
       continue;
     }
     if (same->ip.empty()) same->ip = f.ip;  // what the other answer knew
-    if (same->version.empty()) same->version = f.version;
+    // the version and its build together, from one answer; or the build alone, from an answer with the same version
+    // (the Chart's other answer, the one that carried it)
+    if (same->version.empty() || (same->version == f.version && same->commit.empty())) {
+      same->version = f.version;
+      same->commit = f.commit;
+      same->ahead = f.ahead;
+    }
     if (same->name.empty()) same->name = f.name;
   }
   return out;
@@ -89,7 +104,7 @@ Row toRow(const Found& f) {
   Row r;
   r.name = f.name.empty() ? host : f.name;
   r.address = address(f.ip.empty() ? host : f.ip, f.port);
-  r.version = versionText(f.version);
+  r.version = versionText(f.version, f.commit, f.ahead);
   r.host = host;
   r.ip = f.ip;
   r.port = f.port;
