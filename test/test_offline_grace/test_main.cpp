@@ -1,6 +1,7 @@
 // The grace before a Chart that misses /api/live answers counts as offline (offline_grace.h), on the host.
 #include <unity.h>
 
+#include "map_state.h"
 #include "offline_grace.h"
 #include "timing.h"
 
@@ -10,24 +11,35 @@ using offline_grace::Verdict;
 void setUp() {}
 void tearDown() {}
 
-// The connection as MapClient keeps it: a poll's failure goes through the grace, an answer is online, and Wi-Fi
-// loss is offline at once (MapClient::run() calls setConnection(false, ...) and resets the grace).
+// The connection as MapClient keeps it: a poll's failure goes through the grace (conn.missing while in it), an
+// answer is online, and Wi-Fi loss is offline at once (MapClient::run() calls setConnection(false, ...) and resets
+// the grace).
 struct Link {
   Grace grace{kOfflineGraceMs};
-  bool online = true;
+  Connection conn;
+  bool& online = conn.online;
   int firstMisses = 0;  // the "poll failed, retrying" log lines
 
+  Link() {
+    conn.wifi = true;
+    conn.online = true;
+  }
   void fail(uint32_t now) {
     Verdict v = grace.failed(now, online);
-    if (v == Verdict::kFirstMiss) firstMisses++;
-    if (v == Verdict::kOffline) online = false;
+    if (v == Verdict::kFirstMiss) {
+      firstMisses++;
+      conn.missing = true;  // setMissing(true)
+    }
+    if (v == Verdict::kOffline) online = conn.missing = false;  // setConnection(true, false, code)
   }
   uint32_t answer(uint32_t now) {
+    uint32_t ran = grace.answered(now);
+    if (ran) conn.missing = false;  // setMissing(false)
     online = true;
-    return grace.answered(now);
+    return ran;
   }
   void wifiLost() {
-    online = false;
+    conn.wifi = online = conn.missing = false;
     grace.reset();
   }
 };
@@ -115,6 +127,43 @@ void test_wifi_loss_is_immediate() {
   TEST_ASSERT_TRUE(l.grace.failed(12000, l.online) == Verdict::kOffline);
 }
 
+void test_answering_only_outside_the_grace() {
+  Link l;
+  TEST_ASSERT_TRUE(answering(l.conn));
+  l.fail(1000);
+  TEST_ASSERT_TRUE(l.online);            // the screen stays as it was
+  TEST_ASSERT_FALSE(answering(l.conn));  // but nothing is sent to the Chart
+  l.fail(1000 + kOfflineGraceMs - 1);
+  TEST_ASSERT_FALSE(answering(l.conn));
+  l.answer(1000 + kOfflineGraceMs - 1);
+  TEST_ASSERT_TRUE(answering(l.conn));  // answering again
+  l.fail(30000);
+  l.fail(30000 + kOfflineGraceMs);
+  TEST_ASSERT_FALSE(l.online);
+  TEST_ASSERT_FALSE(l.conn.missing);  // offline is no grace
+  TEST_ASSERT_FALSE(answering(l.conn));
+  l.answer(50000);
+  TEST_ASSERT_TRUE(answering(l.conn));
+}
+
+void test_answering() {
+  Connection c;
+  TEST_ASSERT_FALSE(answering(c));  // starting up
+  c.online = true;
+  TEST_ASSERT_TRUE(answering(c));
+  c.missing = true;
+  TEST_ASSERT_FALSE(answering(c));
+}
+
+void test_wifi_loss_ends_the_grace() {
+  Link l;
+  l.fail(1000);
+  TEST_ASSERT_TRUE(l.conn.missing);
+  l.wifiLost();
+  TEST_ASSERT_FALSE(l.conn.missing);
+  TEST_ASSERT_FALSE(answering(l.conn));
+}
+
 void test_offline_already_has_no_grace() {
   Grace g(kOfflineGraceMs);
   // starting up, or a map switch: the connection isn't online
@@ -152,6 +201,9 @@ int main() {
   RUN_TEST(test_answer_without_a_run_reports_none);
   RUN_TEST(test_back_online_after_going_offline_is_not_a_grace_answer);
   RUN_TEST(test_wifi_loss_is_immediate);
+  RUN_TEST(test_answering_only_outside_the_grace);
+  RUN_TEST(test_answering);
+  RUN_TEST(test_wifi_loss_ends_the_grace);
   RUN_TEST(test_offline_already_has_no_grace);
   RUN_TEST(test_clock_wrapping);
   RUN_TEST(test_first_failure_at_zero_ms);

@@ -123,6 +123,11 @@ struct SkipAnswer {
 
 struct Connection {
   bool wifi = false;
-  bool online = false;  // the last /api/live answered
-  int httpCode = 0;     // the last failure; negative for HTTPClient errors
+  bool online = false;   // the last /api/live answered, or the ones since have failed for less than kOfflineGraceMs
+  bool missing = false;  // online, but in that grace (offline_grace.h): the screen stays, nothing is sent to it
+  int httpCode = 0;      // the last failure; negative for HTTPClient errors
 };
+
+// Whether to send the Chart something now (a tap's command, remote control, an icon): online and answering, not
+// in the grace after a missed /api/live answer (a stalled Chart would hold each request for its whole timeout).
+inline bool answering(const Connection& c) { return c.online && !c.missing; }

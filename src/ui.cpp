@@ -468,6 +468,11 @@ void showAuto(int secs) {
 
 void tickClock() {
   if (!rotateRunning) return;
+  // In the grace after a missed answer the Chart's next switch isn't known: "Auto", not a stuck 0:00
+  if (conn.missing) {
+    showAuto(-1);
+    return;
+  }
   int32_t left = (int32_t)(rotateAtMs - millis());
   showAuto(left > 0 ? (left + 999) / 1000 : 0);
 }
@@ -874,7 +879,8 @@ uint32_t iconsRev = 0;
 // Asks for the next icon the tiles lack, if none is on its way and the Chart is online
 void askIcon() {
   icon_store::Want w;
-  if (!iconFetcher.next(status, icon_store::have, conn.online, millis(), w)) return;
+  // not in the grace after a missed answer: a timeout there would be held against the icon (kBadAnswerMs)
+  if (!iconFetcher.next(status, icon_store::have, answering(conn), millis(), w)) return;
   if (client->requestIcon(w.name, w.rev)) iconFetcher.asked(millis());
 }
 
@@ -2961,6 +2967,10 @@ ui_control::Outcome ui_control_card(const ui_control::CardRequest& req) {
   if (!onUiTask()) return wrongTask();
   Outcome r = reachable();
   if (!r.ok()) return r;
+  // a card's tap pulses the airport on the Chart and its buttons ask it too: in the grace after a missed answer
+  // they'd not be sent (Stop is the Copilot's own)
+  bool asksChart = req.opens() || (req.button != Button::None && req.button != Button::Stop);
+  if (asksChart && conn.missing) return fail(409, "The Chart isn't answering.");
   int index = cardTile;
   if (req.opens()) {
     std::vector<std::string> codes(tiles.size());
@@ -2997,7 +3007,7 @@ ui_control::Outcome ui_control_visualizer(const std::string& want) {
   if (status.visualizers.empty()) return fail(409, "The Chart's visualizers aren't known yet.");
   int index = ui_control::findVisualizer(status.visualizers, want);
   if (index < 0) return fail(404, "\"" + want + "\" isn't one of the Chart's visualizers.");
-  if (!conn.online) return fail(409, "The Chart isn't answering.");
+  if (!answering(conn)) return fail(409, "The Chart isn't answering.");
   if (pickerOpen()) {
     tapPick(index);  // lit a moment, then the picker closes, as a tap
     settle(kPickedMs + 100);

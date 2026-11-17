@@ -73,8 +73,8 @@ buttons: **Chart**, **Airports**, and the **logo**.
 
 **The logo**
 
-- Its dot is the Chart's connection: green, or red while the Chart doesn't answer
-  (and the screen dims). A yellow star on it: a firmware update.
+- Its dot is the Chart's connection: green, or red once the Chart counts as offline
+  (and the screen dims): after 15 s of missed answers, not at the first one (see the splash, below). A yellow star on it: a firmware update.
 - A tap shows the splash screen with the versions and the Chart's address, two
   buttons: **Close**, and **Firmware** (**Update v...** when there's one), the
   firmware update screen, a globe at the top left for the **map picker** (see
@@ -90,7 +90,7 @@ buttons: **Chart**, **Airports**, and the **logo**.
   - **green** once it reaches the Chart, fading out after 10 s: dark while all
     is well;
   - **red** when the Chart stops answering (Wi-Fi still up), at the same moment
-    the screen goes back to the splash (20 s);
+    the screen goes back to the splash (about 20-25 s; see the splash, below);
   - **purple**, breathing slowly, in Wi-Fi setup;
   - **yellow**, blinking, while a firmware update installs.
 - Its brightness is on the web page's Settings (5% at first; 0 turns it off).
@@ -205,8 +205,14 @@ buttons: **Chart**, **Airports**, and the **logo**.
 - If the Chart stops answering, the Copilot goes back to it: "Reconnecting to the Chart... retrying" until the
   Chart answers, then the Copilot fades back in. Not while the update screen is open. A busy Chart (a Pi Zero W at
   full CPU) can miss an answer or two, so the Copilot only counts it as offline once `/api/live` has failed for
-  15 s in a row, keeping what it last showed (not dimmed) till then; the splash comes 5 s after that. If Wi-Fi
-  drops, the Copilot is offline at once and the splash comes after 5 s.
+  15 s in a row, timed from the first failed poll; the splash comes 5 s after that. A Chart that stalls fails its
+  first poll only when that poll times out (5 s), so it's offline about 20 s into the stall and the splash comes at
+  about 25 s; a Chart that refuses the connection (its service stopped) fails at once: offline at 15 s, the splash
+  at about 20 s. Till it's offline the screen keeps what it last showed, not dimmed (the auto-rotate countdown shows
+  just "Auto"), but sends the Chart nothing: a tap's command or an ATIS is dropped, remote control (`/api/ui/card`,
+  `/api/ui/visualizer`) answers 409, and icons wait. If Wi-Fi drops, the Copilot is offline as soon as the Wi-Fi
+  stack reports it (when the access point just goes quiet, that takes a few seconds) and the splash comes 5 s
+  later.
 - A slow Chart (a Pi Zero busy sending an ATIS, say) is waited for without holding up the Copilot: each poll
   waits up to 5 s for it to answer and 5 s between parts of the answer, then counts as no answer. (Before, a
   Chart that stalled mid-answer could restart the Copilot.)
@@ -758,8 +764,9 @@ airports, position 1 first), `airports`, `visualizer` (the id) and `visualizers`
   list since it opened), a disabled button (Locate while Rainbow or Chase
   runs, AWOS or ATIS while the Chart's speech is off, ATIS for an airport without one, Stop with nothing being got or
   playing), a
-  page or position past the end, the startup splash or Wi-Fi setup on screen, an update installing, or (for a
-  visualizer) the Chart not answering.
+  page or position past the end, the startup splash or Wi-Fi setup on screen, an update installing, (for a visualizer) the Chart not
+  answering, or (for a visualizer, and a card other than `button=stop`) the grace before the Chart counts as
+  offline while its `/api/live` polls fail.
 
 These are real taps: a card (as a tap on its tile) and `button=locate` pulse the airport's pixel on the Chart,
 `/api/ui/visualizer` switches what the Chart shows (as a tap on its picker tile does), and `button=awos`

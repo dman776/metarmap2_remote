@@ -112,7 +112,8 @@ class MapClient {
   void fetchAtis(const char* code);
   void fetchIcon(const char* name, const char* rev);
   void sendSkip(const Cmd& cmd);
-  void setConnection(bool wifi, bool online, int httpCode);
+  void setConnection(bool wifi, bool online, int httpCode);  // offline clears conn_.missing
+  void setMissing(bool missing);  // conn_.missing (online only): in the grace after a missed /api/live answer
   // A switch setMap() asked for: applied (true) between requests, on the task, which then starts over
   // While one waits (pending_), an answer that comes is the old Chart's: dropped, and not "online"
   bool applySwitch();
