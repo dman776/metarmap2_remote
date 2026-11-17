@@ -124,7 +124,7 @@ struct SkipAnswer {
 struct Connection {
   bool wifi = false;
   bool online = false;   // the last /api/live answered, or the ones since have failed for less than kOfflineGraceMs
-  bool missing = false;  // online, but in that grace (offline_grace.h): the screen stays, nothing is sent to it
+  bool missing = false;  // online, but in that grace (offline_grace.h): the screen stays, commands aren't sent
   int httpCode = 0;      // the last failure; negative for HTTPClient errors
 };
 

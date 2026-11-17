@@ -209,8 +209,9 @@ buttons: **Chart**, **Airports**, and the **logo**.
   first poll only when that poll times out (5 s), so it's offline about 20 s into the stall and the splash comes at
   about 25 s; a Chart that refuses the connection (its service stopped) fails at once: offline at 15 s, the splash
   at about 20 s. Till it's offline the screen keeps what it last showed, not dimmed (the auto-rotate countdown shows
-  just "Auto"), but sends the Chart nothing: a tap's command or an ATIS is dropped, remote control (`/api/ui/card`,
-  `/api/ui/visualizer`) answers 409, and icons wait. If Wi-Fi drops, the Copilot is offline as soon as the Wi-Fi
+  just "Auto"). An AWOS or ATIS tapped then still plays (with the ATIS's transcript). Other taps update the screen
+  at once, but their command to the Chart is dropped, so the screen can snap back when the Chart answers again.
+  Remote control (`/api/ui/card`, `/api/ui/visualizer`) answers 409, and icons wait. If Wi-Fi drops, the Copilot is offline as soon as the Wi-Fi
   stack reports it (when the access point just goes quiet, that takes a few seconds) and the splash comes 5 s
   later.
 - A slow Chart (a Pi Zero busy sending an ATIS, say) is waited for without holding up the Copilot: each poll
@@ -752,7 +753,8 @@ A control answers once the screen has changed and settled (a screen's fade, the 
 second), with `/api/ui/state`'s JSON: `remoteControl`, `screen` (`main`, `splash`, `update`, `startup` while it
 connects, `wifiSetup`), `panel` (`chart`, `airports`), `overlay` (`none`, `picker`, `brightness`, `card`, `volume`, `maps`),
 `card` (its airport, or null), `playing` (`awos`, `atis` or null), `page` and `pages`, `pageAirports` (the page's
-airports, position 1 first), `airports`, `visualizer` (the id) and `visualizers`, and `online`. So a `GET
+airports, position 1 first), `airports`, `visualizer` (the id) and `visualizers`, and `online` (which stays `true` through the grace before
+the Chart counts as offline, while the controls that ask the Chart answer 409 "The Chart isn't answering."). So a `GET
 /screen.png` straight after it shows the new screen. Otherwise:
 
 - **401** without the login (user `metar`, the web page's password);
@@ -772,7 +774,10 @@ These are real taps: a card (as a tap on its tile) and `button=locate` pulse the
 `/api/ui/visualizer` switches what the Chart shows (as a tap on its picker tile does), and `button=awos`
 and `button=atis` play on the Copilot's speaker (a second press, or `stop`, stops it, also while it's still being
 got). Each request is one press: the touchscreen's 0.7 s debounce of the card's buttons doesn't apply, so a
-`button=awos` right after another stops it; and there is no touch tick. The splash closes itself
+`button=awos` right after another stops it; and there is no touch tick. Unlike taps, in the grace before the Chart
+counts as offline (its `/api/live` polls failing) `/api/ui/card` (opening a card, `locate`, `awos`, `atis`) and
+`/api/ui/visualizer` answer 409 while the same touches on the screen go ahead; once the Chart is offline, till the
+splash comes, they answer 200 again (`/api/ui/visualizer` excepted: it answers 409 while the Chart is offline). The splash closes itself
 after 30 s and its volume slider after 4 s, as when tapped, so shoot them straight away.
 
 ### Serial console and screenshots

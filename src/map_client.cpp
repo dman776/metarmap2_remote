@@ -254,8 +254,9 @@ void MapClient::run() {
 
     Cmd cmd{};
     if (xQueueReceive(queue_, &cmd, pdMS_TO_TICKS(50)) == pdTRUE) {
-      // In the grace after a missed /api/live answer each is answered as failed, not sent: a stalled Chart would
-      // hold the task for its whole timeout (and the live polls with it)
+      // In the grace after a missed /api/live answer a command, skip or icon is answered as failed, not sent: a
+      // stalled Chart would hold the task for its whole timeout (and the live polls with it). An ATIS transcript is
+      // sent (fetchAtis())
       if (cmd.atis[0]) {
         fetchAtis(cmd.atis);
       } else if (cmd.icon[0]) {
@@ -452,7 +453,9 @@ void MapClient::fetchAtis(const char* code) {
   JsonDocument doc(spiram());
   std::string path = std::string("/api/atis/") + code + "/lines";
   // the map may ask atis.info first (a few seconds at most): longer than a poll
-  int status = grace_.missing() ? kNotSent : get(path.c_str(), 15000, &doc, &filter);
+  // Sent in the grace after a missed /api/live answer too: the audio (stream_speak) is already asking the Chart, and
+  // a transcript not asked for now isn't asked again
+  int status = get(path.c_str(), 15000, &doc, &filter);
   AtisTranscript t;
   if (status == HTTP_CODE_OK)
     t = parseAtis(doc.as<JsonVariantConst>());
