@@ -241,9 +241,11 @@ void MapClient::run() {
       LOGF("map: now %s:%u\n", route_.host().c_str(), (unsigned)port_);
       lastLive = 0;
       haveStatus = statusAsked = false;
+      grace_.reset();
     }
     if (WiFi.status() != WL_CONNECTED) {
-      setConnection(false, false, 0);
+      setConnection(false, false, 0);  // at once: no grace without Wi-Fi
+      grace_.reset();
       haveStatus = statusAsked = false;
       vTaskDelay(pdMS_TO_TICKS(500));
       continue;
@@ -399,6 +401,20 @@ void MapClient::pollLive() {
   JsonDocument doc(spiram());
   int code = get("/api/live", kTimeoutMs, &doc, &filter);
   if (code != HTTP_CODE_OK) {
+    // Online, a miss isn't offline yet: the last live data stays (offline_grace.h). Offline already (starting
+    // up, a switch, Wi-Fi back), it is at once, with the code.
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    bool online = conn_.online;
+    xSemaphoreGive(mutex_);
+    switch (grace_.failed(millis(), online)) {
+      case offline_grace::Verdict::kFirstMiss:
+        LOGF("map: poll failed (%d), retrying\n", code);
+        return;
+      case offline_grace::Verdict::kRetrying:
+        return;
+      case offline_grace::Verdict::kOffline:
+        break;
+    }
     setConnection(true, false, code);
     return;
   }
@@ -411,9 +427,12 @@ void MapClient::pollLive() {
     xSemaphoreGive(mutex_);
     return;
   }
+  uint32_t rx = live.rxMillis;
   live_ = std::move(live);
   liveRev_++;
   xSemaphoreGive(mutex_);
+  // A miss within the grace was never offline, so this isn't "online" again: just how long it didn't answer
+  if (uint32_t ran = grace_.answered(rx)) LOGF("map: answering again after %u ms\n", (unsigned)ran);
   setConnection(true, true, 0);
 }
 

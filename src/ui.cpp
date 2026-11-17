@@ -73,7 +73,7 @@ constexpr int kPresets[4] = {10, 25, 50, 100};
 
 constexpr uint32_t kHoldMs = 3000;        // a touched control keeps its value while the map catches up
 constexpr uint32_t kSplashHoldMs = 2000;  // the splash stays this long after connecting
-// kWifiTimeoutMs (then the splash names the network it can't join) and kLostMs (the map unreachable this long: back
+// kWifiTimeoutMs (then the splash names the network it can't join) and kLostMs (offline this long: back
 // to the splash screen) are in timing.h: the status light on the back keeps the same time
 constexpr uint32_t kSplashShowMs = 30000;    // the logo's splash closes itself after this long
 constexpr uint32_t kVolumePopupMs = 4000;    // the logo's splash's volume slider closes this long after a touch
@@ -2627,8 +2627,9 @@ void showUpdate() {
   if (upd.phase == UpdateState::Idle) updater->check();  // fresh, while it's open
 }
 
-// The map unreachable (or Wi-Fi gone) for 5 s: the splash screen, retrying,
-// until it's back. Not over the update screen, which doesn't need the map.
+// Offline for kLostMs: the splash screen, retrying, until it's back. Offline is at once for Wi-Fi gone, and only
+// after kOfflineGraceMs of missed /api/live answers for the map (MapClient). Not over the update screen, which
+// doesn't need the map.
 void checkMapLost() {
   static bool everOnline = false;
   static uint32_t lostSince = 0;

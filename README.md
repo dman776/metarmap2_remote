@@ -90,7 +90,7 @@ buttons: **Chart**, **Airports**, and the **logo**.
   - **green** once it reaches the Chart, fading out after 10 s: dark while all
     is well;
   - **red** when the Chart stops answering (Wi-Fi still up), at the same moment
-    the screen goes back to the splash (5 s);
+    the screen goes back to the splash (20 s);
   - **purple**, breathing slowly, in Wi-Fi setup;
   - **yellow**, blinking, while a firmware update installs.
 - Its brightness is on the web page's Settings (5% at first; 0 turns it off).
@@ -202,9 +202,11 @@ buttons: **Chart**, **Airports**, and the **logo**.
 - If Wi-Fi hasn't joined after 15 s, it names the network: "Can't find
   *network*" (out of range, or 5 GHz only) or "Can't join *network*", and keeps
   trying. The Chart's line says "retrying" while the Chart doesn't answer.
-- If the Chart stops answering (or Wi-Fi drops) for 5 s, the Copilot goes back to it:
-  "Reconnecting to the Chart... retrying" until the Chart answers, then the Copilot fades
-  back in. Not while the update screen is open.
+- If the Chart stops answering, the Copilot goes back to it: "Reconnecting to the Chart... retrying" until the
+  Chart answers, then the Copilot fades back in. Not while the update screen is open. A busy Chart (a Pi Zero W at
+  full CPU) can miss an answer or two, so the Copilot only counts it as offline once `/api/live` has failed for
+  15 s in a row, keeping what it last showed (not dimmed) till then; the splash comes 5 s after that. If Wi-Fi
+  drops, the Copilot is offline at once and the splash comes after 5 s.
 - A slow Chart (a Pi Zero busy sending an ATIS, say) is waited for without holding up the Copilot: each poll
   waits up to 5 s for it to answer and 5 s between parts of the answer, then counts as no answer. (Before, a
   Chart that stalled mid-answer could restart the Copilot.)

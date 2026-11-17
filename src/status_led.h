@@ -5,7 +5,8 @@
 //   Wi-Fi setup mode       purple, breathing slowly
 //   installing an update   yellow, blinking
 //   the Chart answering    green for 10 s, then fading out: dark while all is well
-//   the Chart not answering (Wi-Fi up) for kLostMs, when the screen goes back to the splash: red
+//   offline (Wi-Fi up) for kLostMs, when the screen goes back to the splash: red (the Chart counts as offline
+//                          after kOfflineGraceMs of missed answers, so kOfflineGraceMs + kLostMs in all)
 //
 // The brightness (0-100 %, 0 = off) scales every color: the LED faces the wall and is bright at full.
 #pragma once

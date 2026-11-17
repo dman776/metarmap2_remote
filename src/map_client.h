@@ -18,6 +18,8 @@
 #include "icon_store.h"
 #include "map_route.h"
 #include "map_state.h"
+#include "offline_grace.h"
+#include "timing.h"
 
 class ClientSource;
 class WiFiClient;
@@ -141,5 +143,6 @@ class MapClient {
   uint32_t skipRev_ = 0;
   uint32_t skipSeq_ = 0;  // the last skip command's number (requestSkip(), on the screen's task only)
   Connection conn_;
+  offline_grace::Grace grace_{kOfflineGraceMs};  // failed /api/live polls while online (the task's only)
   uint32_t statusRev_ = 0, liveRev_ = 0, connRev_ = 0;
 };
