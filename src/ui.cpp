@@ -1908,7 +1908,9 @@ lv_obj_t* mapsNote(const char* text, uint32_t color) {
 }
 
 void switchMap(const map_list::Row& r) {
-  LOGF("ui: map picked: %s (%s:%u, %s)\n", r.name.c_str(), r.host.c_str(), (unsigned)r.port, r.ip.c_str());
+  // the name as announced on the network: without control characters in the log
+  LOGF("ui: map picked: %s (%s:%u, %s)\n", map_list::plainText(r.name).c_str(), r.host.c_str(), (unsigned)r.port,
+       r.ip.c_str());
   settings->mapHost = r.host;  // the web page's Chart address shows it; kept through restarts
   settings->mapPort = r.port;
   settings->mapIp = r.ip;  // MapClient's fallback should the name stop resolving
@@ -1925,9 +1927,9 @@ void switchMap(const map_list::Row& r) {
   status.versionText.clear();
   // the splash again, connecting to it (and the panels once it answers); the old one goes after its fade
   switchingTo = r.name;
-  lv_obj_t* old = splash;
+  lv_obj_t* old = splash;  // none when the web page picked it from the panels (ui_switch_map())
   showSplash(SplashMode::Reconnect);
-  lv_obj_delete_delayed(old, 400);
+  if (old) lv_obj_delete_delayed(old, 400);
 }
 
 void onMapRow(lv_event_t* e) {
@@ -1973,7 +1975,8 @@ void showMaps() {
     lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
     std::string detail = r.address + (r.version.empty() ? "" : "  " + r.version);
     if (!r.announced) detail += "  (not announced)";
-    lv_obj_t* sub = label(text, detail.c_str(), &lv_font_montserrat_12, kMuted);
+    // the version is the network's (the TXT record's, or the unannounced row's /api/status): as the fonts can draw it
+    lv_obj_t* sub = label(text, map_list::plainText(detail).c_str(), &lv_font_montserrat_12, kMuted);
     lv_obj_set_size(sub, LV_PCT(100), lv_font_get_line_height(&lv_font_montserrat_12));
     lv_label_set_long_mode(sub, LV_LABEL_LONG_DOT);
     if (r.current) label(row, "In use", &lv_font_montserrat_12, kAccent);
@@ -3044,4 +3047,25 @@ ui_control::State ui_control_state() {
                  [](const Visualizer& v) { return v.id; });
   s.online = conn.online;
   return s;
+}
+
+map_list::Current ui_current_map() {
+  if (!onUiTask()) return map_list::Current();
+  return currentMap();
+}
+
+ui_control::Outcome ui_switch_map(const map_list::Row& row) {
+  if (!onUiTask()) return wrongTask();
+  // wifi_setup_active() too: setupScr comes only at the next ui_tick(), and not while the update screen is open
+  if (setupScr || wifi_setup_active()) return fail(409, "The Copilot is in Wi-Fi setup.");
+  // an update installing from the web page's Install doesn't open the update screen: asked here, not by leaveUpdate()
+  if (installing()) return fail(409, "A firmware update is installing.");
+  // a pick is a choice: a first start's looking is over before leaveUpdate()'s settle() runs ui_tick(), so its
+  // tickAutoPick() can't switch to another map in the middle of this one
+  autoOver = true;
+  Outcome r = leaveUpdate();  // the update screen closed, as its Back
+  if (!r.ok()) return r;
+  closeOverlays();  // the card, picker and brightness sheet are the old Chart's
+  switchMap(row);   // as a tap on its row in the globe's list
+  return done();
 }

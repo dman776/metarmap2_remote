@@ -15,6 +15,7 @@ namespace {
 constexpr uint32_t kListenMs = 3000;   // how long the scan listens for answers
 constexpr size_t kMaxAnswers = 20;     // answers kept (a Chart can answer twice); map_list caps the rows at 8
 constexpr uint32_t kAddressMs = 1000;  // asking a Chart's address, when its answer came without one
+constexpr size_t kMaxTxt = 64;         // a TXT value kept (version "26.11.12", commit "7df0437", ahead "8")
 constexpr int kMaxAddressLookups = 3;  // at most these, so a scan is over in about 6 s at worst
 constexpr uint32_t kStack = 5 * 1024;  // ESP-IDF's mdns task does the work: this one waits, copies and logs
 
@@ -33,8 +34,13 @@ void publish(const MapScan& s) {
 std::string txtValue(const mdns_result_t* r, const char* key) {
   for (size_t i = 0; i < r->txt_count; i++) {
     if (!r->txt[i].key || strcmp(r->txt[i].key, key) != 0 || !r->txt[i].value) continue;
-    size_t len = r->txt_value_len ? r->txt_value_len[i] : strlen(r->txt[i].value);
-    return std::string(r->txt[i].value, len);
+    const char* v = r->txt[i].value;
+    size_t len = r->txt_value_len ? r->txt_value_len[i] : strnlen(v, kMaxTxt + 1);
+    if (len > kMaxTxt) {  // kept short (what's shown is shorter still), cut before a character, not inside one
+      len = kMaxTxt;
+      while (len > 0 && ((unsigned char)v[len] & 0xc0) == 0x80) len--;
+    }
+    return std::string(v, len);
   }
   return "";
 }
@@ -67,6 +73,9 @@ void scanTask(void*) {
     f.hostname = r->hostname ? r->hostname : "";
     f.port = r->port;
     f.version = txtValue(r, "version");
+    f.commit =
+        txtValue(r, "commit");  // the build, from a Chart that announces it (map_list::versionText() checks them)
+    f.ahead = txtValue(r, "ahead");
     f.ip = ipv4(r);
     s.found.push_back(f);
   }

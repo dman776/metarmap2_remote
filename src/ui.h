@@ -3,6 +3,7 @@
 // splash screen, and from it the firmware update screen and the map picker).
 #pragma once
 
+#include "map_list.h"
 #include "ui_control.h"
 
 class MapClient;
@@ -39,3 +40,12 @@ ui_control::Outcome ui_control_card(const ui_control::CardRequest& req);
 ui_control::Outcome ui_control_visualizer(const std::string& idOrName);
 // What's on screen now (remoteControl is the caller's to fill)
 ui_control::State ui_control_state();
+
+// ---- the web page's map list (GET /api/maps, POST /api/maps/pick, remote_web.cpp) ----
+// Only from the task that runs LVGL (loop(): the web server answers there), as the remote control's.
+
+// The map in use, as the globe's list marks it (its saved address and what its /api/status said)
+map_list::Current ui_current_map();
+// Switches to `row` (one a scan found) as a tap on its row in the globe's list does: saved as the Chart's address, at
+// once, no restart, the splash connecting to it. 409 in Wi-Fi setup or while an update installs.
+ui_control::Outcome ui_switch_map(const map_list::Row& row);

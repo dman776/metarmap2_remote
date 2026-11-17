@@ -15,6 +15,7 @@
 #include "log.h"
 #include "lvgl_port.h"
 #include "map_list.h"
+#include "map_scan.h"
 #include "png.h"
 #include "remote_setup_page.h"
 #include "remote_web_page.h"
@@ -462,6 +463,95 @@ void onUiVisualizer() {
   answer(r);
 }
 
+// ---- the maps on the network (map_scan.h), as the globe's list on the Copilot's splash ----
+//
+// Find maps starts a scan (3 s, on its own task: the handler doesn't wait); the page polls GET /api/maps until it's
+// done. A pick switches at once, as a tap on a row (ui_switch_map(): this is loop()'s task, which LVGL runs on), and
+// only to a map the last scan found: a stray POST can't point the Copilot anywhere else.
+
+MapScan webScan;  // the last state seen here (map_scan_get() copies it out when it changed)
+uint32_t webScanRev = 0;
+
+const MapScan& lastScan() {
+  map_scan_get(webScan, webScanRev);
+  return webScan;
+}
+
+void onMaps() {
+  if (!allowed()) return;
+  const MapScan& scan = lastScan();
+  JsonDocument doc;
+  doc["scanning"] = scan.scanning;
+  doc["done"] = scan.done;
+  doc["error"] = scan.error;
+  JsonArray maps = doc["maps"].to<JsonArray>();
+  if (scan.done && !scan.scanning) {
+    for (const map_list::Row& r : map_list::rows(scan.found, ui_current_map())) {
+      JsonObject o = maps.add<JsonObject>();
+      o["name"] = r.name;
+      o["address"] = r.address;
+      o["version"] = r.version;
+      o["host"] = r.host;
+      o["port"] = r.port;
+      o["current"] = r.current;
+      o["announced"] = r.announced;
+    }
+  }
+  server.sendHeader("Cache-Control", "no-store");
+  sendJson(doc);
+}
+
+void onMapsScan() {
+  if (!postAllowed()) return;
+  if (wifi_setup_active()) {
+    server.send(409, "text/plain", "The Copilot is in Wi-Fi setup.");
+    return;
+  }
+  // false: one is under way (its answer comes), or it couldn't start (GET /api/maps has the error)
+  bool fresh = map_scan_start();
+  LOGF("web: maps: %s\n", fresh ? "scanning" : "a scan is under way, or couldn't start");
+  server.send(200, "text/plain", "Scanning...");
+}
+
+void onMapsPick() {
+  if (!postAllowed()) return;
+  map_list::AddressForm want = map_list::parseAddress(arg("host"), arg("port"));
+  if (!want.ok || want.host.empty()) {
+    server.send(400, "text/plain", "host: a map's address from GET /api/maps, with its port.");
+    return;
+  }
+  if (wifi_setup_active()) {
+    server.send(409, "text/plain", "The Copilot is in Wi-Fi setup.");
+    return;
+  }
+  const MapScan& scan = lastScan();
+  if (scan.scanning) {
+    server.send(409, "text/plain", "The scan isn't over yet: pick when the list is in.");
+    return;
+  }
+  map_list::WebPickResult p =
+      scan.done ? map_list::findPick(map_list::rows(scan.found, ui_current_map()), want.host, want.port)
+                : map_list::WebPickResult();
+  if (p.result == map_list::WebPick::NotFound) {
+    // the host as sent (a request's, anything): not in the log, where a line break could forge a line
+    LOGF("web: maps: pick refused: not in the last scan\n");
+    server.send(404, "text/plain", "That map isn't in the last scan's list. Find maps again.");
+    return;
+  }
+  if (p.result == map_list::WebPick::Current) {
+    server.send(200, "text/plain", (p.row.name + " is the map in use.").c_str());
+    return;
+  }
+  LOGF("web: maps: picked %s\n", map_list::plainText(p.row.name).c_str());  // a name from the network: no control chars
+  ui_control::Outcome r = ui_switch_map(p.row);
+  if (!r.ok()) {
+    LOGF("web: maps: %d %s\n", r.status, r.text.c_str());
+    server.send(r.status, "text/plain", r.text.c_str());
+    return;
+  }
+  server.send(200, "text/plain", ("Switched to " + p.row.name + ". The Copilot connects to it now.").c_str());
+}
+
 void onScreen() {
   if (!allowed()) return;
   lv_refr_now(nullptr);  // anything changed since the last frame drawn first
@@ -512,6 +602,9 @@ void start() {
   server.on("/api/led", HTTP_POST, onLed);
   server.on("/api/sounds", HTTP_POST, onSounds);
   server.on("/api/remote-control", HTTP_POST, onRemoteControl);
+  server.on("/api/maps", HTTP_GET, onMaps);
+  server.on("/api/maps/scan", HTTP_POST, onMapsScan);
+  server.on("/api/maps/pick", HTTP_POST, onMapsPick);
   server.on("/api/ui/state", HTTP_GET, onUiState);
   server.on("/api/ui/show", HTTP_POST, onUiShow);
   server.on("/api/ui/card", HTTP_POST, onUiCard);

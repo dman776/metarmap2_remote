@@ -34,6 +34,10 @@ font:12px/1.4 ui-monospace,Menlo,monospace;color:var(--tx2);white-space:pre-wrap
 .chk{display:inline-flex;gap:6px;align-items:center;margin:12px 12px 0 0;color:var(--tx2);font-size:14px}.chk input{width:auto}
 progress{width:100%;height:10px;margin-top:10px;accent-color:var(--acc)}
 .wide{grid-column:1/-1}[hidden]{display:none!important}
+.map{display:flex;justify-content:space-between;width:100%;margin:8px 0 0;min-height:52px;padding:6px 12px;gap:10px;text-align:left;font-weight:400}
+.map>span:first-child{flex:1;min-width:0}.map b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.map small{display:block;color:var(--mut);font:12px ui-monospace,monospace}.map.cur{border-color:var(--acc);cursor:default}
+.map.cur b,.map .use{color:var(--acc)}.map .use{flex:none;font-size:12px;font-weight:600}
 dl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:0}dt{color:var(--mut)}dd{margin:0;font:13px ui-monospace,monospace}
 </style></head><body>
 <header><svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z" fill="none" stroke="#f5b544" stroke-width="1.8" stroke-linejoin="round"/><circle cx="5" cy="4.5" r="2" fill="#3ddc84" style="filter:drop-shadow(0 0 2px #3ddc84)"/></svg><h1>MetarMap2 Copilot</h1><span class="v" id="version"></span></header>
@@ -60,13 +64,22 @@ dl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:0}dt{color:va
 </section>
 
 <section class="app" hidden>
+<h2>Maps on the network</h2>
+<p class="note">The Charts that announce themselves on your network, as the globe on the Copilot's logo screen lists
+them. Pick one and the Copilot switches to it at once, no restart; its address shows in Settings' Chart address.</p>
+<button id="findMaps">Find maps</button>
+<div id="mapList"></div>
+<p class="note" id="mapsMsg"></p>
+</section>
+
+<section class="app" hidden>
 <h2>Settings</h2>
 <form id="connForm">
 <label for="wifiName">Wi-Fi network</label><input id="wifiName" required maxlength="32" autocomplete="off">
 <label for="wifiPass">Wi-Fi password</label><input id="wifiPass" type="password" placeholder="unchanged" autocomplete="new-password">
 <div class="row"><div><label for="mapHost">Chart address</label><input id="mapHost" maxlength="63" placeholder="empty: found by the Copilot"></div>
 <div style="flex:0 0 96px"><label for="mapPort">Port</label><input id="mapPort" type="number" min="1" max="65535" placeholder="80"></div></div>
-<p class="note">Or pick a map on the Copilot's logo screen (the globe at its top left): it switches at once, and its address shows here.
+<p class="note">Or pick a map in Maps on the network, or on the Copilot's logo screen (the globe at its top left): it switches at once, and its address shows here.
 Empty: the Copilot looks for the Chart itself after the restart (one found is used, several are listed to pick from).</p>
 <button class="primary">Save and restart</button>
 <p class="note" id="connMsg">The Copilot restarts to use them. If it can't join the new network, flash it over USB with include/secrets.h.</p>
@@ -231,6 +244,84 @@ async function setPassword(a, b, msg) {
   catch (e) { say(msg, e.message, true); return false; }
 }
 $('#pwForm').onsubmit = async ev => { ev.preventDefault(); await setPassword($('#pw1'), $('#pw2'), $('#pwMsg')); };
+
+// ---- the maps on the network: a scan only on Find maps, polled till it's in; a pick switches at once ----
+let mapsUntil = 0;
+function mapRow(m) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'map' + (m.current ? ' cur' : '');
+  const text = document.createElement('span'), name = document.createElement('b'), sub = document.createElement('small');
+  name.textContent = m.name;  // the map's own name, from the network: text only
+  sub.textContent = m.address + (m.version ? '  ' + m.version : '') + (m.announced ? '' : '  (not announced)');
+  text.append(name, sub);
+  b.append(text);
+  if (m.current) {
+    const use = document.createElement('span');
+    use.className = 'use'; use.textContent = 'In use';
+    b.append(use);
+  }
+  b.onclick = () => pickMap(m);
+  return b;
+}
+function showMapList(s) {
+  const list = $('#mapList');
+  list.replaceChildren(...s.maps.map(mapRow));
+  if (s.error) say($('#mapsMsg'), s.error + ': no scan. Try Find maps again.', true);
+  else if (!s.maps.length || (s.maps.length === 1 && s.maps[0].current)) {  // nothing, or the one in use only
+    say($('#mapsMsg'), (s.maps.length ? 'No other maps found.' : 'No maps found.')
+      + " Not listed? On that Chart's Home page, tap Install network discovery.");
+  } else say($('#mapsMsg'), '');
+}
+async function pollMaps() {
+  try {
+    const r = await fetch('/api/maps', {cache: 'no-store'});
+    if (!r.ok) throw new Error(await r.text() || r.statusText);
+    const s = await r.json();
+    if (s.scanning || !s.done) {
+      if (Date.now() < mapsUntil) { setTimeout(pollMaps, 700); return; }
+      throw new Error("The scan didn't finish. Try Find maps again.");
+    }
+    showMapList(s);
+  } catch (e) { say($('#mapsMsg'), e.message, true); }
+  $('#findMaps').disabled = false;
+}
+$('#findMaps').onclick = async () => {
+  $('#findMaps').disabled = true;
+  $('#mapList').replaceChildren();
+  say($('#mapsMsg'), 'Scanning...');
+  try { await post('/api/maps/scan', {}); }
+  catch (e) { say($('#mapsMsg'), e.message, true); $('#findMaps').disabled = false; return; }
+  mapsUntil = Date.now() + 20000;  // a scan is over in about 3 s, 6 at most
+  pollMaps();
+};
+// Always asked of the Copilot (a row's "in use" can be old: the screen may have switched since); it says if it is
+async function pickMap(m) {
+  const rows = () => document.querySelectorAll('#mapList button');
+  rows().forEach(b => b.disabled = true);
+  let msg;
+  try {
+    msg = await post('/api/maps/pick', {host: m.host, port: m.port});
+    say($('#mapsMsg'), msg);
+  } catch (e) {
+    say($('#mapsMsg'), e.message, true);
+    rows().forEach(b => b.disabled = false);
+    return;
+  }
+  if (document.activeElement !== $('#mapHost') && document.activeElement !== $('#mapPort')) {
+    $('#mapHost').value = m.host; $('#mapPort').value = m.port;
+  }
+  try {  // the same list, the map in use marked anew
+    const r = await fetch('/api/maps', {cache: 'no-store'});
+    const s = r.ok ? await r.json() : null;
+    if (s && s.maps.length) { $('#mapList').replaceChildren(...s.maps.map(mapRow)); return; }
+    // no list now (another scan under way, say): the old rows stay, and may be out of date
+    say($('#mapsMsg'), msg + ' The list may be out of date: press Find maps again.');
+  } catch (e) {
+    say($('#mapsMsg'), msg + " The list couldn't be refreshed: press Find maps again.");
+  }
+  rows().forEach(b => b.disabled = false);
+}
 
 // ---- the screen: one now, or live (the next as soon as one has arrived) ----
 let liveTimer = null;
