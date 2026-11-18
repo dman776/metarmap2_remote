@@ -18,6 +18,7 @@ constexpr uint32_t kLiveMs = 1500;         // the /remote page polls every 1 s
 constexpr uint32_t kStatusMs = 60 * 1000;  // and /api/status every minute
 constexpr uint32_t kStatusRetryMs = 5000;  // until the first one answers (after a switch, or Wi-Fi back): this often
 constexpr int kWrongLength = -101;         // getBinary(): a 200 of another length than asked for, or cut short
+constexpr int kNotSent = -102;             // not sent: the Chart is in the grace after a missed /api/live answer
 // How long the Chart has to start answering, and then between parts of the answer. Waited in turns, so a slow
 // Chart (a Pi Zero busy sending an ATIS) can't hold core 0 and set off the task watchdog.
 constexpr uint32_t kTimeoutMs = 5000;
@@ -241,9 +242,11 @@ void MapClient::run() {
       LOGF("map: now %s:%u\n", route_.host().c_str(), (unsigned)port_);
       lastLive = 0;
       haveStatus = statusAsked = false;
+      grace_.reset();
     }
     if (WiFi.status() != WL_CONNECTED) {
-      setConnection(false, false, 0);
+      setConnection(false, false, 0);  // at once: no grace without Wi-Fi
+      grace_.reset();
       haveStatus = statusAsked = false;
       vTaskDelay(pdMS_TO_TICKS(500));
       continue;
@@ -251,6 +254,9 @@ void MapClient::run() {
 
     Cmd cmd{};
     if (xQueueReceive(queue_, &cmd, pdMS_TO_TICKS(50)) == pdTRUE) {
+      // In the grace after a missed /api/live answer a command, skip or icon is answered as failed, not sent: a
+      // stalled Chart would hold the task for its whole timeout (and the live polls with it). An ATIS transcript is
+      // sent (fetchAtis())
       if (cmd.atis[0]) {
         fetchAtis(cmd.atis);
       } else if (cmd.icon[0]) {
@@ -258,6 +264,8 @@ void MapClient::run() {
       } else if (cmd.skipId[0]) {
         sendSkip(cmd);
         lastLive = 0;  // the marks from the Chart now
+      } else if (grace_.missing()) {
+        LOGF("map: %s not sent: the Chart isn't answering\n", cmd.path);
       } else {
         int code = get(cmd.path, kTimeoutMs, nullptr, nullptr);
         LOGF("map: %s -> %d\n", cmd.path, code);
@@ -280,7 +288,7 @@ void MapClient::run() {
     uint32_t since = now - lastStatus;
     // Till the first answer, every kStatusRetryMs (a failed one doesn't wait out kStatusMs: the panels need it)
     bool due = haveStatus ? (stale && since >= 2000) || since >= kStatusMs : !statusAsked || since >= kStatusRetryMs;
-    if (online && due) {
+    if (online && !grace_.missing() && due) {  // not in the grace: a stalled Chart would hold it 5 s
       lastStatus = now;
       statusAsked = true;
       // a failed poll keeps the one it had, if any: only a switch or Wi-Fi loss starts over
@@ -399,6 +407,21 @@ void MapClient::pollLive() {
   JsonDocument doc(spiram());
   int code = get("/api/live", kTimeoutMs, &doc, &filter);
   if (code != HTTP_CODE_OK) {
+    // Online, a miss isn't offline yet: the last live data stays (offline_grace.h). Offline already (starting
+    // up, a switch, Wi-Fi back), it is at once, with the code.
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    bool online = conn_.online;
+    xSemaphoreGive(mutex_);
+    switch (grace_.failed(millis(), online)) {
+      case offline_grace::Verdict::kFirstMiss:
+        LOGF("map: poll failed (%d), retrying\n", code);
+        setMissing(true);
+        return;
+      case offline_grace::Verdict::kRetrying:
+        return;
+      case offline_grace::Verdict::kOffline:
+        break;
+    }
     setConnection(true, false, code);
     return;
   }
@@ -411,9 +434,15 @@ void MapClient::pollLive() {
     xSemaphoreGive(mutex_);
     return;
   }
+  uint32_t rx = live.rxMillis;
   live_ = std::move(live);
   liveRev_++;
   xSemaphoreGive(mutex_);
+  // A miss within the grace was never offline, so this isn't "online" again: just how long it didn't answer
+  if (uint32_t ran = grace_.answered(rx)) {
+    LOGF("map: answering again after %u ms\n", (unsigned)ran);
+    setMissing(false);
+  }
   setConnection(true, true, 0);
 }
 
@@ -424,6 +453,8 @@ void MapClient::fetchAtis(const char* code) {
   JsonDocument doc(spiram());
   std::string path = std::string("/api/atis/") + code + "/lines";
   // the map may ask atis.info first (a few seconds at most): longer than a poll
+  // Sent in the grace after a missed /api/live answer too: the audio (stream_speak) is already asking the Chart, and
+  // a transcript not asked for now isn't asked again
   int status = get(path.c_str(), 15000, &doc, &filter);
   AtisTranscript t;
   if (status == HTTP_CODE_OK)
@@ -450,7 +481,11 @@ void MapClient::fetchIcon(const char* name, const char* rev) {
   static uint8_t mask[icon_store::kMaskBytes];  // this task's only
   int code = 0;
   std::string etag;
-  d.ok = getBinary(path.c_str(), kTimeoutMs, mask, sizeof(mask), code, etag);
+  if (grace_.missing()) {
+    code = kNotSent;
+  } else {
+    d.ok = getBinary(path.c_str(), kTimeoutMs, mask, sizeof(mask), code, etag);
+  }
   LOGF("map: %s -> %d\n", path.c_str(), code);
   if (d.ok) {
     std::string served = icon_store::etagRev(etag);  // the mask the Chart has now: it may have changed since asked
@@ -458,7 +493,7 @@ void MapClient::fetchIcon(const char* name, const char* rev) {
     d.mask.assign(mask, mask + sizeof(mask));
   } else if (code == HTTP_CODE_NOT_FOUND) {
     d.why = icon_store::Failure::NotFound;
-  } else if (code == HTTPC_ERROR_CONNECTION_REFUSED || code == HTTPC_ERROR_SEND_HEADER_FAILED) {
+  } else if (code == HTTPC_ERROR_CONNECTION_REFUSED || code == HTTPC_ERROR_SEND_HEADER_FAILED || code == kNotSent) {
     d.why = icon_store::Failure::Connection;  // not the icon's fault
   } else {
     d.why = icon_store::Failure::BadAnswer;  // a timeout, an answer cut short, the wrong length, another status
@@ -486,6 +521,8 @@ void MapClient::sendSkip(const Cmd& cmd) {
   if (millis() - cmd.queuedAt >= skips::kQueuedMs) {
     // it waited out a Wi-Fi outage or slow requests: done now it would surprise; answered as failed, not sent
     LOGF("map: %s waited %u s, dropped\n", path.c_str(), (unsigned)((millis() - cmd.queuedAt) / 1000));
+  } else if (grace_.missing()) {  // answered as failed (the marks are undone), as one that waited too long
+    LOGF("map: %s not sent: the Chart isn't answering\n", path.c_str());
   } else {
     JsonDocument doc(spiram());  // a few ids: no filter needed
     int code = get(path.c_str(), kTimeoutMs, &doc, nullptr, true);
@@ -549,6 +586,20 @@ void MapClient::setConnection(bool wifi, bool online, int httpCode) {
     conn_.wifi = wifi;
     conn_.online = online;
     conn_.httpCode = httpCode;
+    connRev_++;
+  }
+  if (!online && conn_.missing) {  // offline: no grace to be in
+    conn_.missing = false;
+    connRev_++;
+  }
+  xSemaphoreGive(mutex_);
+}
+
+void MapClient::setMissing(bool missing) {
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  if (missing && (!conn_.online || pending_)) missing = false;  // only online has a grace
+  if (conn_.missing != missing) {
+    conn_.missing = missing;
     connRev_++;
   }
   xSemaphoreGive(mutex_);

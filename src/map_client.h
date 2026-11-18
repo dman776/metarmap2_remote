@@ -18,6 +18,8 @@
 #include "icon_store.h"
 #include "map_route.h"
 #include "map_state.h"
+#include "offline_grace.h"
+#include "timing.h"
 
 class ClientSource;
 class WiFiClient;
@@ -110,7 +112,8 @@ class MapClient {
   void fetchAtis(const char* code);
   void fetchIcon(const char* name, const char* rev);
   void sendSkip(const Cmd& cmd);
-  void setConnection(bool wifi, bool online, int httpCode);
+  void setConnection(bool wifi, bool online, int httpCode);  // offline clears conn_.missing
+  void setMissing(bool missing);  // conn_.missing (online only): in the grace after a missed /api/live answer
   // A switch setMap() asked for: applied (true) between requests, on the task, which then starts over
   // While one waits (pending_), an answer that comes is the old Chart's: dropped, and not "online"
   bool applySwitch();
@@ -141,5 +144,6 @@ class MapClient {
   uint32_t skipRev_ = 0;
   uint32_t skipSeq_ = 0;  // the last skip command's number (requestSkip(), on the screen's task only)
   Connection conn_;
+  offline_grace::Grace grace_{kOfflineGraceMs};  // failed /api/live polls while online (the task's only)
   uint32_t statusRev_ = 0, liveRev_ = 0, connRev_ = 0;
 };

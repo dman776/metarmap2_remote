@@ -73,7 +73,7 @@ constexpr int kPresets[4] = {10, 25, 50, 100};
 
 constexpr uint32_t kHoldMs = 3000;        // a touched control keeps its value while the map catches up
 constexpr uint32_t kSplashHoldMs = 2000;  // the splash stays this long after connecting
-// kWifiTimeoutMs (then the splash names the network it can't join) and kLostMs (the map unreachable this long: back
+// kWifiTimeoutMs (then the splash names the network it can't join) and kLostMs (offline this long: back
 // to the splash screen) are in timing.h: the status light on the back keeps the same time
 constexpr uint32_t kSplashShowMs = 30000;    // the logo's splash closes itself after this long
 constexpr uint32_t kVolumePopupMs = 4000;    // the logo's splash's volume slider closes this long after a touch
@@ -468,6 +468,11 @@ void showAuto(int secs) {
 
 void tickClock() {
   if (!rotateRunning) return;
+  // In the grace after a missed answer the Chart's next switch isn't known: "Auto", not a stuck 0:00
+  if (conn.missing) {
+    showAuto(-1);
+    return;
+  }
   int32_t left = (int32_t)(rotateAtMs - millis());
   showAuto(left > 0 ? (left + 999) / 1000 : 0);
 }
@@ -874,7 +879,8 @@ uint32_t iconsRev = 0;
 // Asks for the next icon the tiles lack, if none is on its way and the Chart is online
 void askIcon() {
   icon_store::Want w;
-  if (!iconFetcher.next(status, icon_store::have, conn.online, millis(), w)) return;
+  // not in the grace after a missed answer: a timeout there would be held against the icon (kBadAnswerMs)
+  if (!iconFetcher.next(status, icon_store::have, answering(conn), millis(), w)) return;
   if (client->requestIcon(w.name, w.rev)) iconFetcher.asked(millis());
 }
 
@@ -2627,8 +2633,9 @@ void showUpdate() {
   if (upd.phase == UpdateState::Idle) updater->check();  // fresh, while it's open
 }
 
-// The map unreachable (or Wi-Fi gone) for 5 s: the splash screen, retrying,
-// until it's back. Not over the update screen, which doesn't need the map.
+// Offline for kLostMs: the splash screen, retrying, until it's back. Offline is at once for Wi-Fi gone, and only
+// after kOfflineGraceMs of missed /api/live answers for the map (MapClient). Not over the update screen, which
+// doesn't need the map.
 void checkMapLost() {
   static bool everOnline = false;
   static uint32_t lostSince = 0;
@@ -2960,6 +2967,10 @@ ui_control::Outcome ui_control_card(const ui_control::CardRequest& req) {
   if (!onUiTask()) return wrongTask();
   Outcome r = reachable();
   if (!r.ok()) return r;
+  // a card's tap pulses the airport on the Chart and its buttons ask it too: in the grace after a missed answer
+  // they'd not be sent (Stop is the Copilot's own)
+  bool asksChart = req.opens() || (req.button != Button::None && req.button != Button::Stop);
+  if (asksChart && conn.missing) return fail(409, "The Chart isn't answering.");
   int index = cardTile;
   if (req.opens()) {
     std::vector<std::string> codes(tiles.size());
@@ -2996,7 +3007,7 @@ ui_control::Outcome ui_control_visualizer(const std::string& want) {
   if (status.visualizers.empty()) return fail(409, "The Chart's visualizers aren't known yet.");
   int index = ui_control::findVisualizer(status.visualizers, want);
   if (index < 0) return fail(404, "\"" + want + "\" isn't one of the Chart's visualizers.");
-  if (!conn.online) return fail(409, "The Chart isn't answering.");
+  if (!answering(conn)) return fail(409, "The Chart isn't answering.");
   if (pickerOpen()) {
     tapPick(index);  // lit a moment, then the picker closes, as a tap
     settle(kPickedMs + 100);
