@@ -382,7 +382,7 @@ buttons: **Chart**, **Airports**, and the **logo**.
 
 **Quiet hours**
 
-- While the Chart's quiet hours are on (`/api/live`'s `quiet`), the screen's backlight dims to about 5%, so the
+- While the Chart's quiet hours are on (`/api/live`'s `quiet`), the screen's backlight dims to about 15%, so the
   Copilot doesn't light up a dark room. The screen still shows everything; it's only darker.
 - A touch wakes it to full brightness. That first touch only wakes it: it presses nothing beneath it and makes no
   tick, so a tap on **Pixels** in the dark doesn't change anything until you can see what you're doing. Touch again

@@ -1,4 +1,4 @@
-// In the Chart's quiet hours (/api/live's `quiet`) the screen's backlight dims to about 5%, so the Copilot doesn't
+// In the Chart's quiet hours (/api/live's `quiet`) the screen's backlight dims to about 15%, so the Copilot doesn't
 // light up a dark room. A touch wakes it to full for kAwakeMs from the last touch; that first touch only wakes it (it
 // doesn't press what's beneath), so the next can turn the pixels up. Once quiet hours end, full at once. A touch
 // outside quiet hours counts too: quiet hours starting while someone is using it wait till they've let it be for
@@ -11,7 +11,7 @@
 namespace quiet_dim {
 
 constexpr uint8_t kNormal = 200;  // the backlight (LovyanGFX's 0-255) as it always was
-constexpr uint8_t kDim = 10;      // about 5% of that
+constexpr uint8_t kDim = 38;      // about 15% of full (255), as the Cockpit dims in quiet hours
 constexpr uint32_t kAwakeMs = 30000;
 
 class Backlight {
