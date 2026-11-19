@@ -19,6 +19,10 @@ void lvgl_port_set_quiet(bool quiet);
 // to start at (quiet_dim::kDim or kNormal). The Chart's first answer replaces it (lvgl_port_set_quiet()).
 uint8_t lvgl_port_start_quiet(bool quiet);
 
+// Whether the "reached the Chart" chime may play now (quiet_dim::chimes()): after lvgl_port_set_quiet() has the
+// answer's `quiet`. Call from the loop task.
+bool lvgl_port_chimes();
+
 // Writes the screen to Serial as "SCREENSHOT <w> <h>\n", w*h little-endian
 // RGB565 pixels, then "\nEND\n". tools/screenshot.py turns it into a PNG.
 void lvgl_port_screenshot();

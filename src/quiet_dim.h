@@ -48,6 +48,19 @@ class Backlight {
   uint32_t since_ = 0;  // the last touch
 };
 
+// The quiet hours to start from at a restart: the ones the Chart last said (saved in flash), till it answers. Not
+// in Wi-Fi setup or before a Chart is chosen (a first start): those screens never come up dim, and no Chart may ever
+// answer to end a stale one.
+inline bool startQuiet(bool saved, bool mapChosen, bool wifiSetup) { return saved && mapChosen && !wifiSetup; }
+
+// Whether an answer's `quiet` has to be saved for the next restart: only a change (flash wears)
+inline bool needsSaving(bool answered, bool saved) { return answered != saved; }
+
+// The chime when it reaches the Chart, decided once the answer's `quiet` is applied (setQuiet()): not while that has
+// the screen dim, so a Copilot that comes back in quiet hours (power back at 2 AM, nothing saved) stays silent; a
+// stale saved quiet the answer ends chimes as usual.
+inline bool chimes(Backlight& backlight, uint32_t now) { return !backlight.muted(now); }
+
 // One touch as LVGL should see it, from the controller's readings. The FT6336 sometimes misses a finger for a reading
 // in the middle of a touch, so the finger counts as lifted only after it has been gone releaseMs: one touch is one
 // press (one tick, one click). A touch that lands on a dim screen only wakes it: no press and no tick, from finger

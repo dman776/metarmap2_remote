@@ -3,14 +3,12 @@
 #include <HTTPClient.h>  // its HTTPC_ERROR_* codes, kept for the connection state
 #include <WiFi.h>
 
-#include "audio.h"
 #include "icon_store.h"
 #include "log.h"
 #include "map_parse.h"
 #include "net_client.h"
 #include "skips.h"
 #include "spiram.h"
-#include "stream.h"
 
 namespace {
 
@@ -208,6 +206,14 @@ bool MapClient::getStatus(MapStatus& out, uint32_t& rev) {
   }
   xSemaphoreGive(mutex_);
   return changed;
+}
+
+bool MapClient::takeChime() {
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  bool due = chimeDue_;
+  chimeDue_ = false;
+  xSemaphoreGive(mutex_);
+  return due;
 }
 
 bool MapClient::getLive(MapLive& out, uint32_t& rev) {
@@ -581,7 +587,7 @@ void MapClient::setConnection(bool wifi, bool online, int httpCode) {
     static uint32_t chimed = 0;
     if (online && !conn_.online && (chimed == 0 || millis() - chimed >= kChimeEveryMs)) {
       chimed = millis() | 1;
-      audio_play(sound_chime, stream_volume());
+      chimeDue_ = true;  // the loop task plays it, once the answer's quiet hours are applied (takeChime())
     }
     conn_.wifi = wifi;
     conn_.online = online;

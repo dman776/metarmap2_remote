@@ -77,6 +77,8 @@ uint8_t lvgl_port_start_quiet(bool quiet) {
   return shownLevel;
 }
 
+bool lvgl_port_chimes() { return quiet_dim::chimes(backlight, millis()); }
+
 static void logPrint(lv_log_level_t, const char* buf) { LOGF("%s", buf); }
 
 void lvgl_port_init(LGFX& lcd) {

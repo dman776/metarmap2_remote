@@ -75,6 +75,10 @@ class MapClient {
   bool getLive(MapLive& out, uint32_t& rev);
   bool getConnection(Connection& out, uint32_t& rev);
 
+  // Whether it has just reached the Chart and the chime is due (not again within a minute); once. The answer that
+  // reached it is already in getLive(): take this first, then the live data, then chime if quiet hours allow.
+  bool takeChime();
+
   // The Chart's address as given to begin() or setMap() (the newest, should a switch still be waiting)
   std::string host();
 
@@ -144,6 +148,7 @@ class MapClient {
   uint32_t skipRev_ = 0;
   uint32_t skipSeq_ = 0;  // the last skip command's number (requestSkip(), on the screen's task only)
   Connection conn_;
+  bool chimeDue_ = false;                        // setConnection() reached the Chart: takeChime()
   offline_grace::Grace grace_{kOfflineGraceMs};  // failed /api/live polls while online (the task's only)
   uint32_t statusRev_ = 0, liveRev_ = 0, connRev_ = 0;
 };

@@ -279,41 +279,62 @@ void test_sounds_mute_across_a_millis_wrap() {
   TEST_ASSERT_TRUE(b.muted(t + kAwakeMs + 0x10000));  // and stays muted
 }
 
-// A restart starts from the `quiet` the Chart last said (saved: lvgl_port_start_quiet()), till the Chart answers
-void test_restart_with_saved_quiet_starts_dim_and_muted() {
+// A restart starts from the `quiet` the Chart last said (saved), not in Wi-Fi setup or before a Chart is chosen
+void test_start_quiet_from_the_saved_one() {
+  TEST_ASSERT_TRUE(quiet_dim::startQuiet(true, true, false));    // saved quiet, a Chart chosen: starts dim
+  TEST_ASSERT_FALSE(quiet_dim::startQuiet(false, true, false));  // nothing saved (or saved not quiet)
+  TEST_ASSERT_FALSE(quiet_dim::startQuiet(true, false, false));  // a first start: no Chart chosen yet
+  TEST_ASSERT_FALSE(quiet_dim::startQuiet(true, true, true));    // Wi-Fi setup: the QR screen is never dim
+  TEST_ASSERT_FALSE(quiet_dim::startQuiet(true, false, true));
+}
+
+void test_start_quiet_seeds_dim_and_muted_till_the_chart_answers() {
   Backlight b;
-  b.setQuiet(true);  // saved
+  b.setQuiet(quiet_dim::startQuiet(true, true, false));
   TEST_ASSERT_EQUAL_UINT8(kDim, b.level(0));
   TEST_ASSERT_TRUE(b.muted(0));
-  TEST_ASSERT_EQUAL_UINT8(kDim, b.level(60000));  // the Chart not answering: stays dim
-  TEST_ASSERT_TRUE(b.touched(60000));             // a touch still wakes it (and only wakes it)
-  TEST_ASSERT_FALSE(b.muted(60000));
+  TEST_ASSERT_TRUE(b.muted(600000));  // the Chart not answering: stays so
+  b.setQuiet(false);                  // its first answer: quiet hours over
+  TEST_ASSERT_EQUAL_UINT8(kNormal, b.level(600001));
+  TEST_ASSERT_FALSE(b.muted(600001));
 }
 
-void test_restart_first_answer_not_quiet_is_full_at_once() {
+void test_start_quiet_ignored_in_setup_starts_full() {
   Backlight b;
-  b.setQuiet(true);  // saved
-  TEST_ASSERT_EQUAL_UINT8(kDim, b.level(500));
-  b.setQuiet(false);  // the Chart's first answer (or one without `quiet`, or a map switch)
-  TEST_ASSERT_EQUAL_UINT8(kNormal, b.level(501));
-  TEST_ASSERT_FALSE(b.muted(501));
-}
-
-void test_restart_first_answer_quiet_stays_dim() {
-  Backlight b;
-  b.setQuiet(true);  // saved
-  b.setQuiet(true);  // the Chart's first answer
-  TEST_ASSERT_EQUAL_UINT8(kDim, b.level(2000));
-  TEST_ASSERT_TRUE(b.muted(2000));
-}
-
-void test_restart_with_saved_not_quiet_starts_full() {
-  Backlight b;
-  b.setQuiet(false);  // saved (or nothing saved yet)
+  b.setQuiet(quiet_dim::startQuiet(true, true, true));
   TEST_ASSERT_EQUAL_UINT8(kNormal, b.level(0));
   TEST_ASSERT_FALSE(b.muted(0));
-  b.setQuiet(true);  // the Chart's first answer: dims at once (nobody has touched it)
-  TEST_ASSERT_EQUAL_UINT8(kDim, b.level(3000));
+}
+
+void test_needs_saving_only_a_change() {
+  TEST_ASSERT_TRUE(quiet_dim::needsSaving(true, false));
+  TEST_ASSERT_TRUE(quiet_dim::needsSaving(false, true));  // quiet over, a map switch, or a Chart that doesn't say
+  TEST_ASSERT_FALSE(quiet_dim::needsSaving(true, true));  // each answer in quiet hours: no write
+  TEST_ASSERT_FALSE(quiet_dim::needsSaving(false, false));
+}
+
+// The chime when it reaches the Chart, once the answer's quiet is applied
+void test_chime_silent_when_the_answer_is_quiet_and_untouched() {
+  Backlight b;       // nothing saved (first boot of this firmware, power back at 2 AM with false saved, a map switch)
+  b.setQuiet(true);  // the answer that reached the Chart
+  TEST_ASSERT_FALSE(quiet_dim::chimes(b, 5000));
+}
+
+void test_chime_plays_when_the_answer_ends_a_stale_saved_quiet() {
+  Backlight b;
+  b.setQuiet(true);  // saved, stale
+  TEST_ASSERT_FALSE(quiet_dim::chimes(b, 100));
+  b.setQuiet(false);  // the answer: not quiet hours
+  TEST_ASSERT_TRUE(quiet_dim::chimes(b, 5000));
+}
+
+void test_chime_plays_outside_quiet_hours_and_while_awake() {
+  Backlight b;
+  TEST_ASSERT_TRUE(quiet_dim::chimes(b, 5000));
+  b.setQuiet(true);
+  b.touched(6000);  // someone woke it: sounds are on while it's awake
+  TEST_ASSERT_TRUE(quiet_dim::chimes(b, 6000 + kAwakeMs - 1));
+  TEST_ASSERT_FALSE(quiet_dim::chimes(b, 6000 + kAwakeMs));
 }
 
 int main() {
@@ -343,9 +364,12 @@ int main() {
   RUN_TEST(test_sounds_muted_again_as_it_redims);
   RUN_TEST(test_sounds_never_muted_outside_quiet_hours);
   RUN_TEST(test_sounds_mute_across_a_millis_wrap);
-  RUN_TEST(test_restart_with_saved_quiet_starts_dim_and_muted);
-  RUN_TEST(test_restart_first_answer_not_quiet_is_full_at_once);
-  RUN_TEST(test_restart_first_answer_quiet_stays_dim);
-  RUN_TEST(test_restart_with_saved_not_quiet_starts_full);
+  RUN_TEST(test_start_quiet_from_the_saved_one);
+  RUN_TEST(test_start_quiet_seeds_dim_and_muted_till_the_chart_answers);
+  RUN_TEST(test_start_quiet_ignored_in_setup_starts_full);
+  RUN_TEST(test_needs_saving_only_a_change);
+  RUN_TEST(test_chime_silent_when_the_answer_is_quiet_and_untouched);
+  RUN_TEST(test_chime_plays_when_the_answer_ends_a_stale_saved_quiet);
+  RUN_TEST(test_chime_plays_outside_quiet_hours_and_while_awake);
   return UNITY_END();
 }

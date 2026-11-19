@@ -404,7 +404,11 @@ buttons: **Chart**, **Airports**, and the **logo**.
 - It remembers what the Chart last said through a restart (saved in its settings when it changes), so a Copilot that
   restarts in quiet hours comes up dimmed and silent, not at full brightness. The Chart's first answer replaces it
   (full brightness at once if quiet hours have ended). If the Chart can't be reached after the restart, the screen
-  stays dimmed until it can (a touch still wakes it). A factory image clears it with the other settings.
+  stays dimmed until it can (a touch still wakes it). Wi-Fi setup and a first start (no Chart chosen yet) never come
+  up dimmed or silent, and Wi-Fi setup forgets the remembered quiet hours. A factory image clears it with the other
+  settings.
+- The chime when it reaches the Chart follows the Chart's answer: if that answer says quiet hours and the screen
+  is dimmed, there's no chime (after a power cut at night, say); if it says they're over, it chimes as usual.
 - Needs a Chart whose `/api/live` says `quiet` (metarmap2 newer than 26.11.18); with an older one the screen never
   dims and the sounds are never muted. Quiet hours are set on the Chart.
 
