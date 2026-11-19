@@ -90,7 +90,8 @@ Empty: the Copilot looks for the Chart itself after the restart (one found is us
 Red: the Chart isn't answering. Purple: Wi-Fi setup. Yellow: installing an update. 0 turns it off.</p>
 <label class="chk"><input type="checkbox" id="sounds"> Sounds</label>
 <p class="note" id="soundsMsg">The chime when it reaches the Chart, and the pops when you hold a visualizer in the
-picker or let go of the splash's volume slider. Not the touch tick or the spoken weather.</p>
+picker or let go of the splash's volume slider. Not the touch tick or the spoken weather. In the Chart's quiet
+hours these and the touch tick are silent while the screen is dimmed.</p>
 <label class="chk"><input type="checkbox" id="remote"> Remote control (for screenshots)</label>
 <p class="note" id="remoteMsg">Lets a script with this page's login open the Copilot's screens over HTTP and take
 screenshots (tools/shoot.py). It can also switch the Chart's visualizer and press a card's Locate, AWOS and ATIS

@@ -89,8 +89,14 @@ void setup() {
 
   lcd.init();
   lcd.setRotation(3);  // landscape, USB-C on the right
-  // dimmed in the Chart's quiet hours (lvgl_port.cpp)
-  lcd.setBrightness(quiet_dim::kNormal);
+  // dimmed in the Chart's quiet hours (lvgl_port.cpp): from the last the Chart said till it answers; not in Wi-Fi
+  // setup or on a first start (forgotten then: no Chart may answer to end it)
+  bool quiet = quiet_dim::startQuiet(settings.quiet, settings.mapChosen, isSetupSsid(settings.wifiName));
+  if (quiet_dim::needsSaving(quiet, settings.quiet)) {
+    settings.quiet = quiet;
+    settings_save_quiet(quiet);
+  }
+  lcd.setBrightness(lvgl_port_start_quiet(quiet));
 
   lvgl_port_init(lcd);
   ui_init(mapClient, updater, settings);

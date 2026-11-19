@@ -21,6 +21,7 @@
 #include "map_parse.h"
 #include "map_scan.h"
 #include "pages.h"
+#include "quiet_dim.h"
 #include "remote_web.h"
 #include "settings.h"
 #include "skips.h"
@@ -2716,9 +2717,20 @@ void ui_open(char what) {
   }
 }
 
+// The Chart's quiet hours: the backlight and sounds (lvgl_port.cpp), and saved for a restart when they change
+static void setQuiet(bool quiet) {
+  lvgl_port_set_quiet(quiet);
+  if (quiet_dim::needsSaving(quiet, settings->quiet)) {
+    settings->quiet = quiet;
+    settings_save_quiet(quiet);
+  }
+}
+
 void ui_tick() {
+  bool chime = client->takeChime();  // before getLive(): the answer that reached the Chart is in it by now
   if (client->getConnection(conn, connRev)) showConnection();
   bool setup = wifi_setup_active();
+  if (setup) setQuiet(false);  // the setup screen is never dim or muted, nor does a stale quiet outlive it
   if (setup && !setupScr && !updScr) showSetupScreen();
   if (!setup && setupScr) hideSetupScreen();
   if (setupScr) tickSetupScreen();
@@ -2764,7 +2776,7 @@ void ui_tick() {
 
   if (client->getLive(live, liveRev)) {
     // A new answer only: offline, the last one's `quiet` stays; a map switch clears it (MapLive starts over)
-    lvgl_port_set_quiet(live.quiet);
+    setQuiet(live.quiet && !setup);
     if (live.activeIndex != shownIndex) showVisualizer(live.activeIndex);
     showRotation();
     showSkips();
@@ -2773,6 +2785,8 @@ void ui_tick() {
     showSteps();
     if (legendInUse() != legendUsed) showLegend();
   }
+  // reached the Chart: the chime, unless the answer's quiet hours have the screen dim (quiet_dim::chimes())
+  if (chime && lvgl_port_chimes()) audio_play(sound_chime, stream_volume());
   // after /api/live, so its answer wins over a poll from before it
   if (client->getSkip(skipAnswer, skipRev)) showSkipAnswer();
   expireSkips();

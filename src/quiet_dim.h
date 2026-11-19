@@ -4,6 +4,9 @@
 // outside quiet hours counts too: quiet hours starting while someone is using it wait till they've let it be for
 // kAwakeMs. Offline, the last `quiet` the Chart said stays (a map switch forgets it: MapLive starts over). Plain
 // C++, unit tested on the host (test/test_quiet_dim). Only a touch wakes it: the web page's remote control doesn't.
+// While it's dim the sounds are muted too (the tick, the chime, the pops; not the spoken weather or the radio): they
+// come back while a touch has it awake, and go again as it re-dims. A restart starts from the `quiet` the Chart
+// last said (saved in flash), so it comes up dim in quiet hours; the Chart's first answer replaces it.
 #pragma once
 
 #include <cstdint>
@@ -36,11 +39,27 @@ class Backlight {
 
   uint8_t level(uint32_t now) { return dimmed(now) ? kDim : kNormal; }
 
+  // No tick, chime or pop now: quiet hours with the screen dim (awake after a touch, they play again)
+  bool muted(uint32_t now) { return dimmed(now); }
+
  private:
   bool quiet_ = false;
   bool awake_ = false;  // touched within kAwakeMs
   uint32_t since_ = 0;  // the last touch
 };
+
+// The quiet hours to start from at a restart: the ones the Chart last said (saved in flash), till it answers. Not
+// in Wi-Fi setup or before a Chart is chosen (a first start): those screens never come up dim, and no Chart may ever
+// answer to end a stale one.
+inline bool startQuiet(bool saved, bool mapChosen, bool wifiSetup) { return saved && mapChosen && !wifiSetup; }
+
+// Whether an answer's `quiet` has to be saved for the next restart: only a change (flash wears)
+inline bool needsSaving(bool answered, bool saved) { return answered != saved; }
+
+// The chime when it reaches the Chart, decided once the answer's `quiet` is applied (setQuiet()): not while that has
+// the screen dim, so a Copilot that comes back in quiet hours (power back at 2 AM, nothing saved) stays silent; a
+// stale saved quiet the answer ends chimes as usual.
+inline bool chimes(Backlight& backlight, uint32_t now) { return !backlight.muted(now); }
 
 // One touch as LVGL should see it, from the controller's readings. The FT6336 sometimes misses a finger for a reading
 // in the middle of a touch, so the finger counts as lifted only after it has been gone releaseMs: one touch is one

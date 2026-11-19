@@ -229,6 +229,114 @@ void test_quiet_ending_mid_waking_touch_keeps_it_swallowed() {
   TEST_ASSERT_EQUAL(0, r.pressed);
 }
 
+// The sounds (the tick, the chime, the pops): muted while quiet hours have the screen dim, back while it's awake
+void test_sounds_muted_while_quiet_and_dim() {
+  Backlight b;
+  b.setQuiet(true);
+  TEST_ASSERT_TRUE(b.muted(1000));
+  TEST_ASSERT_TRUE(b.muted(500000));
+}
+
+void test_sounds_back_while_awake_after_a_touch() {
+  Backlight b;
+  b.setQuiet(true);
+  b.touched(1000);  // the waking touch
+  TEST_ASSERT_FALSE(b.muted(1000));
+  TEST_ASSERT_FALSE(b.muted(1000 + kAwakeMs - 1));
+  b.touched(20000);  // a later touch keeps them on
+  TEST_ASSERT_FALSE(b.muted(20000 + kAwakeMs - 1));
+}
+
+void test_sounds_muted_again_as_it_redims() {
+  Backlight b;
+  b.setQuiet(true);
+  b.touched(1000);
+  TEST_ASSERT_FALSE(b.muted(1000 + kAwakeMs - 1));
+  TEST_ASSERT_TRUE(b.muted(1000 + kAwakeMs));
+  TEST_ASSERT_EQUAL_UINT8(kDim, b.level(1000 + kAwakeMs));  // muted exactly when dim
+}
+
+void test_sounds_never_muted_outside_quiet_hours() {
+  Backlight b;
+  TEST_ASSERT_FALSE(b.muted(0));
+  TEST_ASSERT_FALSE(b.muted(1000000));
+  b.touched(5000);
+  TEST_ASSERT_FALSE(b.muted(5000 + kAwakeMs + 1));
+  b.setQuiet(true);
+  TEST_ASSERT_TRUE(b.muted(5000 + kAwakeMs + 2));
+  b.setQuiet(false);  // quiet hours end: on at once
+  TEST_ASSERT_FALSE(b.muted(5000 + kAwakeMs + 3));
+}
+
+void test_sounds_mute_across_a_millis_wrap() {
+  Backlight b;
+  b.setQuiet(true);
+  uint32_t t = 0xFFFFFFFFu - 10000;
+  b.touched(t);
+  TEST_ASSERT_FALSE(b.muted(t + 10000));              // still before the wrap
+  TEST_ASSERT_FALSE(b.muted(t + kAwakeMs - 1));       // wrapped past 0, still awake
+  TEST_ASSERT_TRUE(b.muted(t + kAwakeMs));            // re-dimmed after the wrap
+  TEST_ASSERT_TRUE(b.muted(t + kAwakeMs + 0x10000));  // and stays muted
+}
+
+// A restart starts from the `quiet` the Chart last said (saved), not in Wi-Fi setup or before a Chart is chosen
+void test_start_quiet_from_the_saved_one() {
+  TEST_ASSERT_TRUE(quiet_dim::startQuiet(true, true, false));    // saved quiet, a Chart chosen: starts dim
+  TEST_ASSERT_FALSE(quiet_dim::startQuiet(false, true, false));  // nothing saved (or saved not quiet)
+  TEST_ASSERT_FALSE(quiet_dim::startQuiet(true, false, false));  // a first start: no Chart chosen yet
+  TEST_ASSERT_FALSE(quiet_dim::startQuiet(true, true, true));    // Wi-Fi setup: the QR screen is never dim
+  TEST_ASSERT_FALSE(quiet_dim::startQuiet(true, false, true));
+}
+
+void test_start_quiet_seeds_dim_and_muted_till_the_chart_answers() {
+  Backlight b;
+  b.setQuiet(quiet_dim::startQuiet(true, true, false));
+  TEST_ASSERT_EQUAL_UINT8(kDim, b.level(0));
+  TEST_ASSERT_TRUE(b.muted(0));
+  TEST_ASSERT_TRUE(b.muted(600000));  // the Chart not answering: stays so
+  b.setQuiet(false);                  // its first answer: quiet hours over
+  TEST_ASSERT_EQUAL_UINT8(kNormal, b.level(600001));
+  TEST_ASSERT_FALSE(b.muted(600001));
+}
+
+void test_start_quiet_ignored_in_setup_starts_full() {
+  Backlight b;
+  b.setQuiet(quiet_dim::startQuiet(true, true, true));
+  TEST_ASSERT_EQUAL_UINT8(kNormal, b.level(0));
+  TEST_ASSERT_FALSE(b.muted(0));
+}
+
+void test_needs_saving_only_a_change() {
+  TEST_ASSERT_TRUE(quiet_dim::needsSaving(true, false));
+  TEST_ASSERT_TRUE(quiet_dim::needsSaving(false, true));  // quiet over, a map switch, or a Chart that doesn't say
+  TEST_ASSERT_FALSE(quiet_dim::needsSaving(true, true));  // each answer in quiet hours: no write
+  TEST_ASSERT_FALSE(quiet_dim::needsSaving(false, false));
+}
+
+// The chime when it reaches the Chart, once the answer's quiet is applied
+void test_chime_silent_when_the_answer_is_quiet_and_untouched() {
+  Backlight b;       // nothing saved (first boot of this firmware, power back at 2 AM with false saved, a map switch)
+  b.setQuiet(true);  // the answer that reached the Chart
+  TEST_ASSERT_FALSE(quiet_dim::chimes(b, 5000));
+}
+
+void test_chime_plays_when_the_answer_ends_a_stale_saved_quiet() {
+  Backlight b;
+  b.setQuiet(true);  // saved, stale
+  TEST_ASSERT_FALSE(quiet_dim::chimes(b, 100));
+  b.setQuiet(false);  // the answer: not quiet hours
+  TEST_ASSERT_TRUE(quiet_dim::chimes(b, 5000));
+}
+
+void test_chime_plays_outside_quiet_hours_and_while_awake() {
+  Backlight b;
+  TEST_ASSERT_TRUE(quiet_dim::chimes(b, 5000));
+  b.setQuiet(true);
+  b.touched(6000);  // someone woke it: sounds are on while it's awake
+  TEST_ASSERT_TRUE(quiet_dim::chimes(b, 6000 + kAwakeMs - 1));
+  TEST_ASSERT_FALSE(quiet_dim::chimes(b, 6000 + kAwakeMs));
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_levels);
@@ -251,5 +359,17 @@ int main() {
   RUN_TEST(test_a_second_tap_after_a_waking_tap_presses);
   RUN_TEST(test_a_touch_after_it_redims_only_wakes_again);
   RUN_TEST(test_quiet_ending_mid_waking_touch_keeps_it_swallowed);
+  RUN_TEST(test_sounds_muted_while_quiet_and_dim);
+  RUN_TEST(test_sounds_back_while_awake_after_a_touch);
+  RUN_TEST(test_sounds_muted_again_as_it_redims);
+  RUN_TEST(test_sounds_never_muted_outside_quiet_hours);
+  RUN_TEST(test_sounds_mute_across_a_millis_wrap);
+  RUN_TEST(test_start_quiet_from_the_saved_one);
+  RUN_TEST(test_start_quiet_seeds_dim_and_muted_till_the_chart_answers);
+  RUN_TEST(test_start_quiet_ignored_in_setup_starts_full);
+  RUN_TEST(test_needs_saving_only_a_change);
+  RUN_TEST(test_chime_silent_when_the_answer_is_quiet_and_untouched);
+  RUN_TEST(test_chime_plays_when_the_answer_ends_a_stale_saved_quiet);
+  RUN_TEST(test_chime_plays_outside_quiet_hours_and_while_awake);
   return UNITY_END();
 }

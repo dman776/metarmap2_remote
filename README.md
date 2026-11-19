@@ -119,7 +119,9 @@ buttons: **Chart**, **Airports**, and the **logo**.
   **Wi-Fi setup** on its screen (below). A USB build's `secrets.h` applies only
   when it changes, so what you save on the page stays.
   Also the **status light**'s brightness (0-100%, 0 for off), and **Sounds** (on at first): the chime and the
-  pops (the picker's, the volume slider's), off for silence (the touch tick and the spoken weather stay). Both take effect at once and stay
+  pops (the picker's, the volume slider's), off for silence (the touch tick and the spoken weather stay). In the
+  Chart's quiet hours they're silent anyway while the screen is dimmed, and the tick too; off stays off when it's
+  awake. Both take effect at once and stay
   through restarts and firmware updates.
 - **Remote control (for screenshots)** (off at first): lets a script with the page's login open the Copilot's
   screens and take screenshots over HTTP (see [Screenshots over HTTP](#screenshots-over-http)). It needs a web
@@ -288,7 +290,7 @@ buttons: **Chart**, **Airports**, and the **logo**.
   (`metarmap_remote-es3c28p.bin`; not pre-releases or branch builds), newest first. Pick one: the screen says
   whether it's older, newer or the same as installed, and **INSTALL, KEEPING SETTINGS** (the page's
   **Install v...**) installs exactly that release, even an older one. The settings (Wi-Fi, the Chart's address,
-  the web password, volume, status light, sounds, the update channel) are kept: they're in flash, outside the
+  the web password, volume, status light, sounds, the update channel, the Chart's last quiet hours) are kept: they're in flash, outside the
   firmware, and every release reads them the same way. The star only shows for a newer release, so while the
   channel is Pick release the Copilot doesn't tell you about new releases: switch back to **Releases** for that.
 - Firmware from a few commits after a release (`v26.11.10+3 abc1234`) counts as newer than that release, so
@@ -369,6 +371,8 @@ buttons: **Chart**, **Airports**, and the **logo**.
   hold it to put it back, and one when you let go of the splash's volume slider. They play at the speaker's volume
   (the slider), and not while the radio plays. **Sounds**
   on the web page's Settings turns them off (the tick and the spoken weather stay); a tick during one is mixed in.
+  In the Chart's quiet hours the tick, the chime and the pops are silent while the screen is dimmed (see
+  **Quiet hours** below).
 - A touch has to move 16 px before it scrolls rather than taps, so a finger
   that drifts a little still taps.
 - Like the Cockpit, a control you just touched keeps your setting for
@@ -388,13 +392,25 @@ buttons: **Chart**, **Airports**, and the **logo**.
   tick, so a tap on **Pixels** in the dark doesn't change anything until you can see what you're doing. Touch again
   to use it as usual (turn the pixels up, say): once you've lifted your finger, the next touch presses, even a
   quick second tap. A finger that slides or holds while waking it still presses nothing until you lift it.
+- While it's dimmed it's silent too: no touch tick, no chime when it reaches the Chart, no pops (the picker's, the
+  volume slider's), and one already playing stops. While a touch has it awake they play again (as **Sounds** on the
+  web page allows), until it dims again. The spoken weather (METAR, ATIS, AWOS) and the radio still play: they only
+  play when you start them.
 - Only a touch wakes it. The web page's remote control (`/api/ui/...`) works on a dimmed screen but leaves it dim.
 - 30 s after the last touch it dims again, for as long as quiet hours last. When they end it's at full brightness at
   once. Quiet hours starting while you're using it wait until it's been left alone for 30 s.
 - While the Chart isn't answering, the Copilot keeps what it last said: a screen dimmed for quiet hours stays dim (a
   touch still wakes it). Switching to another Chart starts at full brightness until that one answers.
+- It remembers what the Chart last said through a restart (saved in its settings when it changes), so a Copilot that
+  restarts in quiet hours comes up dimmed and silent, not at full brightness. The Chart's first answer replaces it
+  (full brightness at once if quiet hours have ended). If the Chart can't be reached after the restart, the screen
+  stays dimmed until it can (a touch still wakes it). Wi-Fi setup and a first start (no Chart chosen yet) never come
+  up dimmed or silent, and Wi-Fi setup forgets the remembered quiet hours. A factory image clears it with the other
+  settings.
+- The chime when it reaches the Chart follows the Chart's answer: if that answer says quiet hours and the screen
+  is dimmed, there's no chime (after a power cut at night, say); if it says they're over, it chimes as usual.
 - Needs a Chart whose `/api/live` says `quiet` (metarmap2 newer than 26.11.18); with an older one the screen never
-  dims. Quiet hours are set on the Chart.
+  dims and the sounds are never muted. Quiet hours are set on the Chart.
 
 The Cockpit's Map tab (the live map needs a browser), the visualizer's
 description and the Micro switch are left out.
@@ -676,7 +692,7 @@ The firmware uses the Arduino framework with [LVGL](https://lvgl.io/) 9,
 
 ### Tests and lint
 
-The parsing, legend, paging, skip marks, visualizer icons, remote control's requests, update-check, network-wait, offline grace, quiet-hours dimming, debounce and audio (buffer, resampler, URL) code is plain C++ with unit tests that
+The parsing, legend, paging, skip marks, visualizer icons, remote control's requests, update-check, network-wait, offline grace, quiet-hours dimming and muting, debounce and audio (buffer, resampler, URL) code is plain C++ with unit tests that
 run on your computer (PlatformIO's Unity framework). The JSON fixtures in
 `test/test_parse` are real, trimmed answers from a Chart.
 

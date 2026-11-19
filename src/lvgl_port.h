@@ -10,8 +10,18 @@
 void lvgl_port_init(LGFX& lcd);
 
 // The Chart's quiet hours (/api/live's `quiet`): the backlight dims to about 10%, a touch wakes it for 30 s (that touch
-// only wakes, it presses nothing), and it's full again at once when they end (quiet_dim.h). Call from the loop task.
+// only wakes, it presses nothing), and it's full again at once when they end (quiet_dim.h). The tick, chime and pops
+// are muted while it's dim (audio_set_quiet_muted()). Call from the loop task.
 void lvgl_port_set_quiet(bool quiet);
+
+// At startup, before the backlight is first set and the Chart has answered: the quiet hours the Chart last said
+// (saved in flash, Settings::quiet), so a restart in quiet hours comes up dim and muted. Returns the backlight level
+// to start at (quiet_dim::kDim or kNormal). The Chart's first answer replaces it (lvgl_port_set_quiet()).
+uint8_t lvgl_port_start_quiet(bool quiet);
+
+// Whether the "reached the Chart" chime may play now (quiet_dim::chimes()): after lvgl_port_set_quiet() has the
+// answer's `quiet`. Call from the loop task.
+bool lvgl_port_chimes();
 
 // Writes the screen to Serial as "SCREENSHOT <w> <h>\n", w*h little-endian
 // RGB565 pixels, then "\nEND\n". tools/screenshot.py turns it into a PNG.

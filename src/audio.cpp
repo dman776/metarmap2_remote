@@ -43,6 +43,7 @@ QueueHandle_t requests = nullptr;
 TaskHandle_t playTask = nullptr;
 std::atomic<bool> clickAsked{false};
 std::atomic<bool> soundsOn{true};
+std::atomic<bool> quietMuted{false};  // quiet hours with the screen dim: no tick, chime or pop
 std::atomic<uint32_t> lastStreamWrite{0};
 std::atomic<uint32_t> lastClick{0};  // when a tick was last let through (0: never)
 
@@ -156,7 +157,11 @@ void playLoop(void*) {
     }
     if (clickAsked.exchange(false)) clickAt = 0;
     if (!soundsOn.load()) sound = nullptr;  // turned off: stops at once
-    if (streamPlaying()) {                  // the stream has the speaker: drop what's playing
+    if (quietMuted.load()) {                // quiet hours, screen dim: stops at once, tick too
+      sound = nullptr;
+      clickAt = -1;
+    }
+    if (streamPlaying()) {  // the stream has the speaker: drop what's playing
       sound = nullptr;
       clickAt = -1;
     }
@@ -227,6 +232,7 @@ bool audio_begin() {
 
 void audio_click() {
   if (!ready || !playTask || streamPlaying()) return;  // over a stream: nothing to hear it over, and no pop
+  if (quietMuted.load()) return;                       // quiet hours, screen dim
   // One tick per press: a request within kClickMs of the last one is the same touch (a finger the touch controller
   // lost for a moment), not a new one. From any task: only the one that moves lastClick asks.
   uint32_t last = lastClick.load(), now = millis();
@@ -236,13 +242,18 @@ void audio_click() {
 }
 
 void audio_play(const Sound& sound, int volume) {
-  if (!ready || !playTask || !soundsOn.load()) return;
+  if (!ready || !playTask || !soundsOn.load() || quietMuted.load()) return;
   Request r{&sound, volume};
   xQueueOverwrite(requests, &r);
   xTaskNotifyGive(playTask);
 }
 
 void audio_set_sounds(bool on) { soundsOn.store(on); }
+
+void audio_set_quiet_muted(bool muted) {
+  if (quietMuted.exchange(muted) == muted || !muted || !playTask) return;
+  xTaskNotifyGive(playTask);  // muted: the play task stops what's playing at its next chunk
+}
 
 bool audio_ready() { return ready; }
 
