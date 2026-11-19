@@ -30,6 +30,9 @@ struct Settings {
   int ledBrightness = 5;                   // the status light on the back, 0-100 (%); 0 is off
   bool sounds = true;                      // the chime and the picker's pops (audio_play()); not the tick or speech
   bool remoteControl = false;              // the screens can be driven over HTTP, for screenshots (/api/ui/...)
+  // The Chart's quiet hours as it last said (/api/live's `quiet`): a restart starts from it (dim and muted if on),
+  // not at full brightness till the Chart answers (quiet_dim.h)
+  bool quiet = false;
 };
 
 // The saved settings, after saving secrets.h's if this build has them.
@@ -63,6 +66,9 @@ void settings_save_sounds(bool on);
 
 // Saves whether remote control is on (the web page's "Remote control (for screenshots)"). Writes only a change.
 void settings_save_remote_control(bool on);
+
+// Saves the Chart's quiet hours as it last said them (Settings::quiet). Writes only a change: a few a day at most.
+void settings_save_quiet(bool quiet);
 
 // Saves the web page's login password.
 void settings_save_web_password(const std::string& password);

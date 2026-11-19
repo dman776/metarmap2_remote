@@ -26,11 +26,18 @@ static constexpr uint32_t kReleaseMs = 60;
 
 static quiet_dim::Backlight backlight;
 static quiet_dim::Touch touch(backlight, kReleaseMs);  // a touch on a dim screen only wakes it
-static uint8_t shownLevel = quiet_dim::kNormal;        // main.cpp starts the backlight at that
+static uint8_t shownLevel = quiet_dim::kNormal;        // main.cpp starts the backlight at lvgl_port_start_quiet()'s
+static bool soundsMuted = false;                       // audio_set_quiet_muted() as last set
 
-// The backlight as quiet hours and the last touch have it (quiet_dim.h). Called each touch reading (LVGL reads
-// every 33 ms), so it re-dims on time without a timer of its own.
+// The backlight and the sounds as quiet hours and the last touch have them (quiet_dim.h). Called each touch reading
+// (LVGL reads every 33 ms), so it re-dims (and mutes) on time without a timer of its own.
 static void applyBacklight(uint32_t now) {
+  bool muted = backlight.muted(now);
+  if (muted != soundsMuted) {
+    soundsMuted = muted;
+    audio_set_quiet_muted(muted);
+    LOGF("sounds: %s\n", muted ? "muted (quiet hours)" : "on");
+  }
   uint8_t level = backlight.level(now);
   if (level == shownLevel) return;
   shownLevel = level;
@@ -58,6 +65,16 @@ void lvgl_port_set_quiet(bool quiet) {
   if (quiet != backlight.quiet()) LOGF("screen: the Chart's quiet hours %s\n", quiet ? "began" : "ended");
   backlight.setQuiet(quiet);
   if (g_lcd) applyBacklight(millis());  // ended: full at once, not at the next touch reading
+}
+
+uint8_t lvgl_port_start_quiet(bool quiet) {
+  backlight.setQuiet(quiet);
+  uint32_t now = millis();
+  shownLevel = backlight.level(now);
+  soundsMuted = backlight.muted(now);
+  audio_set_quiet_muted(soundsMuted);
+  if (quiet) LOGF("screen: dimmed and sounds muted (the Chart's quiet hours, as it last said)\n");
+  return shownLevel;
 }
 
 static void logPrint(lv_log_level_t, const char* buf) { LOGF("%s", buf); }

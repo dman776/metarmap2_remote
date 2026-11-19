@@ -13,7 +13,6 @@
 #include "lvgl_port.h"
 #include "map_client.h"
 #include "map_list.h"
-#include "quiet_dim.h"
 #include "remote_web.h"
 #include "settings.h"
 #include "status_led.h"
@@ -89,8 +88,8 @@ void setup() {
 
   lcd.init();
   lcd.setRotation(3);  // landscape, USB-C on the right
-  // dimmed in the Chart's quiet hours (lvgl_port.cpp)
-  lcd.setBrightness(quiet_dim::kNormal);
+  // dimmed in the Chart's quiet hours (lvgl_port.cpp): from the last the Chart said till it answers
+  lcd.setBrightness(lvgl_port_start_quiet(settings.quiet));
 
   lvgl_port_init(lcd);
   ui_init(mapClient, updater, settings);

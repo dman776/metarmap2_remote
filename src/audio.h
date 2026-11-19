@@ -14,18 +14,24 @@ bool audio_begin();
 
 // A short tick, for touch feedback. Returns at once: the task that plays audio_play()'s sounds writes it too (mixed
 // into one playing), so the two never interleave. (Dropped while a stream plays: nothing to hear a tick over; and
-// within 120 ms of the last one, which is the same touch.) The touch driver (lvgl_port.cpp) asks for it as a finger
-// lands: buttons don't ask again.
+// within 120 ms of the last one, which is the same touch; and while muted for quiet hours.) The touch driver
+// (lvgl_port.cpp) asks for it as a finger lands: buttons don't ask again.
 void audio_click();
 
 // Plays a short sound from sounds.h (mono, 16 kHz) at volume 0-100 (%), the speaker's own volume setting. Returns at
 // once: a task feeds it to the speaker. A sound asked for while another plays replaces it, and nothing plays while a
-// stream is playing (the two would mix into noise). Silent while the sounds are off (audio_set_sounds()).
+// stream is playing (the two would mix into noise). Silent while the sounds are off (audio_set_sounds()) or muted
+// for quiet hours (audio_set_quiet_muted()).
 void audio_play(const Sound& sound, int volume);
 
 // The web page's Sounds setting: whether audio_play() plays (the chime, the picker's and the splash volume's pops).
 // Off stops one playing. The touch tick and the spoken weather don't follow it. Any task.
 void audio_set_sounds(bool on);
+
+// The Chart's quiet hours with the screen dim (quiet_dim::Backlight::muted()): no touch tick, chime or pop, and one
+// playing stops. On top of audio_set_sounds() (off stays off). The spoken weather and the radio don't follow it:
+// they play only when someone starts them. lvgl_port.cpp sets it as it sets the backlight. Any task.
+void audio_set_quiet_muted(bool muted);
 
 // Whether audio_begin() found the codec.
 bool audio_ready();

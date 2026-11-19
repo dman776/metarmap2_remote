@@ -229,6 +229,93 @@ void test_quiet_ending_mid_waking_touch_keeps_it_swallowed() {
   TEST_ASSERT_EQUAL(0, r.pressed);
 }
 
+// The sounds (the tick, the chime, the pops): muted while quiet hours have the screen dim, back while it's awake
+void test_sounds_muted_while_quiet_and_dim() {
+  Backlight b;
+  b.setQuiet(true);
+  TEST_ASSERT_TRUE(b.muted(1000));
+  TEST_ASSERT_TRUE(b.muted(500000));
+}
+
+void test_sounds_back_while_awake_after_a_touch() {
+  Backlight b;
+  b.setQuiet(true);
+  b.touched(1000);  // the waking touch
+  TEST_ASSERT_FALSE(b.muted(1000));
+  TEST_ASSERT_FALSE(b.muted(1000 + kAwakeMs - 1));
+  b.touched(20000);  // a later touch keeps them on
+  TEST_ASSERT_FALSE(b.muted(20000 + kAwakeMs - 1));
+}
+
+void test_sounds_muted_again_as_it_redims() {
+  Backlight b;
+  b.setQuiet(true);
+  b.touched(1000);
+  TEST_ASSERT_FALSE(b.muted(1000 + kAwakeMs - 1));
+  TEST_ASSERT_TRUE(b.muted(1000 + kAwakeMs));
+  TEST_ASSERT_EQUAL_UINT8(kDim, b.level(1000 + kAwakeMs));  // muted exactly when dim
+}
+
+void test_sounds_never_muted_outside_quiet_hours() {
+  Backlight b;
+  TEST_ASSERT_FALSE(b.muted(0));
+  TEST_ASSERT_FALSE(b.muted(1000000));
+  b.touched(5000);
+  TEST_ASSERT_FALSE(b.muted(5000 + kAwakeMs + 1));
+  b.setQuiet(true);
+  TEST_ASSERT_TRUE(b.muted(5000 + kAwakeMs + 2));
+  b.setQuiet(false);  // quiet hours end: on at once
+  TEST_ASSERT_FALSE(b.muted(5000 + kAwakeMs + 3));
+}
+
+void test_sounds_mute_across_a_millis_wrap() {
+  Backlight b;
+  b.setQuiet(true);
+  uint32_t t = 0xFFFFFFFFu - 10000;
+  b.touched(t);
+  TEST_ASSERT_FALSE(b.muted(t + 10000));              // still before the wrap
+  TEST_ASSERT_FALSE(b.muted(t + kAwakeMs - 1));       // wrapped past 0, still awake
+  TEST_ASSERT_TRUE(b.muted(t + kAwakeMs));            // re-dimmed after the wrap
+  TEST_ASSERT_TRUE(b.muted(t + kAwakeMs + 0x10000));  // and stays muted
+}
+
+// A restart starts from the `quiet` the Chart last said (saved: lvgl_port_start_quiet()), till the Chart answers
+void test_restart_with_saved_quiet_starts_dim_and_muted() {
+  Backlight b;
+  b.setQuiet(true);  // saved
+  TEST_ASSERT_EQUAL_UINT8(kDim, b.level(0));
+  TEST_ASSERT_TRUE(b.muted(0));
+  TEST_ASSERT_EQUAL_UINT8(kDim, b.level(60000));  // the Chart not answering: stays dim
+  TEST_ASSERT_TRUE(b.touched(60000));             // a touch still wakes it (and only wakes it)
+  TEST_ASSERT_FALSE(b.muted(60000));
+}
+
+void test_restart_first_answer_not_quiet_is_full_at_once() {
+  Backlight b;
+  b.setQuiet(true);  // saved
+  TEST_ASSERT_EQUAL_UINT8(kDim, b.level(500));
+  b.setQuiet(false);  // the Chart's first answer (or one without `quiet`, or a map switch)
+  TEST_ASSERT_EQUAL_UINT8(kNormal, b.level(501));
+  TEST_ASSERT_FALSE(b.muted(501));
+}
+
+void test_restart_first_answer_quiet_stays_dim() {
+  Backlight b;
+  b.setQuiet(true);  // saved
+  b.setQuiet(true);  // the Chart's first answer
+  TEST_ASSERT_EQUAL_UINT8(kDim, b.level(2000));
+  TEST_ASSERT_TRUE(b.muted(2000));
+}
+
+void test_restart_with_saved_not_quiet_starts_full() {
+  Backlight b;
+  b.setQuiet(false);  // saved (or nothing saved yet)
+  TEST_ASSERT_EQUAL_UINT8(kNormal, b.level(0));
+  TEST_ASSERT_FALSE(b.muted(0));
+  b.setQuiet(true);  // the Chart's first answer: dims at once (nobody has touched it)
+  TEST_ASSERT_EQUAL_UINT8(kDim, b.level(3000));
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_levels);
@@ -251,5 +338,14 @@ int main() {
   RUN_TEST(test_a_second_tap_after_a_waking_tap_presses);
   RUN_TEST(test_a_touch_after_it_redims_only_wakes_again);
   RUN_TEST(test_quiet_ending_mid_waking_touch_keeps_it_swallowed);
+  RUN_TEST(test_sounds_muted_while_quiet_and_dim);
+  RUN_TEST(test_sounds_back_while_awake_after_a_touch);
+  RUN_TEST(test_sounds_muted_again_as_it_redims);
+  RUN_TEST(test_sounds_never_muted_outside_quiet_hours);
+  RUN_TEST(test_sounds_mute_across_a_millis_wrap);
+  RUN_TEST(test_restart_with_saved_quiet_starts_dim_and_muted);
+  RUN_TEST(test_restart_first_answer_not_quiet_is_full_at_once);
+  RUN_TEST(test_restart_first_answer_quiet_stays_dim);
+  RUN_TEST(test_restart_with_saved_not_quiet_starts_full);
   return UNITY_END();
 }

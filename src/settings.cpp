@@ -113,6 +113,7 @@ Settings settings_load() {
   s.ledBrightness = p.getUChar("led_pct", s.ledBrightness);
   s.sounds = p.getBool("sounds", s.sounds);
   s.remoteControl = p.getBool("remote_ctl", s.remoteControl);
+  s.quiet = p.getBool("quiet", s.quiet);
   if (p.isKey("speech_server")) {  // a prototype's own speech server: spoken METARs come from the map now
     p.remove("speech_server");
     saving.wrote(true);
@@ -195,6 +196,11 @@ void settings_save_remote_control(bool on) {
   bool changed = !s.p.isKey("remote_ctl") || s.p.getBool("remote_ctl") != on;  // changes only
   if (changed) s.p.putBool("remote_ctl", on);
   s.wrote(changed);
+}
+
+void settings_save_quiet(bool quiet) {
+  Saving s("the Chart's quiet hours");
+  s.wrote(putFlag(s.p, "quiet", quiet));
 }
 
 void settings_save_web_password(const std::string& password) {
