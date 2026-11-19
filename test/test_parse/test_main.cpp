@@ -170,6 +170,13 @@ void test_live_speech() {
   TEST_ASSERT_FALSE(parseLive(filtered(R"({"speech": false, "leds": []})", liveFilter).as<JsonVariantConst>()).speech);
 }
 
+void test_live_quiet() {
+  // The Chart's quiet hours are on now (the screen dims); a Chart without the field isn't quiet.
+  TEST_ASSERT_FALSE(parseLive(filtered(kLiveJson, liveFilter).as<JsonVariantConst>()).quiet);
+  TEST_ASSERT_TRUE(parseLive(filtered(R"({"quiet": true, "leds": []})", liveFilter).as<JsonVariantConst>()).quiet);
+  TEST_ASSERT_FALSE(parseLive(filtered(R"({"quiet": false, "leds": []})", liveFilter).as<JsonVariantConst>()).quiet);
+}
+
 void test_live_atis() {
   // leds[].atis: the airports with an ATIS to hear (the Info tab's ATIS mode); an older map doesn't say
   const char* json =
@@ -415,6 +422,7 @@ int main() {
   RUN_TEST(test_live_stations);
   RUN_TEST(test_live_nulls);
   RUN_TEST(test_live_speech);
+  RUN_TEST(test_live_quiet);
   RUN_TEST(test_live_atis);
   RUN_TEST(test_atis_lines);
   RUN_TEST(test_atis_line_at);

@@ -41,6 +41,7 @@ void liveFilter(JsonDocument& filter) {
   filter["locate"] = true;
   filter["strip"] = true;
   filter["speech"] = true;
+  filter["quiet"] = true;
 }
 
 void statusFilter(JsonDocument& filter) {
@@ -93,6 +94,7 @@ MapLive parseLive(JsonVariantConst doc) {
   }
   live.strip = !doc["strip"].isNull();
   live.speech = doc["speech"] | false;
+  live.quiet = doc["quiet"] | false;
   if (v["legendInUse"].is<JsonArrayConst>()) {
     live.hasLegendInUse = true;
     for (JsonVariantConst key : v["legendInUse"].as<JsonArrayConst>()) live.legendInUse.push_back(key | "");

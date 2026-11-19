@@ -380,6 +380,22 @@ buttons: **Chart**, **Airports**, and the **logo**.
   with an older Chart. A visualizer whose icon the Copilot has from neither shows just its name. See
   [Visualizer icons](#visualizer-icons).
 
+**Quiet hours**
+
+- While the Chart's quiet hours are on (`/api/live`'s `quiet`), the screen's backlight dims to about 10%, so the
+  Copilot doesn't light up a dark room. The screen still shows everything; it's only darker.
+- A touch wakes it to full brightness. That first touch only wakes it: it presses nothing beneath it and makes no
+  tick, so a tap on **Pixels** in the dark doesn't change anything until you can see what you're doing. Touch again
+  to use it as usual (turn the pixels up, say): once you've lifted your finger, the next touch presses, even a
+  quick second tap. A finger that slides or holds while waking it still presses nothing until you lift it.
+- Only a touch wakes it. The web page's remote control (`/api/ui/...`) works on a dimmed screen but leaves it dim.
+- 30 s after the last touch it dims again, for as long as quiet hours last. When they end it's at full brightness at
+  once. Quiet hours starting while you're using it wait until it's been left alone for 30 s.
+- While the Chart isn't answering, the Copilot keeps what it last said: a screen dimmed for quiet hours stays dim (a
+  touch still wakes it). Switching to another Chart starts at full brightness until that one answers.
+- Needs a Chart whose `/api/live` says `quiet` (metarmap2 newer than 26.11.18); with an older one the screen never
+  dims. Quiet hours are set on the Chart.
+
 The Cockpit's Map tab (the live map needs a browser), the visualizer's
 description and the Micro switch are left out.
 
@@ -660,7 +676,7 @@ The firmware uses the Arduino framework with [LVGL](https://lvgl.io/) 9,
 
 ### Tests and lint
 
-The parsing, legend, paging, skip marks, visualizer icons, remote control's requests, update-check, network-wait, debounce and audio (buffer, resampler, URL) code is plain C++ with unit tests that
+The parsing, legend, paging, skip marks, visualizer icons, remote control's requests, update-check, network-wait, offline grace, quiet-hours dimming, debounce and audio (buffer, resampler, URL) code is plain C++ with unit tests that
 run on your computer (PlatformIO's Unity framework). The JSON fixtures in
 `test/test_parse` are real, trimmed answers from a Chart.
 

@@ -5,6 +5,7 @@
 
 #include "audio.h"
 #include "log.h"
+#include "quiet_dim.h"
 
 static LGFX* g_lcd = nullptr;
 
@@ -19,30 +20,44 @@ static void flush(lv_display_t* disp, const lv_area_t* area, uint8_t* px) {
   lv_display_flush_ready(disp);
 }
 
-// The FT6336 sometimes misses a finger for a reading in the middle of a
-// touch. Count it as lifted only after it has been gone this long, so one
-// touch is one press (one tick, one click) for LVGL.
+// The FT6336 sometimes misses a finger for a reading in the middle of a touch: it counts as lifted only after it
+// has been gone this long, so one touch is one press (one tick, one click) for LVGL (quiet_dim::Touch).
 static constexpr uint32_t kReleaseMs = 60;
 
-static bool touchDown = false;
+static quiet_dim::Backlight backlight;
+static quiet_dim::Touch touch(backlight, kReleaseMs);  // a touch on a dim screen only wakes it
+static uint8_t shownLevel = quiet_dim::kNormal;        // main.cpp starts the backlight at that
+
+// The backlight as quiet hours and the last touch have it (quiet_dim.h). Called each touch reading (LVGL reads
+// every 33 ms), so it re-dims on time without a timer of its own.
+static void applyBacklight(uint32_t now) {
+  uint8_t level = backlight.level(now);
+  if (level == shownLevel) return;
+  shownLevel = level;
+  g_lcd->setBrightness(level);
+  LOGF("screen: %s\n", level == quiet_dim::kDim ? "dimmed (quiet hours)" : "full brightness");
+}
 
 static void readTouch(lv_indev_t*, lv_indev_data_t* data) {
-  static uint32_t lastSeen = 0;
   static lv_point_t last = {0, 0};
   int32_t x, y;
-  if (g_lcd->getTouch(&x, &y)) {
-    if (!touchDown) {
-      audio_click();  // a tick as the finger lands: the only one a press makes (debounced there)
-    }
-    touchDown = true;
-    lastSeen = millis();
+  uint32_t now = millis();
+  bool finger = g_lcd->getTouch(&x, &y);
+  quiet_dim::Touch::Reading r = touch.read(finger, now);
+  if (r.click) audio_click();  // a tick as the finger lands: the only one a press makes (debounced there)
+  if (finger) {
     last.x = x;
     last.y = y;
-  } else if (touchDown && millis() - lastSeen >= kReleaseMs) {
-    touchDown = false;
   }
+  applyBacklight(now);
   data->point = last;
-  data->state = touchDown ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+  data->state = r.pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+}
+
+void lvgl_port_set_quiet(bool quiet) {
+  if (quiet != backlight.quiet()) LOGF("screen: the Chart's quiet hours %s\n", quiet ? "began" : "ended");
+  backlight.setQuiet(quiet);
+  if (g_lcd) applyBacklight(millis());  // ended: full at once, not at the next touch reading
 }
 
 static void logPrint(lv_log_level_t, const char* buf) { LOGF("%s", buf); }
