@@ -108,6 +108,7 @@ struct MapLive {
   int locatePixel = -1;
   double locateAt = NAN;
   bool speech = false;  // the map reads METARs aloud (/api/speak) now: on, with a server; false from an older map
+  bool quiet = false;   // the Chart's quiet hours are on now (the screen dims, quiet_dim.h); false from an older one
 };
 
 // The answer to GET /visualizer/<id>/skip or /unskip: {"id", "skipped", "skip"} (200), or {"error", "reason"} (400)

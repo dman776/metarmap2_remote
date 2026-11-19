@@ -2763,6 +2763,8 @@ void ui_tick() {
   }
 
   if (client->getLive(live, liveRev)) {
+    // A new answer only: offline, the last one's `quiet` stays; a map switch clears it (MapLive starts over)
+    lvgl_port_set_quiet(live.quiet);
     if (live.activeIndex != shownIndex) showVisualizer(live.activeIndex);
     showRotation();
     showSkips();

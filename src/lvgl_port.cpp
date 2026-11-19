@@ -5,6 +5,7 @@
 
 #include "audio.h"
 #include "log.h"
+#include "quiet_dim.h"
 
 static LGFX* g_lcd = nullptr;
 
@@ -25,24 +26,49 @@ static void flush(lv_display_t* disp, const lv_area_t* area, uint8_t* px) {
 static constexpr uint32_t kReleaseMs = 60;
 
 static bool touchDown = false;
+static bool waking = false;  // this touch landed on a dim screen: it only wakes it, LVGL sees no press
+static quiet_dim::Backlight backlight;
+static uint8_t shownLevel = quiet_dim::kNormal;  // main.cpp starts the backlight at that
+
+// The backlight as quiet hours and the last touch have it (quiet_dim.h). Called each touch reading (LVGL reads
+// every 33 ms), so it re-dims on time without a timer of its own.
+static void applyBacklight(uint32_t now) {
+  uint8_t level = backlight.level(now);
+  if (level == shownLevel) return;
+  shownLevel = level;
+  g_lcd->setBrightness(level);
+  LOGF("screen: %s\n", level == quiet_dim::kDim ? "dimmed (quiet hours)" : "full brightness");
+}
 
 static void readTouch(lv_indev_t*, lv_indev_data_t* data) {
   static uint32_t lastSeen = 0;
   static lv_point_t last = {0, 0};
   int32_t x, y;
+  uint32_t now = millis();
   if (g_lcd->getTouch(&x, &y)) {
+    bool woke = backlight.touched(now);
     if (!touchDown) {
-      audio_click();  // a tick as the finger lands: the only one a press makes (debounced there)
+      waking = woke;
+      // a tick as the finger lands: the only one a press makes (debounced there). None for a touch that only wakes
+      if (!waking) audio_click();
     }
     touchDown = true;
-    lastSeen = millis();
+    lastSeen = now;
     last.x = x;
     last.y = y;
-  } else if (touchDown && millis() - lastSeen >= kReleaseMs) {
+  } else if (touchDown && now - lastSeen >= kReleaseMs) {
     touchDown = false;
+    waking = false;
   }
+  applyBacklight(now);
   data->point = last;
-  data->state = touchDown ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+  data->state = touchDown && !waking ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+}
+
+void lvgl_port_set_quiet(bool quiet) {
+  if (quiet != backlight.quiet()) LOGF("screen: the Chart's quiet hours %s\n", quiet ? "began" : "ended");
+  backlight.setQuiet(quiet);
+  if (g_lcd) applyBacklight(millis());  // ended: full at once, not at the next touch reading
 }
 
 static void logPrint(lv_log_level_t, const char* buf) { LOGF("%s", buf); }
