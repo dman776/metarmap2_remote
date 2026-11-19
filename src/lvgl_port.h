@@ -9,7 +9,7 @@
 
 void lvgl_port_init(LGFX& lcd);
 
-// The Chart's quiet hours (/api/live's `quiet`): the backlight dims to about 15%, a touch wakes it for 30 s (that touch
+// The Chart's quiet hours (/api/live's `quiet`): the backlight dims to about 10%, a touch wakes it for 30 s (that touch
 // only wakes, it presses nothing), and it's full again at once when they end (quiet_dim.h). Call from the loop task.
 void lvgl_port_set_quiet(bool quiet);
 

@@ -17,7 +17,7 @@ void tearDown() {}
 
 void test_levels() {
   TEST_ASSERT_EQUAL_UINT8(200, kNormal);  // as main.cpp always set it
-  TEST_ASSERT_EQUAL_UINT8(38, kDim);      // about 15% of full (255)
+  TEST_ASSERT_EQUAL_UINT8(24, kDim);      // about 10% of full (255)
   TEST_ASSERT_EQUAL_UINT32(30000, kAwakeMs);
 }
 
