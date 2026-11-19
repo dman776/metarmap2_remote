@@ -20,15 +20,13 @@ static void flush(lv_display_t* disp, const lv_area_t* area, uint8_t* px) {
   lv_display_flush_ready(disp);
 }
 
-// The FT6336 sometimes misses a finger for a reading in the middle of a
-// touch. Count it as lifted only after it has been gone this long, so one
-// touch is one press (one tick, one click) for LVGL.
+// The FT6336 sometimes misses a finger for a reading in the middle of a touch: it counts as lifted only after it
+// has been gone this long, so one touch is one press (one tick, one click) for LVGL (quiet_dim::Touch).
 static constexpr uint32_t kReleaseMs = 60;
 
-static bool touchDown = false;
-static bool waking = false;  // this touch landed on a dim screen: it only wakes it, LVGL sees no press
 static quiet_dim::Backlight backlight;
-static uint8_t shownLevel = quiet_dim::kNormal;  // main.cpp starts the backlight at that
+static quiet_dim::Touch touch(backlight, kReleaseMs);  // a touch on a dim screen only wakes it
+static uint8_t shownLevel = quiet_dim::kNormal;        // main.cpp starts the backlight at that
 
 // The backlight as quiet hours and the last touch have it (quiet_dim.h). Called each touch reading (LVGL reads
 // every 33 ms), so it re-dims on time without a timer of its own.
@@ -41,28 +39,19 @@ static void applyBacklight(uint32_t now) {
 }
 
 static void readTouch(lv_indev_t*, lv_indev_data_t* data) {
-  static uint32_t lastSeen = 0;
   static lv_point_t last = {0, 0};
   int32_t x, y;
   uint32_t now = millis();
-  if (g_lcd->getTouch(&x, &y)) {
-    bool woke = backlight.touched(now);
-    if (!touchDown) {
-      waking = woke;
-      // a tick as the finger lands: the only one a press makes (debounced there). None for a touch that only wakes
-      if (!waking) audio_click();
-    }
-    touchDown = true;
-    lastSeen = now;
+  bool finger = g_lcd->getTouch(&x, &y);
+  quiet_dim::Touch::Reading r = touch.read(finger, now);
+  if (r.click) audio_click();  // a tick as the finger lands: the only one a press makes (debounced there)
+  if (finger) {
     last.x = x;
     last.y = y;
-  } else if (touchDown && now - lastSeen >= kReleaseMs) {
-    touchDown = false;
-    waking = false;
   }
   applyBacklight(now);
   data->point = last;
-  data->state = touchDown && !waking ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+  data->state = r.pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
 }
 
 void lvgl_port_set_quiet(bool quiet) {

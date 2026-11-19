@@ -386,7 +386,9 @@ buttons: **Chart**, **Airports**, and the **logo**.
   Copilot doesn't light up a dark room. The screen still shows everything; it's only darker.
 - A touch wakes it to full brightness. That first touch only wakes it: it presses nothing beneath it and makes no
   tick, so a tap on **Pixels** in the dark doesn't change anything until you can see what you're doing. Touch again
-  to use it as usual (turn the pixels up, say).
+  to use it as usual (turn the pixels up, say): once you've lifted your finger, the next touch presses, even a
+  quick second tap. A finger that slides or holds while waking it still presses nothing until you lift it.
+- Only a touch wakes it. The web page's remote control (`/api/ui/...`) works on a dimmed screen but leaves it dim.
 - 30 s after the last touch it dims again, for as long as quiet hours last. When they end it's at full brightness at
   once. Quiet hours starting while you're using it wait until it's been left alone for 30 s.
 - While the Chart isn't answering, the Copilot keeps what it last said: a screen dimmed for quiet hours stays dim (a

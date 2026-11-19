@@ -7,6 +7,10 @@ using quiet_dim::Backlight;
 using quiet_dim::kAwakeMs;
 using quiet_dim::kDim;
 using quiet_dim::kNormal;
+using quiet_dim::Touch;
+
+constexpr uint32_t kRelease = 60;  // lvgl_port.cpp's kReleaseMs
+constexpr uint32_t kRead = 33;     // LVGL reads the touch this often
 
 void setUp() {}
 void tearDown() {}
@@ -100,6 +104,131 @@ void test_an_old_touch_does_not_come_back_after_a_wrap() {
   TEST_ASSERT_EQUAL_UINT8(kDim, b.level(1000 + 10));
 }
 
+// ---- Touch: what LVGL sees of the controller's readings ----
+
+// A finger down from `from` for `ms`, read every kRead; how many readings pressed, and the ticks
+struct Run {
+  int pressed = 0;
+  int readings = 0;
+  int clicks = 0;
+};
+Run hold(Touch& t, uint32_t from, uint32_t ms) {
+  Run r;
+  for (uint32_t now = from; now < from + ms; now += kRead) {
+    Touch::Reading x = t.read(true, now);
+    r.readings++;
+    r.pressed += x.pressed;
+    r.clicks += x.click;
+  }
+  return r;
+}
+
+void test_normal_touch_passes_through_with_one_tick() {
+  Backlight b;
+  Touch t(b, kRelease);
+  Run r = hold(t, 1000, 200);
+  TEST_ASSERT_EQUAL(r.readings, r.pressed);
+  TEST_ASSERT_EQUAL(1, r.clicks);
+  TEST_ASSERT_FALSE(t.waking());
+}
+
+void test_waking_touch_is_swallowed_from_down_to_lift() {
+  Backlight b;
+  b.setQuiet(true);
+  Touch t(b, kRelease);
+  Run r = hold(t, 1000, 300);  // a slow tap, or a drag: the readings' positions don't matter
+  TEST_ASSERT_EQUAL(0, r.pressed);
+  TEST_ASSERT_EQUAL(0, r.clicks);  // no tick for a touch that only wakes
+  TEST_ASSERT_TRUE(t.waking());
+  TEST_ASSERT_EQUAL_UINT8(kNormal, b.level(1300));
+  // lifted: still not pressed while the release delay runs, nor after
+  TEST_ASSERT_FALSE(t.read(false, 1320).pressed);
+  TEST_ASSERT_TRUE(t.down());
+  TEST_ASSERT_FALSE(t.read(false, 1300 + kRelease).pressed);
+  TEST_ASSERT_FALSE(t.down());
+  TEST_ASSERT_FALSE(t.waking());
+}
+
+void test_a_long_drag_stays_swallowed_and_keeps_it_awake() {
+  Backlight b;
+  b.setQuiet(true);
+  Touch t(b, kRelease);
+  Run r = hold(t, 1000, kAwakeMs + 5000);  // longer than the awake time: each reading counts as a touch
+  TEST_ASSERT_EQUAL(0, r.pressed);
+  TEST_ASSERT_EQUAL(0, r.clicks);
+  TEST_ASSERT_EQUAL_UINT8(kNormal, b.level(1000 + kAwakeMs + 5000));
+}
+
+void test_a_missed_reading_mid_touch_is_the_same_touch() {
+  Backlight b;
+  Touch t(b, kRelease);
+  hold(t, 1000, 100);
+  Touch::Reading gap = t.read(false, 1100);  // the controller loses the finger for a reading
+  TEST_ASSERT_TRUE(gap.pressed);
+  Run r = hold(t, 1100 + kRead, 100);
+  TEST_ASSERT_EQUAL(r.readings, r.pressed);
+  TEST_ASSERT_EQUAL(0, r.clicks);  // not a new press: no second tick
+}
+
+void test_a_missed_reading_mid_waking_touch_stays_swallowed() {
+  Backlight b;
+  b.setQuiet(true);
+  Touch t(b, kRelease);
+  hold(t, 1000, 100);
+  TEST_ASSERT_FALSE(t.read(false, 1100).pressed);
+  Run r = hold(t, 1100 + kRead, 100);  // back within the release delay: the same, waking touch
+  TEST_ASSERT_EQUAL(0, r.pressed);
+  TEST_ASSERT_EQUAL(0, r.clicks);
+}
+
+void test_lifted_after_the_release_delay() {
+  Backlight b;
+  Touch t(b, kRelease);
+  hold(t, 1000, 100);  // last seen at 1000 + 99
+  uint32_t lastSeen = 1000 + 99;
+  TEST_ASSERT_TRUE(t.read(false, lastSeen + kRelease - 1).pressed);
+  TEST_ASSERT_FALSE(t.read(false, lastSeen + kRelease).pressed);
+  TEST_ASSERT_FALSE(t.read(false, lastSeen + kRelease + kRead).pressed);
+}
+
+void test_a_second_tap_after_a_waking_tap_presses() {
+  Backlight b;
+  b.setQuiet(true);
+  Touch t(b, kRelease);
+  hold(t, 1000, 100);  // wakes
+  uint32_t lastSeen = 1000 + 99;
+  t.read(false, lastSeen + kRead);
+  t.read(false, lastSeen + 2 * kRead);  // lifted (66 ms >= the release delay)
+  TEST_ASSERT_FALSE(t.down());
+  // a quick second tap, the next reading after the lift
+  Run r = hold(t, lastSeen + 3 * kRead, 100);
+  TEST_ASSERT_EQUAL(r.readings, r.pressed);
+  TEST_ASSERT_EQUAL(1, r.clicks);
+}
+
+void test_a_touch_after_it_redims_only_wakes_again() {
+  Backlight b;
+  b.setQuiet(true);
+  Touch t(b, kRelease);
+  hold(t, 1000, 100);
+  t.read(false, 1000 + 99 + kRelease);
+  uint32_t later = 1000 + 99 + kAwakeMs;
+  TEST_ASSERT_EQUAL_UINT8(kDim, b.level(later));
+  Run r = hold(t, later, 100);
+  TEST_ASSERT_EQUAL(0, r.pressed);
+  TEST_ASSERT_EQUAL(0, r.clicks);
+}
+
+void test_quiet_ending_mid_waking_touch_keeps_it_swallowed() {
+  Backlight b;
+  b.setQuiet(true);
+  Touch t(b, kRelease);
+  hold(t, 1000, 100);
+  b.setQuiet(false);  // that touch still only woke it: it doesn't turn into a press halfway
+  Run r = hold(t, 1100, 100);
+  TEST_ASSERT_EQUAL(0, r.pressed);
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_levels);
@@ -113,5 +242,14 @@ int main() {
   RUN_TEST(test_quiet_starting_long_after_a_touch_dims_at_once);
   RUN_TEST(test_millis_wrap);
   RUN_TEST(test_an_old_touch_does_not_come_back_after_a_wrap);
+  RUN_TEST(test_normal_touch_passes_through_with_one_tick);
+  RUN_TEST(test_waking_touch_is_swallowed_from_down_to_lift);
+  RUN_TEST(test_a_long_drag_stays_swallowed_and_keeps_it_awake);
+  RUN_TEST(test_a_missed_reading_mid_touch_is_the_same_touch);
+  RUN_TEST(test_a_missed_reading_mid_waking_touch_stays_swallowed);
+  RUN_TEST(test_lifted_after_the_release_delay);
+  RUN_TEST(test_a_second_tap_after_a_waking_tap_presses);
+  RUN_TEST(test_a_touch_after_it_redims_only_wakes_again);
+  RUN_TEST(test_quiet_ending_mid_waking_touch_keeps_it_swallowed);
   return UNITY_END();
 }

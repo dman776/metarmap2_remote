@@ -3,7 +3,7 @@
 // doesn't press what's beneath), so the next can turn the pixels up. Once quiet hours end, full at once. A touch
 // outside quiet hours counts too: quiet hours starting while someone is using it wait till they've let it be for
 // kAwakeMs. Offline, the last `quiet` the Chart said stays (a map switch forgets it: MapLive starts over). Plain
-// C++, unit tested on the host (test/test_quiet_dim).
+// C++, unit tested on the host (test/test_quiet_dim). Only a touch wakes it: the web page's remote control doesn't.
 #pragma once
 
 #include <cstdint>
@@ -40,6 +40,51 @@ class Backlight {
   bool quiet_ = false;
   bool awake_ = false;  // touched within kAwakeMs
   uint32_t since_ = 0;  // the last touch
+};
+
+// One touch as LVGL should see it, from the controller's readings. The FT6336 sometimes misses a finger for a reading
+// in the middle of a touch, so the finger counts as lifted only after it has been gone releaseMs: one touch is one
+// press (one tick, one click). A touch that lands on a dim screen only wakes it: no press and no tick, from finger
+// down to lift, drag or not. The next touch (once the last one has been lifted for releaseMs) presses as always.
+// A finger back within releaseMs is the same touch: the controller can't tell it from a missed reading, and a
+// missed reading mid-touch mustn't press what's beneath a waking touch.
+class Touch {
+ public:
+  struct Reading {
+    bool pressed = false;  // what LVGL sees
+    bool click = false;    // the touch tick: once, as a touch that presses lands
+  };
+
+  Touch(Backlight& backlight, uint32_t releaseMs) : backlight_(backlight), releaseMs_(releaseMs) {}
+
+  // A reading at `now` (ms, wrapping): `finger`, whether the controller sees one
+  Reading read(bool finger, uint32_t now) {
+    Reading r;
+    if (finger) {
+      bool woke = backlight_.touched(now);  // each reading: a long hold or drag keeps it awake
+      if (!down_) {
+        waking_ = woke;
+        r.click = !waking_;
+      }
+      down_ = true;
+      lastSeen_ = now;
+    } else if (down_ && now - lastSeen_ >= releaseMs_) {
+      down_ = false;
+      waking_ = false;  // lifted: the next touch is its own
+    }
+    r.pressed = down_ && !waking_;
+    return r;
+  }
+
+  bool down() const { return down_; }
+  bool waking() const { return waking_; }  // this touch landed on a dim screen: it only wakes it
+
+ private:
+  Backlight& backlight_;
+  uint32_t releaseMs_;
+  bool down_ = false;
+  bool waking_ = false;
+  uint32_t lastSeen_ = 0;
 };
 
 }  // namespace quiet_dim
