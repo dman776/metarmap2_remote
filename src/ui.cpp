@@ -1144,7 +1144,7 @@ void unflash(lv_timer_t* t) {
 
 bool cardOpen();
 
-// The tile the map just pulsed flashes white, like the /remote page's, on its page.
+// The tile the map just pulsed flashes white, like the /cockpit page's, on its page.
 void flashTile(int pixel) {
   for (size_t i = 0; i < tiles.size(); i++) {
     if (tiles[i].pixel != pixel) continue;

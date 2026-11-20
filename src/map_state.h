@@ -1,5 +1,5 @@
 // What the remote knows about the map, from its JSON API. The same split
-// as the map's /remote page: /api/live polled often, /api/status for the
+// as the map's /cockpit page: /api/live polled often, /api/status for the
 // visualizer list and the active visualizer's legend.
 //
 // Plain C++ (no Arduino types), so the parsing and legend code that uses it

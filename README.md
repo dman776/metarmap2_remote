@@ -2,7 +2,7 @@
 
 **MetarMap2 Copilot** is the touchscreen of [MetarMap2](https://github.com/dman776/metarmap2): firmware for a 2.8"
 ESP32-S3 touch display that sits beside the Chart (the map on the wall) and works like a small version of MetarMap2
-Cockpit (the Chart's `/remote` page). Pick the visualizer, see what the pixels mean, set the pixels' brightness, turn
+Cockpit (the Chart's `/cockpit` page). Pick the visualizer, see what the pixels mean, set the pixels' brightness, turn
 auto-rotate on or off and choose which visualizers it skips, and find an airport's pixel or hear its weather.
 
 The Chart stays in charge. The Copilot reads the Chart's state over its HTTP API and
@@ -558,7 +558,7 @@ every name with the Copilot (that's how a phone finds the page), and anyone on i
 
 A background task on the ESP32's second core polls `/api/live` every 1.5 s
 and `/api/status` every minute, and again whenever the visualizer changes (for
-its legend), the same split the `/remote` page uses. The touch screen runs on
+its legend), the same split the `/cockpit` page uses. The touch screen runs on
 the other core, so a slow answer never freezes it. Controls are queued to the
 background task and the next `/api/live` shows their result. A skip from the
 picker is marked at once; the Chart's answer (`{"id", "skipped", "skip"}`, or a

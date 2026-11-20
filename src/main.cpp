@@ -1,4 +1,4 @@
-// MetarMap2 Copilot: a small version of the map's /remote page on the ES3C28P.
+// MetarMap2 Copilot: a small version of the map's /cockpit page on the ES3C28P.
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_heap_caps.h>

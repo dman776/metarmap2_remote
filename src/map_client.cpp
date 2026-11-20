@@ -12,7 +12,7 @@
 
 namespace {
 
-constexpr uint32_t kLiveMs = 1500;         // the /remote page polls every 1 s
+constexpr uint32_t kLiveMs = 1500;         // the /cockpit page polls every 1 s
 constexpr uint32_t kStatusMs = 60 * 1000;  // and /api/status every minute
 constexpr uint32_t kStatusRetryMs = 5000;  // until the first one answers (after a switch, or Wi-Fi back): this often
 constexpr int kWrongLength = -101;         // getBinary(): a 200 of another length than asked for, or cut short
@@ -286,7 +286,7 @@ void MapClient::run() {
     }
 
     // The legend belongs to one visualizer: fetch it again when it changes,
-    // like the /remote page does.
+    // like the /cockpit page does.
     xSemaphoreTake(mutex_, portMAX_DELAY);
     bool stale = live_.valid && live_.activeIndex != status_.activeIndex;
     bool online = conn_.online;
