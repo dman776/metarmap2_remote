@@ -1,4 +1,4 @@
-// The remote's screens: a small version of the map's /remote page. A rail at the left: LEDs (the visualizer, its
+// The remote's screens: a small version of the map's /cockpit page. A rail at the left: LEDs (the visualizer, its
 // legend, auto-rotate and brightness), Airports (a page of airports; a tap opens its card), and the logo (the
 // splash screen, and from it the firmware update screen and the map picker).
 #pragma once
